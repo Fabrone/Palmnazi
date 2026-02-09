@@ -3,7 +3,6 @@ import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/widgets/animated_background.dart';
 import 'package:palmnazi/widgets/channel_showcase.dart';
 import 'package:palmnazi/widgets/feature_carousel.dart';
-import 'package:palmnazi/widgets/parallax_header.dart';
 import 'package:palmnazi/widgets/stats_counter.dart';
 import 'dart:async';
 
@@ -19,13 +18,16 @@ class _LandingPageState extends State<LandingPage>
   late ScrollController _scrollController;
   late AnimationController _fadeController;
   late AnimationController _slideController;
-  late AnimationController _introController;
+  late AnimationController _logoController;
+  late AnimationController _textController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+  late Animation<double> _logoScaleAnimation;
+  late Animation<Offset> _logoSlideAnimation;
+  late Animation<double> _textFadeAnimation;
   
   double _scrollOffset = 0;
   bool _showMainContent = false;
-  bool _autoScrolledToCarousel = false;
 
   @override
   void initState() {
@@ -43,8 +45,13 @@ class _LandingPageState extends State<LandingPage>
       vsync: this,
     );
 
-    _introController = AnimationController(
-      duration: const Duration(milliseconds: 3000),
+    _logoController = AnimationController(
+      duration: const Duration(milliseconds: 4000), // Extended to 4 seconds
+      vsync: this,
+    );
+
+    _textController = AnimationController(
+      duration: const Duration(milliseconds: 2500), // Extended to 2.5 seconds
       vsync: this,
     );
     
@@ -58,33 +65,93 @@ class _LandingPageState extends State<LandingPage>
     ).animate(
       CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
     );
+
+    _logoScaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.5, end: 1.1).chain(
+          CurveTween(curve: Curves.easeOut),
+        ),
+        weight: 40,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.1, end: 0.6).chain(
+          CurveTween(curve: Curves.easeInOut),
+        ),
+        weight: 60,
+      ),
+    ]).animate(_logoController);
+
+    _logoSlideAnimation = TweenSequence<Offset>([
+      TweenSequenceItem(
+        tween: Tween<Offset>(
+          begin: Offset.zero,
+          end: Offset.zero,
+        ),
+        weight: 50,
+      ),
+      TweenSequenceItem(
+        tween: Tween<Offset>(
+          begin: Offset.zero,
+          end: const Offset(0, -2.5),
+        ).chain(
+          CurveTween(curve: Curves.easeInOut),
+        ),
+        weight: 50,
+      ),
+    ]).animate(_logoController);
+
+    _textFadeAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.0, end: 1.0).chain(
+          CurveTween(curve: Curves.easeIn),
+        ),
+        weight: 25,
+      ),
+      TweenSequenceItem(
+        tween: ConstantTween<double>(1.0),
+        weight: 50,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 0.0).chain(
+          CurveTween(curve: Curves.easeOut),
+        ),
+        weight: 25,
+      ),
+    ]).animate(_textController);
     
-    // Start intro animation
-    _introController.forward();
+    // Start intro animation sequence
+    _startIntroAnimation();
+  }
+
+  void _startIntroAnimation() async {
+    // Start logo animation
+    _logoController.forward();
     
-    // After 4 seconds, show main content and scroll to carousel
-    Timer(const Duration(seconds: 4), () {
-      if (mounted) {
-        setState(() {
-          _showMainContent = true;
-        });
-        _fadeController.forward();
-        _slideController.forward();
-        
-        // Auto-scroll to carousel after another 1 second
-        Timer(const Duration(milliseconds: 1000), _scrollToCarousel);
-      }
-    });
+    // Start text animation with delay
+    await Future.delayed(const Duration(milliseconds: 1000));
+    _textController.forward();
+    
+    // Wait for animations to complete (longer display time)
+    await Future.delayed(const Duration(milliseconds: 5000));
+    
+    if (mounted) {
+      setState(() {
+        _showMainContent = true;
+      });
+      _fadeController.forward();
+      _slideController.forward();
+      
+      // Auto-scroll to carousel with proper offset
+      Timer(const Duration(milliseconds: 800), _scrollToCarousel);
+    }
   }
 
   void _scrollToCarousel() {
-    if (_scrollController.hasClients && !_autoScrolledToCarousel) {
-      setState(() {
-        _autoScrolledToCarousel = true;
-      });
+    if (_scrollController.hasClients) {
+      // Scroll to show "What We Offer" title properly below appbar
       _scrollController.animateTo(
-        MediaQuery.of(context).size.height * 0.85, // Scroll to carousel
-        duration: const Duration(milliseconds: 1500),
+        10.0, // Minimal scroll to position title just below appbar
+        duration: const Duration(milliseconds: 1200),
         curve: Curves.easeInOutCubic,
       );
     }
@@ -211,7 +278,8 @@ class _LandingPageState extends State<LandingPage>
     _scrollController.dispose();
     _fadeController.dispose();
     _slideController.dispose();
-    _introController.dispose();
+    _logoController.dispose();
+    _textController.dispose();
     super.dispose();
   }
 
@@ -222,7 +290,7 @@ class _LandingPageState extends State<LandingPage>
       appBar: _showMainContent ? _buildAppBar() : null,
       body: Stack(
         children: [
-          // Animated Background
+          // Animated Background (always visible)
           const AnimatedBackground(),
           
           // Intro Animation or Main Content
@@ -236,122 +304,193 @@ class _LandingPageState extends State<LandingPage>
   }
 
   PreferredSizeWidget _buildAppBar() {
+    final appBarOpacity = (_scrollOffset / 100).clamp(0.0, 1.0);
+    
     return AppBar(
-      backgroundColor: Colors.black.withValues(alpha: 0.3),
-      elevation: 0,
+      backgroundColor: Color.lerp(
+        Colors.black.withValues(alpha: 0.3),
+        Colors.black.withValues(alpha: 0.9),
+        appBarOpacity,
+      ),
+      elevation: appBarOpacity * 8,
       title: Row(
         children: [
+          // Logo
           Container(
             width: 40,
             height: 40,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: LinearGradient(
+              gradient: const LinearGradient(
                 colors: [Color(0xFF14FFEC), Color(0xFF0D7377)],
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF14FFEC).withValues(alpha: 0.4),
+                  blurRadius: 10,
+                  spreadRadius: 2,
+                ),
+              ],
             ),
-            child: const Icon(Icons.landscape, color: Colors.white, size: 24),
+            child: Center(
+              child: ClipOval(
+                child: Image.asset(
+                  'assets/images/logo.png',
+                  width: 28,
+                  height: 28,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Icon(
+                      Icons.landscape,
+                      size: 24,
+                      color: Colors.white,
+                    );
+                  },
+                ),
+              ),
+            ),
           ),
           const SizedBox(width: 12),
           const Text(
             'PALMNAZI',
             style: TextStyle(
-              fontWeight: FontWeight.bold,
               fontSize: 20,
+              fontWeight: FontWeight.bold,
               letterSpacing: 2,
+              color: Colors.white,
             ),
           ),
         ],
       ),
       actions: [
-        TextButton(
+        // Navigation buttons
+        TextButton.icon(
           onPressed: () => _scrollToSection(0),
-          child: const Text('Home', style: TextStyle(color: Colors.white)),
-        ),
-        PopupMenuButton<String>(
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Text('Channels', style: TextStyle(color: Colors.white)),
-                SizedBox(width: 4),
-                Icon(Icons.arrow_drop_down, color: Colors.white),
-              ],
-            ),
+          icon: const Icon(Icons.home_outlined, color: Colors.white, size: 20),
+          label: const Text(
+            'Home',
+            style: TextStyle(color: Colors.white),
           ),
-          onSelected: (value) => _handleInteraction('explore $value'),
-          itemBuilder: (context) => [
-            const PopupMenuItem(value: 'Hotels', child: Text('Hotels')),
-            const PopupMenuItem(value: 'Restaurants', child: Text('Restaurants')),
-            const PopupMenuItem(value: 'Events', child: Text('Events')),
-            const PopupMenuItem(value: 'Shopping', child: Text('Shopping')),
-            const PopupMenuItem(value: 'Wellness', child: Text('Wellness')),
-            const PopupMenuItem(value: 'Activities', child: Text('Activities')),
-            const PopupMenuItem(value: 'Nightlife', child: Text('Nightlife')),
-            const PopupMenuItem(value: 'Beaches', child: Text('Beaches')),
-          ],
         ),
-        TextButton(
-          onPressed: () => _handleInteraction('view about us'),
-          child: const Text('About', style: TextStyle(color: Colors.white)),
-        ),
-        TextButton(
-          onPressed: () => _handleInteraction('contact us'),
-          child: const Text('Contact', style: TextStyle(color: Colors.white)),
-        ),
-        const SizedBox(width: 8),
-        // Auth Dropdown
-        PopupMenuButton<String>(
-          icon: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF14FFEC), Color(0xFF0D7377)],
-              ),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.person, color: Colors.white, size: 20),
-                SizedBox(width: 8),
-                Text('Sign In', style: TextStyle(color: Colors.white)),
-                SizedBox(width: 4),
-                Icon(Icons.arrow_drop_down, color: Colors.white, size: 20),
-              ],
-            ),
+        TextButton.icon(
+          onPressed: () => _scrollToSection(1),
+          icon: const Icon(Icons.explore_outlined, color: Colors.white, size: 20),
+          label: const Text(
+            'Explore',
+            style: TextStyle(color: Colors.white),
           ),
-          onSelected: (value) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => AuthScreen(isLogin: value == 'login'),
-              ),
-            );
-          },
-          itemBuilder: (context) => [
-            const PopupMenuItem(
-              value: 'login',
-              child: Row(
-                children: [
-                  Icon(Icons.login),
-                  SizedBox(width: 12),
-                  Text('Login'),
-                ],
+        ),
+        // Channels Dropdown
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.apps, color: Colors.white),
+          tooltip: 'Channels',
+          onSelected: (String channel) => _handleInteraction('explore $channel'),
+          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+            const PopupMenuItem<String>(
+              value: 'Accommodation',
+              child: ListTile(
+                leading: Icon(Icons.king_bed_outlined, color: Color(0xFF0D7377)),
+                title: Text('Accommodation'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
               ),
             ),
-            const PopupMenuItem(
-              value: 'signup',
-              child: Row(
-                children: [
-                  Icon(Icons.person_add),
-                  SizedBox(width: 12),
-                  Text('Sign Up'),
-                ],
+            const PopupMenuItem<String>(
+              value: 'Dining',
+              child: ListTile(
+                leading: Icon(Icons.restaurant_menu, color: Color(0xFFE91E63)),
+                title: Text('Dining'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            const PopupMenuItem<String>(
+              value: 'Events',
+              child: ListTile(
+                leading: Icon(Icons.celebration, color: Color(0xFFFF9800)),
+                title: Text('Events'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            const PopupMenuItem<String>(
+              value: 'Shopping',
+              child: ListTile(
+                leading: Icon(Icons.shopping_bag_outlined, color: Color(0xFF9C27B0)),
+                title: Text('Shopping'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            const PopupMenuItem<String>(
+              value: 'Adventure',
+              child: ListTile(
+                leading: Icon(Icons.terrain, color: Color(0xFF2196F3)),
+                title: Text('Adventure'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            const PopupMenuItem<String>(
+              value: 'Wellness',
+              child: ListTile(
+                leading: Icon(Icons.spa_outlined, color: Color(0xFF00897B)),
+                title: Text('Wellness'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
               ),
             ),
           ],
         ),
-        const SizedBox(width: 16),
+        // Auth buttons
+        Padding(
+          padding: const EdgeInsets.only(left: 8, right: 8),
+          child: OutlinedButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AuthScreen(isLogin: true),
+                ),
+              );
+            },
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              side: const BorderSide(color: Colors.white, width: 1.5),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(25),
+              ),
+            ),
+            child: const Text('Sign In'),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(right: 16),
+          child: ElevatedButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AuthScreen(isLogin: false),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF14FFEC),
+              foregroundColor: const Color(0xFF1E3A5F),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(25),
+              ),
+              elevation: 4,
+            ),
+            child: const Text(
+              'Get Started',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -363,12 +502,10 @@ class _LandingPageState extends State<LandingPage>
         offset = 0;
         break;
       case 1:
-        offset = MediaQuery.of(context).size.height * 0.85;
-        break;
-      case 2:
-        offset = MediaQuery.of(context).size.height * 1.5;
+        offset = 10.0;
         break;
     }
+    
     _scrollController.animateTo(
       offset,
       duration: const Duration(milliseconds: 800),
@@ -379,15 +516,19 @@ class _LandingPageState extends State<LandingPage>
   Widget _buildIntroAnimation() {
     return Center(
       child: AnimatedBuilder(
-        animation: _introController,
+        animation: Listenable.merge([_logoController, _textController]),
         builder: (context, child) {
-          return Opacity(
-            opacity: _introController.value < 0.8 ? _introController.value * 1.25 : 1.0,
-            child: Transform.scale(
-              scale: 0.8 + (_introController.value * 0.2),
+          return Transform.scale(
+            scale: _logoScaleAnimation.value,
+            child: Transform.translate(
+              offset: Offset(
+                0,
+                _logoSlideAnimation.value.dy * MediaQuery.of(context).size.height,
+              ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  // Logo
                   Container(
                     width: 150,
                     height: 150,
@@ -404,45 +545,75 @@ class _LandingPageState extends State<LandingPage>
                         ),
                       ],
                     ),
-                    child: const Icon(
-                      Icons.landscape,
-                      size: 80,
-                      color: Colors.white,
+                    child: Center(
+                      child: ClipOval(
+                        child: Image.asset(
+                          'assets/images/logo.png',
+                          width: 100,
+                          height: 100,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Icon(
+                              Icons.landscape,
+                              size: 80,
+                              color: Colors.white,
+                            );
+                          },
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 40),
-                  ShaderMask(
-                    shaderCallback: (bounds) => const LinearGradient(
-                      colors: [Color(0xFF14FFEC), Colors.white, Color(0xFF14FFEC)],
-                    ).createShader(bounds),
-                    child: const Text(
-                      'PALMNAZI',
-                      style: TextStyle(
-                        fontSize: 64,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 6,
-                        color: Colors.white,
+                  
+                  // App Name
+                  Opacity(
+                    opacity: _textFadeAnimation.value,
+                    child: ShaderMask(
+                      shaderCallback: (bounds) => const LinearGradient(
+                        colors: [Color(0xFF14FFEC), Colors.white, Color(0xFF14FFEC)],
+                      ).createShader(bounds),
+                      child: const Text(
+                        'PALMNAZI',
+                        style: TextStyle(
+                          fontSize: 64,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 6,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    'RESORT CITIES',
-                    style: TextStyle(
-                      fontSize: 20,
-                      letterSpacing: 10,
-                      fontWeight: FontWeight.w300,
-                      color: Colors.white70,
+                  
+                  // Subtitle
+                  Opacity(
+                    opacity: _textFadeAnimation.value,
+                    child: const Text(
+                      'RESORT CITIES',
+                      style: TextStyle(
+                        fontSize: 20,
+                        letterSpacing: 10,
+                        fontWeight: FontWeight.w300,
+                        color: Colors.white70,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 40),
-                  SizedBox(
-                    width: 30,
-                    height: 30,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 3,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        Colors.white.withValues(alpha: 0.7),
+                  const SizedBox(height: 30),
+                  
+                  // Tagline
+                  Opacity(
+                    opacity: _textFadeAnimation.value,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 48),
+                      child: Text(
+                        'Discover Kenya\'s Most Exquisite Resort Destinations',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w400,
+                          color: const Color(0xFF14FFEC).withValues(alpha: 0.9),
+                          letterSpacing: 0.5,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
                     ),
                   ),
@@ -459,15 +630,12 @@ class _LandingPageState extends State<LandingPage>
     return CustomScrollView(
       controller: _scrollController,
       slivers: [
-        // Parallax Header
+        // Small header spacer - adjusted for appbar clearance
         SliverToBoxAdapter(
-          child: ParallaxHeader(
-            scrollOffset: _scrollOffset,
-            onExplore: () => _scrollToSection(1),
-          ),
+          child: SizedBox(height: kToolbarHeight + 10),
         ),
         
-        // Feature Carousel
+        // Feature Carousel (What We Offer)
         SliverToBoxAdapter(
           child: FadeTransition(
             opacity: _fadeAnimation,
@@ -536,7 +704,7 @@ class _LandingPageState extends State<LandingPage>
       child: Column(
         children: [
           Text(
-            'Ready to Explore Resort Cities?',
+            'Ready to Explore Paradise?',
             style: Theme.of(context).textTheme.displayMedium,
             textAlign: TextAlign.center,
           ),

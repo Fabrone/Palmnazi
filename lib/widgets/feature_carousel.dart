@@ -20,49 +20,54 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
 
   final List<FeatureItem> _features = [
     FeatureItem(
-      icon: Icons.hotel,
-      title: 'Luxury Hotels & Accommodations',
-      description: 'Experience world-class hospitality in Kenya\'s finest resort cities. From beachfront villas to mountain lodges, discover premium accommodations that offer exceptional comfort, stunning views, and unforgettable service. Each property is carefully curated to ensure your stay exceeds expectations.',
+      icon: Icons.king_bed_outlined,
+      title: 'Premium Accommodation',
+      description: 'Experience world-class hospitality in Kenya\'s finest resort cities. From luxurious beachfront villas to serene mountain lodges, discover handpicked accommodations that offer exceptional comfort, breathtaking views, and personalized service.',
       gradient: const LinearGradient(
         colors: [Color(0xFF0D7377), Color(0xFF1E3A5F)],
       ),
-      imagePath: 'assets/images/feature_hotels.jpg',
+      imagePath: 'assets/images/feature_accommodation.png',
+      channelName: 'Accommodation',
     ),
     FeatureItem(
-      icon: Icons.restaurant,
-      title: 'Exquisite Dining Experiences',
-      description: 'Savor the flavors of Kenya and beyond with our curated selection of world-class restaurants and local eateries. From fresh seafood by the coast to traditional Kenyan cuisine in the highlands, embark on a culinary journey that celebrates local ingredients, innovative cooking, and authentic flavors.',
+      icon: Icons.restaurant_menu,
+      title: 'Exquisite Dining',
+      description: 'Embark on a culinary adventure through Kenya with our curated collection of world-class restaurants and authentic local eateries. From fresh ocean catches to traditional Kenyan delicacies, savor dishes crafted with passion.',
       gradient: const LinearGradient(
         colors: [Color(0xFFE91E63), Color(0xFF880E4F)],
       ),
       imagePath: 'assets/images/feature_dining.jpg',
+      channelName: 'Dining',
     ),
     FeatureItem(
       icon: Icons.celebration,
-      title: 'Cultural Events & Festivals',
-      description: 'Immerse yourself in vibrant cultural celebrations, music festivals, and traditional ceremonies that showcase Kenya\'s rich heritage. Connect with local communities, witness age-old traditions, and participate in events that bring people together. Every festival tells a unique story of Kenya\'s diverse cultures.',
+      title: 'Cultural Events',
+      description: 'Immerse yourself in vibrant cultural celebrations, music festivals, and traditional ceremonies. Connect with local communities, witness age-old traditions, and participate in events that unite people across cultures.',
       gradient: const LinearGradient(
         colors: [Color(0xFFFF9800), Color(0xFFE65100)],
       ),
       imagePath: 'assets/images/feature_events.png',
+      channelName: 'Events',
     ),
     FeatureItem(
-      icon: Icons.shopping_bag,
-      title: 'Artisan Markets & Shopping',
-      description: 'Discover authentic Kenyan craftsmanship and unique treasures at local markets and boutiques. Support local artisans while finding one-of-a-kind souvenirs, handmade jewelry, traditional textiles, and contemporary art. Each purchase tells a story and supports sustainable tourism.',
+      icon: Icons.shopping_bag_outlined,
+      title: 'Artisan Shopping',
+      description: 'Discover authentic Kenyan craftsmanship at vibrant local markets and boutique shops. Find one-of-a-kind souvenirs, handcrafted jewelry, traditional textiles, and contemporary art that tells a meaningful story.',
       gradient: const LinearGradient(
         colors: [Color(0xFF9C27B0), Color(0xFF4A148C)],
       ),
       imagePath: 'assets/images/feature_shopping.jpg',
+      channelName: 'Shopping',
     ),
     FeatureItem(
-      icon: Icons.landscape,
-      title: 'Adventure & Nature Exploration',
-      description: 'Explore breathtaking landscapes from pristine beaches to majestic mountains. Engage in thrilling outdoor activities including safari adventures, hiking expeditions, water sports, and wildlife encounters. Experience Kenya\'s natural beauty through sustainable and responsible tourism practices.',
+      icon: Icons.terrain,
+      title: 'Adventure & Nature',
+      description: 'Explore breathtaking landscapes from pristine beaches to majestic mountains. Engage in safari adventures, mountain hiking, water sports, and unforgettable wildlife encounters through sustainable tourism.',
       gradient: const LinearGradient(
         colors: [Color(0xFF2196F3), Color(0xFF0D47A1)],
       ),
       imagePath: 'assets/images/feature_nature.jpg',
+      channelName: 'Adventure',
     ),
   ];
 
@@ -100,8 +105,11 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final carouselHeight = (screenHeight * 0.5).clamp(350.0, 450.0);
+    
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 60),
+      margin: const EdgeInsets.symmetric(vertical: 30, horizontal: 0),
       child: Column(
         children: [
           Padding(
@@ -115,27 +123,27 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
                   child: Text(
                     'What We Offer',
                     style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                      fontSize: 48,
+                      fontSize: 36,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
                     textAlign: TextAlign.center,
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
                 Text(
-                  'Explore our comprehensive platform designed to enhance your resort city experience with curated services and authentic local connections',
+                  'Explore curated services for an unforgettable resort experience',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontSize: 16,
+                    fontSize: 14,
                   ),
                   textAlign: TextAlign.center,
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 50),
+          const SizedBox(height: 30),
           SizedBox(
-            height: 480,
+            height: carouselHeight,
             child: PageView.builder(
               controller: _pageController,
               onPageChanged: (index) {
@@ -155,7 +163,7 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
                     }
                     return Center(
                       child: SizedBox(
-                        height: Curves.easeInOut.transform(value) * 480,
+                        height: Curves.easeInOut.transform(value) * carouselHeight,
                         child: child,
                       ),
                     );
@@ -165,7 +173,7 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
               },
             ),
           ),
-          const SizedBox(height: 30),
+          const SizedBox(height: 20),
           _buildPageIndicator(),
         ],
       ),
@@ -174,22 +182,22 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
 
   Widget _buildFeatureCard(FeatureItem feature, int index) {
     return GestureDetector(
-      onTap: () => widget.onFeatureTap(feature.title),
+      onTap: () => widget.onFeatureTap(feature.channelName),
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
               color: feature.gradient.colors.first.withValues(alpha: 0.4),
-              blurRadius: 25,
-              spreadRadius: 3,
-              offset: const Offset(0, 12),
+              blurRadius: 20,
+              spreadRadius: 2,
+              offset: const Offset(0, 10),
             ),
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           child: Stack(
             children: [
               // Background Image or Gradient
@@ -229,77 +237,77 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
                 left: 0,
                 right: 0,
                 child: Padding(
-                  padding: const EdgeInsets.all(28),
+                  padding: const EdgeInsets.all(24),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(14),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           gradient: feature.gradient,
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
                               color: feature.gradient.colors.first.withValues(alpha: 0.6),
-                              blurRadius: 20,
-                              spreadRadius: 3,
+                              blurRadius: 15,
+                              spreadRadius: 2,
                             ),
                           ],
                         ),
                         child: Icon(
                           feature.icon,
-                          size: 36,
+                          size: 28,
                           color: Colors.white,
                         ),
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 16),
                       Text(
                         feature.title,
                         style: const TextStyle(
-                          fontSize: 26,
+                          fontSize: 22,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
                           letterSpacing: 0.5,
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       Text(
                         feature.description,
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 13,
                           color: Colors.white.withValues(alpha: 0.95),
-                          height: 1.6,
+                          height: 1.5,
                         ),
-                        maxLines: 5,
+                        maxLines: 4,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 16),
                       Row(
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 10,
+                              horizontal: 18,
+                              vertical: 9,
                             ),
                             decoration: BoxDecoration(
                               color: const Color(0xFF14FFEC),
-                              borderRadius: BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(18),
                             ),
                             child: Row(
                               children: [
                                 Text(
-                                  'Learn More',
+                                  'Explore',
                                   style: TextStyle(
                                     color: feature.gradient.colors.last,
                                     fontWeight: FontWeight.w700,
-                                    fontSize: 14,
+                                    fontSize: 13,
                                   ),
                                 ),
                                 const SizedBox(width: 6),
                                 Icon(
                                   Icons.arrow_forward,
-                                  size: 16,
+                                  size: 14,
                                   color: feature.gradient.colors.last,
                                 ),
                               ],
@@ -326,8 +334,8 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
         (index) => AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           margin: const EdgeInsets.symmetric(horizontal: 4),
-          width: _currentPage == index ? 40 : 10,
-          height: 10,
+          width: _currentPage == index ? 32 : 8,
+          height: 8,
           decoration: BoxDecoration(
             gradient: _currentPage == index
                 ? const LinearGradient(
@@ -337,7 +345,7 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
             color: _currentPage == index
                 ? null
                 : Colors.white.withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(5),
+            borderRadius: BorderRadius.circular(4),
           ),
         ),
       ),
@@ -351,6 +359,7 @@ class FeatureItem {
   final String description;
   final Gradient gradient;
   final String imagePath;
+  final String channelName;
 
   FeatureItem({
     required this.icon,
@@ -358,5 +367,6 @@ class FeatureItem {
     required this.description,
     required this.gradient,
     required this.imagePath,
+    required this.channelName,
   });
 }

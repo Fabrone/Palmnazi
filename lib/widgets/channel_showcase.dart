@@ -12,130 +12,144 @@ class ChannelShowcase extends StatefulWidget {
   State<ChannelShowcase> createState() => _ChannelShowcaseState();
 }
 
-class _ChannelShowcaseState extends State<ChannelShowcase>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  int _hoveredIndex = -1;
+class _ChannelShowcaseState extends State<ChannelShowcase> {
+  String? _expandedChannel;
 
   final List<ChannelItem> _channels = [
     ChannelItem(
-      icon: Icons.hotel_outlined,
-      title: 'Hotels',
-      description: 'Premium stays',
-      color: const Color(0xFF00897B),
+      icon: Icons.king_bed_outlined,
+      title: 'Accommodation',
+      description: 'Premium stays and luxury lodging',
+      color: const Color(0xFF0D7377),
+      subcategories: [
+        'Luxury Hotels',
+        'Beach Resorts',
+        'Mountain Lodges',
+        'Boutique Hotels',
+        'Vacation Rentals',
+        'Eco-Lodges',
+      ],
     ),
     ChannelItem(
-      icon: Icons.restaurant_outlined,
-      title: 'Restaurants',
-      description: 'Fine dining',
+      icon: Icons.restaurant_menu,
+      title: 'Dining',
+      description: 'Culinary experiences and local cuisine',
       color: const Color(0xFFE91E63),
+      subcategories: [
+        'Fine Dining',
+        'Local Cuisine',
+        'Seafood Restaurants',
+        'Street Food',
+        'Cafes & Coffee Shops',
+        'Rooftop Bars',
+      ],
     ),
     ChannelItem(
-      icon: Icons.celebration_outlined,
+      icon: Icons.celebration,
       title: 'Events',
-      description: 'Cultural activities',
+      description: 'Festivals and cultural experiences',
       color: const Color(0xFFFF9800),
+      subcategories: [
+        'Music Festivals',
+        'Cultural Ceremonies',
+        'Art Exhibitions',
+        'Food Festivals',
+        'Sports Events',
+        'Night Markets',
+      ],
     ),
     ChannelItem(
       icon: Icons.shopping_bag_outlined,
       title: 'Shopping',
-      description: 'Local markets',
+      description: 'Markets and artisan crafts',
       color: const Color(0xFF9C27B0),
+      subcategories: [
+        'Artisan Markets',
+        'Shopping Malls',
+        'Craft Stores',
+        'Jewelry Shops',
+        'Textile Markets',
+        'Souvenir Shops',
+      ],
+    ),
+    ChannelItem(
+      icon: Icons.terrain,
+      title: 'Adventure',
+      description: 'Nature and outdoor activities',
+      color: const Color(0xFF2196F3),
+      subcategories: [
+        'Safari Tours',
+        'Hiking Trails',
+        'Water Sports',
+        'Wildlife Viewing',
+        'Beach Activities',
+        'Mountain Climbing',
+      ],
     ),
     ChannelItem(
       icon: Icons.spa_outlined,
       title: 'Wellness',
-      description: 'Spas & relaxation',
-      color: const Color(0xFF2196F3),
-    ),
-    ChannelItem(
-      icon: Icons.sports_soccer_outlined,
-      title: 'Activities',
-      description: 'Sports & recreation',
-      color: const Color(0xFF4CAF50),
-    ),
-    ChannelItem(
-      icon: Icons.nightlife_outlined,
-      title: 'Nightlife',
-      description: 'Bars & clubs',
-      color: const Color(0xFFFF5722),
-    ),
-    ChannelItem(
-      icon: Icons.beach_access_outlined,
-      title: 'Beaches',
-      description: 'Coastal paradise',
-      color: const Color(0xFF00BCD4),
+      description: 'Relaxation and rejuvenation',
+      color: const Color(0xFF00897B),
+      subcategories: [
+        'Spa & Massage',
+        'Yoga Retreats',
+        'Wellness Centers',
+        'Hot Springs',
+        'Meditation Gardens',
+        'Fitness Centers',
+      ],
     ),
   ];
 
   @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-  }
-
-  @override
-  void dispose() {
-    _animationController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isLargeScreen = screenWidth > 1200;
-    final isMediumScreen = screenWidth > 800;
-    
-    int crossAxisCount = isLargeScreen ? 4 : (isMediumScreen ? 3 : 2);
-
     return Container(
-      padding: const EdgeInsets.all(24),
+      margin: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
       child: Column(
         children: [
-          Text(
-            'Explore Our Channels',
-            style: Theme.of(context).textTheme.displayMedium?.copyWith(
-              fontSize: 42,
+          ShaderMask(
+            shaderCallback: (bounds) => const LinearGradient(
+              colors: [Color(0xFF14FFEC), Colors.white],
+            ).createShader(bounds),
+            child: Text(
+              'Explore Our Channels',
+              style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                    fontSize: 42,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),
           Text(
-            'Everything you need for an unforgettable resort experience',
-            style: Theme.of(context).textTheme.bodyLarge,
+            'Browse through our carefully curated categories to find exactly what you\'re looking for',
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  fontSize: 16,
+                ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 48),
           LayoutBuilder(
             builder: (context, constraints) {
+              final isLargeScreen = constraints.maxWidth > 1200;
+              final isMediumScreen = constraints.maxWidth > 800;
+              
+              final crossAxisCount = isLargeScreen ? 3 : (isMediumScreen ? 2 : 1);
+              
               return GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: crossAxisCount,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  childAspectRatio: 1.0,
+                  childAspectRatio: 1.1,
+                  crossAxisSpacing: 20,
+                  mainAxisSpacing: 20,
                 ),
                 itemCount: _channels.length,
                 itemBuilder: (context, index) {
-                  return TweenAnimationBuilder<double>(
-                    duration: Duration(milliseconds: 500 + (index * 100)),
-                    tween: Tween(begin: 0.0, end: 1.0),
-                    builder: (context, value, child) {
-                      return Opacity(
-                        opacity: value,
-                        child: Transform.translate(
-                          offset: Offset(0, 50 * (1 - value)),
-                          child: child,
-                        ),
-                      );
-                    },
-                    child: _buildChannelCard(_channels[index], index),
-                  );
+                  return _buildChannelCard(_channels[index]);
                 },
               );
             },
@@ -145,148 +159,179 @@ class _ChannelShowcaseState extends State<ChannelShowcase>
     );
   }
 
-  Widget _buildChannelCard(ChannelItem channel, int index) {
-    final isHovered = _hoveredIndex == index;
-
-    return MouseRegion(
-      onEnter: (_) {
+  Widget _buildChannelCard(ChannelItem channel) {
+    final isExpanded = _expandedChannel == channel.title;
+    
+    return GestureDetector(
+      onTap: () {
         setState(() {
-          _hoveredIndex = index;
+          _expandedChannel = isExpanded ? null : channel.title;
         });
-        _animationController.forward();
       },
-      onExit: (_) {
-        setState(() {
-          _hoveredIndex = -1;
-        });
-        _animationController.reverse();
-      },
-      child: GestureDetector(
-        onTap: () => widget.onChannelTap(channel.title),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          transform: Matrix4.identity()
-            ..setTranslationRaw(0.0, isHovered ? -8.0 : 0.0, 0.0)
-            ..multiply(Matrix4.diagonal3Values(
-                isHovered ? 1.05 : 1.0,
-                isHovered ? 1.05 : 1.0,
-                1.0,
-              )),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                channel.color.withValues(alpha: isHovered ? 0.9 : 0.7),
-                channel.color.withValues(alpha: isHovered ? 0.7 : 0.5),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: channel.color.withValues(alpha: isHovered ? 0.5 : 0.3),
-                blurRadius: isHovered ? 30 : 15,
-                spreadRadius: isHovered ? 5 : 0,
-                offset: Offset(0, isHovered ? 15 : 8),
-              ),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              channel.color.withValues(alpha: 0.8),
+              channel.color.withValues(alpha: 0.5),
             ],
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: Stack(
-              children: [
-                // Decorative background pattern
-                Positioned.fill(
-                  child: Opacity(
-                    opacity: 0.1,
-                    child: CustomPaint(
-                      painter: PatternPainter(),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isExpanded 
+                ? const Color(0xFF14FFEC) 
+                : Colors.white.withValues(alpha: 0.2),
+            width: isExpanded ? 3 : 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: channel.color.withValues(alpha: isExpanded ? 0.5 : 0.3),
+              blurRadius: isExpanded ? 30 : 15,
+              spreadRadius: isExpanded ? 5 : 0,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Column(
+            children: [
+              // Header Section
+              Container(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    // Icon with background
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        channel.icon,
+                        size: 40,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Title
+                    Text(
+                      channel.title,
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    
+                    // Description
+                    Text(
+                      channel.description,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Dropdown indicator
+              Icon(
+                isExpanded 
+                    ? Icons.keyboard_arrow_up 
+                    : Icons.keyboard_arrow_down,
+                color: Colors.white,
+                size: 28,
+              ),
+              
+              // Expandable subcategories
+              if (isExpanded) ...[
+                const SizedBox(height: 8),
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(20),
+                        bottomRight: Radius.circular(20),
+                      ),
+                    ),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: channel.subcategories.map((subcategory) {
+                          return _buildSubcategoryChip(subcategory, channel);
+                        }).toList(),
+                      ),
                     ),
                   ),
                 ),
-                
-                // Content
+              ] else ...[
+                const Spacer(),
                 Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.3),
-                            width: 2,
-                          ),
-                        ),
-                        child: Icon(
-                          channel.icon,
-                          size: 48,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        channel.title,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        channel.description,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.white.withValues(alpha: 0.9),
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      AnimatedOpacity(
-                        opacity: isHovered ? 1.0 : 0.0,
-                        duration: const Duration(milliseconds: 300),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Explore',
-                                style: TextStyle(
-                                  color: channel.color,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Icon(
-                                Icons.arrow_forward,
-                                size: 14,
-                                color: channel.color,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Text(
+                    'Tap to explore',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white.withValues(alpha: 0.7),
+                      fontStyle: FontStyle.italic,
+                    ),
                   ),
                 ),
               ],
-            ),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubcategoryChip(String subcategory, ChannelItem channel) {
+    return InkWell(
+      onTap: () => widget.onChannelTap('${channel.title} - $subcategory'),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.3),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.arrow_forward_ios,
+              size: 10,
+              color: const Color(0xFF14FFEC),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              subcategory,
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -298,32 +343,13 @@ class ChannelItem {
   final String title;
   final String description;
   final Color color;
+  final List<String> subcategories;
 
   ChannelItem({
     required this.icon,
     required this.title,
     required this.description,
     required this.color,
+    required this.subcategories,
   });
-}
-
-class PatternPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.1)
-      ..strokeWidth = 1
-      ..style = PaintingStyle.stroke;
-
-    for (var i = 0; i < 10; i++) {
-      canvas.drawCircle(
-        Offset(size.width * 0.8, size.height * 0.2),
-        i * 20.0,
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
