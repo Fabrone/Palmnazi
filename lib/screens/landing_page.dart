@@ -36,7 +36,7 @@ class _LandingPageState extends State<LandingPage>
       name: 'Mombasa',
       tagline: 'The Coastal Paradise',
       description: 'Experience pristine beaches, rich Swahili culture, and world-class resorts along the Indian Ocean coastline.',
-      imagePath: 'assets/images/cities/mombasa.jpg',
+      imagePath: 'images/cities/mombasa.jpg',
       color: const Color(0xFF0D7377),
       highlights: ['Pristine Beaches', 'Water Sports', 'Cultural Heritage', 'Luxury Resorts'],
     ),
@@ -45,7 +45,7 @@ class _LandingPageState extends State<LandingPage>
       name: 'Malindi',
       tagline: 'Where History Meets the Sea',
       description: 'Discover ancient ruins, marine parks, and serene coastal beauty in this historic coastal town.',
-      imagePath: 'assets/images/cities/malindi.jpg',
+      imagePath: 'images/cities/malindi.jpg',
       color: const Color(0xFF2196F3),
       highlights: ['Marine Parks', 'Historic Sites', 'Beach Resorts', 'Water Activities'],
     ),
@@ -54,7 +54,7 @@ class _LandingPageState extends State<LandingPage>
       name: 'Diani Beach',
       tagline: 'Tropical Heaven on Earth',
       description: 'Indulge in powder-white sand beaches, crystal-clear waters, and luxury beachfront accommodations.',
-      imagePath: 'assets/images/cities/diani.jpg',
+      imagePath: 'images/cities/diani.jpg',
       color: const Color(0xFF00897B),
       highlights: ['White Sand Beaches', 'Diving & Snorkeling', 'Luxury Villas', 'Nightlife'],
     ),
@@ -375,7 +375,7 @@ class _LandingPageState extends State<LandingPage>
                     ),
                     child: Center(
                       child: Image.asset(
-                        'assets/images/logo.png',
+                        'images/logo.png',
                         width: 90,
                         height: 90,
                         errorBuilder: (context, error, stackTrace) {

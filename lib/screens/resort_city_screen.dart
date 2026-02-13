@@ -29,7 +29,7 @@ class _ResortCityScreenState extends State<ResortCityScreen>
       title: 'Accommodation',
       description: 'Premium stays and luxury lodging',
       color: const Color(0xFF0D7377),
-      imagePath: 'assets/images/channels/accommodation.jpg',
+      imagePath: 'images/channels/accommodation.jpg',
       subcategories: [
         'Luxury Hotels',
         'Beach Resorts',
@@ -45,7 +45,7 @@ class _ResortCityScreenState extends State<ResortCityScreen>
       title: 'Dining',
       description: 'Culinary experiences and local cuisine',
       color: const Color(0xFFE91E63),
-      imagePath: 'assets/images/channels/dining.jpg',
+      imagePath: 'images/channels/dining.jpg',
       subcategories: [
         'Fine Dining',
         'Local Cuisine',
@@ -61,7 +61,7 @@ class _ResortCityScreenState extends State<ResortCityScreen>
       title: 'Events',
       description: 'Festivals and cultural experiences',
       color: const Color(0xFFFF9800),
-      imagePath: 'assets/images/channels/events.jpg',
+      imagePath: 'images/channels/events.jpg',
       subcategories: [
         'Music Festivals',
         'Cultural Ceremonies',
@@ -77,7 +77,7 @@ class _ResortCityScreenState extends State<ResortCityScreen>
       title: 'Shopping',
       description: 'Markets and artisan crafts',
       color: const Color(0xFF9C27B0),
-      imagePath: 'assets/images/channels/shopping.jpg',
+      imagePath: 'images/channels/shopping.jpg',
       subcategories: [
         'Artisan Markets',
         'Shopping Malls',
@@ -93,7 +93,7 @@ class _ResortCityScreenState extends State<ResortCityScreen>
       title: 'Adventure',
       description: 'Nature and outdoor activities',
       color: const Color(0xFF2196F3),
-      imagePath: 'assets/images/channels/adventure.jpg',
+      imagePath: 'images/channels/adventure.jpg',
       subcategories: [
         'Safari Tours',
         'Hiking Trails',
@@ -109,7 +109,7 @@ class _ResortCityScreenState extends State<ResortCityScreen>
       title: 'Wellness',
       description: 'Relaxation and rejuvenation',
       color: const Color(0xFF00897B),
-      imagePath: 'assets/images/channels/wellness.jpg',
+      imagePath: 'images/channels/wellness.jpg',
       subcategories: [
         'Spa & Massage',
         'Yoga Retreats',
