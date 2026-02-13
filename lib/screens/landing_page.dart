@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
+import 'package:palmnazi/screens/resort_city_screen.dart';
 import 'package:palmnazi/widgets/animated_background.dart';
-import 'package:palmnazi/widgets/channel_showcase.dart';
-import 'package:palmnazi/widgets/feature_carousel.dart';
 import 'package:palmnazi/widgets/stats_counter.dart';
+import 'package:palmnazi/models/models.dart';
 import 'dart:async';
 
 class LandingPage extends StatefulWidget {
@@ -29,6 +29,37 @@ class _LandingPageState extends State<LandingPage>
   double _scrollOffset = 0;
   bool _showMainContent = false;
 
+  // Resort Cities Data - This will come from backend
+  final List<ResortCityItem> _resortCities = [
+    ResortCityItem(
+      id: '1',
+      name: 'Mombasa',
+      tagline: 'The Coastal Paradise',
+      description: 'Experience pristine beaches, rich Swahili culture, and world-class resorts along the Indian Ocean coastline.',
+      imagePath: 'assets/images/cities/mombasa.jpg',
+      color: const Color(0xFF0D7377),
+      highlights: ['Pristine Beaches', 'Water Sports', 'Cultural Heritage', 'Luxury Resorts'],
+    ),
+    ResortCityItem(
+      id: '2',
+      name: 'Malindi',
+      tagline: 'Where History Meets the Sea',
+      description: 'Discover ancient ruins, marine parks, and serene coastal beauty in this historic coastal town.',
+      imagePath: 'assets/images/cities/malindi.jpg',
+      color: const Color(0xFF2196F3),
+      highlights: ['Marine Parks', 'Historic Sites', 'Beach Resorts', 'Water Activities'],
+    ),
+    ResortCityItem(
+      id: '3',
+      name: 'Diani Beach',
+      tagline: 'Tropical Heaven on Earth',
+      description: 'Indulge in powder-white sand beaches, crystal-clear waters, and luxury beachfront accommodations.',
+      imagePath: 'assets/images/cities/diani.jpg',
+      color: const Color(0xFF00897B),
+      highlights: ['White Sand Beaches', 'Diving & Snorkeling', 'Luxury Villas', 'Nightlife'],
+    ),
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -46,12 +77,12 @@ class _LandingPageState extends State<LandingPage>
     );
 
     _logoController = AnimationController(
-      duration: const Duration(milliseconds: 4000), // Extended to 4 seconds
+      duration: const Duration(milliseconds: 4000),
       vsync: this,
     );
 
     _textController = AnimationController(
-      duration: const Duration(milliseconds: 2500), // Extended to 2.5 seconds
+      duration: const Duration(milliseconds: 2500),
       vsync: this,
     );
     
@@ -119,19 +150,15 @@ class _LandingPageState extends State<LandingPage>
       ),
     ]).animate(_textController);
     
-    // Start intro animation sequence
     _startIntroAnimation();
   }
 
   void _startIntroAnimation() async {
-    // Start logo animation
     _logoController.forward();
     
-    // Start text animation with delay
     await Future.delayed(const Duration(milliseconds: 1000));
     _textController.forward();
     
-    // Wait for animations to complete (longer display time)
     await Future.delayed(const Duration(milliseconds: 5000));
     
     if (mounted) {
@@ -141,16 +168,14 @@ class _LandingPageState extends State<LandingPage>
       _fadeController.forward();
       _slideController.forward();
       
-      // Auto-scroll to carousel with proper offset
-      Timer(const Duration(milliseconds: 800), _scrollToCarousel);
+      Timer(const Duration(milliseconds: 800), _scrollToCities);
     }
   }
 
-  void _scrollToCarousel() {
+  void _scrollToCities() {
     if (_scrollController.hasClients) {
-      // Scroll to show "What We Offer" title properly below appbar
       _scrollController.animateTo(
-        10.0, // Minimal scroll to position title just below appbar
+        10.0,
         duration: const Duration(milliseconds: 1200),
         curve: Curves.easeInOutCubic,
       );
@@ -163,112 +188,11 @@ class _LandingPageState extends State<LandingPage>
     });
   }
 
-  void _handleInteraction(String action) {
-    _showAuthDialog(action);
-  }
-
-  void _showAuthDialog(String action) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 400),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color(0xFF1E3A5F),
-                Color(0xFF0D7377),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF0D7377).withValues(alpha: 0.4),
-                blurRadius: 30,
-                spreadRadius: 5,
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(32.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.lock_outline,
-                  size: 64,
-                  color: Colors.white,
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  'Sign In Required',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'To $action, please sign in or create an account to unlock the full Palmnazi experience.',
-                  style: Theme.of(context).textTheme.bodyLarge,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 32),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const AuthScreen(isLogin: false),
-                            ),
-                          );
-                        },
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: Colors.white, width: 2),
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                        ),
-                        child: const Text('Sign Up'),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const AuthScreen(isLogin: true),
-                            ),
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF14FFEC),
-                          foregroundColor: const Color(0xFF1E3A5F),
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                        ),
-                        child: const Text('Sign In'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
+  void _navigateToCity(ResortCityItem city) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ResortCityScreen(city: city),
       ),
     );
   }
@@ -286,342 +210,240 @@ class _LandingPageState extends State<LandingPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: _showMainContent ? _buildAppBar() : null,
       body: Stack(
         children: [
-          // Animated Background (always visible)
           const AnimatedBackground(),
           
-          // Intro Animation or Main Content
           if (!_showMainContent)
-            _buildIntroAnimation()
+            _buildIntroScreen()
           else
             _buildMainContent(),
+          
+          if (_showMainContent)
+            _buildAppBar(),
         ],
       ),
     );
   }
 
-  PreferredSizeWidget _buildAppBar() {
-    final appBarOpacity = (_scrollOffset / 100).clamp(0.0, 1.0);
+  Widget _buildAppBar() {
+    final opacity = (_scrollOffset / 100).clamp(0.0, 1.0);
     
-    return AppBar(
-      backgroundColor: Color.lerp(
-        Colors.black.withValues(alpha: 0.3),
-        Colors.black.withValues(alpha: 0.9),
-        appBarOpacity,
-      ),
-      elevation: appBarOpacity * 8,
-      title: Row(
-        children: [
-          // Logo
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: const LinearGradient(
-                colors: [Color(0xFF14FFEC), Color(0xFF0D7377)],
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF14FFEC).withValues(alpha: 0.4),
-                  blurRadius: 10,
-                  spreadRadius: 2,
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black.withValues(alpha: 0.7 * opacity),
+              Colors.transparent,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF14FFEC), Color(0xFF0D7377)],
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.landscape,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'PALMNAZI',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.95),
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const AuthScreen(isLogin: true),
+                          ),
+                        );
+                      },
+                      child: const Text(
+                        'Sign In',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const AuthScreen(isLogin: false),
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF14FFEC),
+                        foregroundColor: const Color(0xFF1E3A5F),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 10,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                      child: const Text(
+                        'Get Started',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-            child: Center(
-              child: ClipOval(
-                child: Image.asset(
-                  'assets/images/logo.png',
-                  width: 28,
-                  height: 28,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Icon(
-                      Icons.landscape,
-                      size: 24,
-                      color: Colors.white,
-                    );
-                  },
-                ),
-              ),
-            ),
           ),
-          const SizedBox(width: 12),
-          const Text(
-            'PALMNAZI',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 2,
-              color: Colors.white,
-            ),
-          ),
-        ],
+        ),
       ),
-      actions: [
-        // Navigation buttons
-        TextButton.icon(
-          onPressed: () => _scrollToSection(0),
-          icon: const Icon(Icons.home_outlined, color: Colors.white, size: 20),
-          label: const Text(
-            'Home',
-            style: TextStyle(color: Colors.white),
-          ),
-        ),
-        TextButton.icon(
-          onPressed: () => _scrollToSection(1),
-          icon: const Icon(Icons.explore_outlined, color: Colors.white, size: 20),
-          label: const Text(
-            'Explore',
-            style: TextStyle(color: Colors.white),
-          ),
-        ),
-        // Channels Dropdown
-        PopupMenuButton<String>(
-          icon: const Icon(Icons.apps, color: Colors.white),
-          tooltip: 'Channels',
-          onSelected: (String channel) => _handleInteraction('explore $channel'),
-          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-            const PopupMenuItem<String>(
-              value: 'Accommodation',
-              child: ListTile(
-                leading: Icon(Icons.king_bed_outlined, color: Color(0xFF0D7377)),
-                title: Text('Accommodation'),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-            const PopupMenuItem<String>(
-              value: 'Dining',
-              child: ListTile(
-                leading: Icon(Icons.restaurant_menu, color: Color(0xFFE91E63)),
-                title: Text('Dining'),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-            const PopupMenuItem<String>(
-              value: 'Events',
-              child: ListTile(
-                leading: Icon(Icons.celebration, color: Color(0xFFFF9800)),
-                title: Text('Events'),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-            const PopupMenuItem<String>(
-              value: 'Shopping',
-              child: ListTile(
-                leading: Icon(Icons.shopping_bag_outlined, color: Color(0xFF9C27B0)),
-                title: Text('Shopping'),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-            const PopupMenuItem<String>(
-              value: 'Adventure',
-              child: ListTile(
-                leading: Icon(Icons.terrain, color: Color(0xFF2196F3)),
-                title: Text('Adventure'),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-            const PopupMenuItem<String>(
-              value: 'Wellness',
-              child: ListTile(
-                leading: Icon(Icons.spa_outlined, color: Color(0xFF00897B)),
-                title: Text('Wellness'),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-          ],
-        ),
-        // Auth buttons
-        Padding(
-          padding: const EdgeInsets.only(left: 8, right: 8),
-          child: OutlinedButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AuthScreen(isLogin: true),
-                ),
-              );
-            },
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.white,
-              side: const BorderSide(color: Colors.white, width: 1.5),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(25),
-              ),
-            ),
-            child: const Text('Sign In'),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(right: 16),
-          child: ElevatedButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AuthScreen(isLogin: false),
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF14FFEC),
-              foregroundColor: const Color(0xFF1E3A5F),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(25),
-              ),
-              elevation: 4,
-            ),
-            child: const Text(
-              'Get Started',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-        ),
-      ],
     );
   }
 
-  void _scrollToSection(int section) {
-    double offset = 0;
-    switch (section) {
-      case 0:
-        offset = 0;
-        break;
-      case 1:
-        offset = 10.0;
-        break;
-    }
-    
-    _scrollController.animateTo(
-      offset,
-      duration: const Duration(milliseconds: 800),
-      curve: Curves.easeInOutCubic,
-    );
-  }
-
-  Widget _buildIntroAnimation() {
+  Widget _buildIntroScreen() {
     return Center(
-      child: AnimatedBuilder(
-        animation: Listenable.merge([_logoController, _textController]),
-        builder: (context, child) {
-          return Transform.scale(
-            scale: _logoScaleAnimation.value,
-            child: Transform.translate(
-              offset: Offset(
-                0,
-                _logoSlideAnimation.value.dy * MediaQuery.of(context).size.height,
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Logo
-                  Container(
-                    width: 150,
-                    height: 150,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          AnimatedBuilder(
+            animation: Listenable.merge([_logoScaleAnimation, _logoSlideAnimation]),
+            builder: (context, child) {
+              return Transform.translate(
+                offset: Offset(
+                  0,
+                  _logoSlideAnimation.value.dy * MediaQuery.of(context).size.height,
+                ),
+                child: Transform.scale(
+                  scale: _logoScaleAnimation.value,
+                  child: Container(
+                    width: 140,
+                    height: 140,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: const LinearGradient(
-                        colors: [Color(0xFF14FFEC), Color(0xFF0D7377)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Color(0xFF14FFEC),
+                          Color(0xFF0D7377),
+                        ],
                       ),
                       boxShadow: [
                         BoxShadow(
                           color: const Color(0xFF14FFEC).withValues(alpha: 0.6),
-                          blurRadius: 60,
-                          spreadRadius: 20,
+                          blurRadius: 50,
+                          spreadRadius: 15,
                         ),
                       ],
                     ),
                     child: Center(
-                      child: ClipOval(
-                        child: Image.asset(
-                          'assets/images/logo.png',
-                          width: 100,
-                          height: 100,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return const Icon(
-                              Icons.landscape,
-                              size: 80,
-                              color: Colors.white,
-                            );
-                          },
-                        ),
+                      child: Image.asset(
+                        'assets/images/logo.png',
+                        width: 90,
+                        height: 90,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(
+                            Icons.landscape,
+                            size: 70,
+                            color: Colors.white,
+                          );
+                        },
                       ),
                     ),
                   ),
-                  const SizedBox(height: 40),
-                  
-                  // App Name
-                  Opacity(
-                    opacity: _textFadeAnimation.value,
-                    child: ShaderMask(
-                      shaderCallback: (bounds) => const LinearGradient(
-                        colors: [Color(0xFF14FFEC), Colors.white, Color(0xFF14FFEC)],
-                      ).createShader(bounds),
-                      child: const Text(
-                        'PALMNAZI',
-                        style: TextStyle(
-                          fontSize: 64,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 6,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  
-                  // Subtitle
-                  Opacity(
-                    opacity: _textFadeAnimation.value,
-                    child: const Text(
-                      'RESORT CITIES',
-                      style: TextStyle(
-                        fontSize: 20,
-                        letterSpacing: 10,
-                        fontWeight: FontWeight.w300,
-                        color: Colors.white70,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 30),
-                  
-                  // Tagline
-                  Opacity(
-                    opacity: _textFadeAnimation.value,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 48),
-                      child: Text(
-                        'Discover Kenya\'s Most Exquisite Resort Destinations',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w400,
-                          color: const Color(0xFF14FFEC).withValues(alpha: 0.9),
-                          letterSpacing: 0.5,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 40),
+          
+          Opacity(
+            opacity: _textFadeAnimation.value,
+            child: ShaderMask(
+              shaderCallback: (bounds) => const LinearGradient(
+                colors: [Color(0xFF14FFEC), Colors.white, Color(0xFF14FFEC)],
+              ).createShader(bounds),
+              child: const Text(
+                'PALMNAZI',
+                style: TextStyle(
+                  fontSize: 64,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 6,
+                  color: Colors.white,
+                ),
               ),
             ),
-          );
-        },
+          ),
+          const SizedBox(height: 12),
+          
+          Opacity(
+            opacity: _textFadeAnimation.value,
+            child: const Text(
+              'RESORT CITIES',
+              style: TextStyle(
+                fontSize: 20,
+                letterSpacing: 10,
+                fontWeight: FontWeight.w300,
+                color: Colors.white70,
+              ),
+            ),
+          ),
+          const SizedBox(height: 30),
+          
+          Opacity(
+            opacity: _textFadeAnimation.value,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 48),
+              child: Text(
+                'Discover Kenya\'s Most Exquisite Resort Destinations',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w400,
+                  color: const Color(0xFF14FFEC).withValues(alpha: 0.9),
+                  letterSpacing: 0.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -630,31 +452,54 @@ class _LandingPageState extends State<LandingPage>
     return CustomScrollView(
       controller: _scrollController,
       slivers: [
-        // Small header spacer - adjusted for appbar clearance
         SliverToBoxAdapter(
           child: SizedBox(height: kToolbarHeight + 10),
         ),
         
-        // Feature Carousel (What We Offer)
+        // Resort Cities Section Header
         SliverToBoxAdapter(
           child: FadeTransition(
             opacity: _fadeAnimation,
             child: SlideTransition(
               position: _slideAnimation,
-              child: FeatureCarousel(
-                onFeatureTap: (feature) => _handleInteraction('access $feature'),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
+                child: Column(
+                  children: [
+                    ShaderMask(
+                      shaderCallback: (bounds) => const LinearGradient(
+                        colors: [Color(0xFF14FFEC), Colors.white],
+                      ).createShader(bounds),
+                      child: Text(
+                        'Choose Your Destination',
+                        style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                          fontSize: 42,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Select a resort city to explore its unique channels and experiences',
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontSize: 16,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
         
-        // Channel Showcase
+        // Resort Cities Grid
         SliverToBoxAdapter(
           child: FadeTransition(
             opacity: _fadeAnimation,
-            child: ChannelShowcase(
-              onChannelTap: (channel) => _handleInteraction('explore $channel'),
-            ),
+            child: _buildResortCitiesGrid(),
           ),
         ),
         
@@ -676,6 +521,221 @@ class _LandingPageState extends State<LandingPage>
           child: _buildFooter(),
         ),
       ],
+    );
+  }
+
+  Widget _buildResortCitiesGrid() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 24),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isLargeScreen = constraints.maxWidth > 1200;
+          final isMediumScreen = constraints.maxWidth > 800;
+          
+          final crossAxisCount = isLargeScreen ? 3 : (isMediumScreen ? 2 : 1);
+          
+          return GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              childAspectRatio: 0.85,
+              crossAxisSpacing: 24,
+              mainAxisSpacing: 24,
+            ),
+            itemCount: _resortCities.length,
+            itemBuilder: (context, index) {
+              return _buildResortCityCard(_resortCities[index]);
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildResortCityCard(ResortCityItem city) {
+    return GestureDetector(
+      onTap: () => _navigateToCity(city),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: city.color.withValues(alpha: 0.4),
+              blurRadius: 20,
+              spreadRadius: 2,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Stack(
+            children: [
+              // Background Image
+              Positioned.fill(
+                child: Image.asset(
+                  city.imagePath,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            city.color,
+                            city.color.withValues(alpha: 0.7),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              
+              // Gradient Overlay
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.2),
+                        Colors.black.withValues(alpha: 0.8),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              
+              // Content
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // City Name
+                      Text(
+                        city.name,
+                        style: const TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      
+                      // Tagline
+                      Text(
+                        city.tagline,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: const Color(0xFF14FFEC).withValues(alpha: 0.9),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      
+                      // Description
+                      Text(
+                        city.description,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.white.withValues(alpha: 0.85),
+                          height: 1.4,
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 16),
+                      
+                      // Highlights
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: city.highlights.take(3).map((highlight) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Text(
+                              highlight,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 20),
+                      
+                      // Explore Button
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              const Color(0xFF14FFEC),
+                              city.color,
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF14FFEC).withValues(alpha: 0.5),
+                              blurRadius: 15,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'Explore City',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Icon(
+                              Icons.arrow_forward,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -710,7 +770,7 @@ class _LandingPageState extends State<LandingPage>
           ),
           const SizedBox(height: 16),
           Text(
-            'Join thousands of travelers discovering the most beautiful resort cities in Kenya and beyond.',
+            'Join thousands of travelers discovering the most beautiful resort cities in Kenya.',
             style: Theme.of(context).textTheme.bodyLarge,
             textAlign: TextAlign.center,
           ),
@@ -784,7 +844,7 @@ class _LandingPageState extends State<LandingPage>
 
   Widget _buildFooterLink(String text) {
     return TextButton(
-      onPressed: () => _handleInteraction('view $text'),
+      onPressed: () {},
       child: Text(
         text,
         style: const TextStyle(
