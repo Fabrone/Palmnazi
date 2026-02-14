@@ -21,6 +21,18 @@ class ResortCityItem {
     required this.highlights,
   });
 
+  /// Get the correct asset path for the image
+  String get assetPath {
+    // Ensure the path starts with 'assets/'
+    if (imagePath.startsWith('assets/')) {
+      return imagePath;
+    } else if (imagePath.startsWith('images/')) {
+      return 'assets/$imagePath';
+    } else {
+      return 'assets/images/$imagePath';
+    }
+  }
+
   /// Factory constructor for creating from JSON
   factory ResortCityItem.fromJson(Map<String, dynamic> json) {
     return ResortCityItem(
@@ -68,6 +80,18 @@ class ChannelItem {
     required this.imagePath,
     required this.subcategories,
   });
+
+  /// Get the correct asset path for the image
+  String get assetPath {
+    // Ensure the path starts with 'assets/'
+    if (imagePath.startsWith('assets/')) {
+      return imagePath;
+    } else if (imagePath.startsWith('images/')) {
+      return 'assets/$imagePath';
+    } else {
+      return 'assets/images/$imagePath';
+    }
+  }
 
   /// Factory constructor for creating from JSON
   factory ChannelItem.fromJson(Map<String, dynamic> json) {
@@ -159,6 +183,18 @@ class PlaceItem {
     required this.priceRange,
     required this.isOpen,
   });
+
+  /// Get the correct asset path for the image
+  String get assetPath {
+    // Ensure the path starts with 'assets/'
+    if (imagePath.startsWith('assets/')) {
+      return imagePath;
+    } else if (imagePath.startsWith('images/')) {
+      return 'assets/$imagePath';
+    } else {
+      return 'assets/images/$imagePath';
+    }
+  }
 
   /// Factory constructor for creating from JSON
   factory PlaceItem.fromJson(Map<String, dynamic> json) {

@@ -5,12 +5,13 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.10.8
+  sdk: '>=3.0.0 <4.0.0'  # FIXED: Was "^3.10.8" which is invalid syntax
 
 dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
+  firebase_core: ^4.4.0
 
 dev_dependencies:
   flutter_test:
@@ -23,6 +24,9 @@ flutter:
   
   assets:
     - assets/images/
+    - assets/images/channels/
+    - assets/images/cities/
+    - assets/images/places/
 
 flutter_launcher_icons:
   android: true

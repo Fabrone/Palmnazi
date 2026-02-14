@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "33305405962",
+    "project_id": "palmnazi-5259e",
+    "storage_bucket": "palmnazi-5259e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:33305405962:android:dbdef18d301931cce44df3",
+        "android_client_info": {
+          "package_name": "com.example.palmnazi"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB5dOjXYINqljIqxbzpEkI-u2aCPS3xO9Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

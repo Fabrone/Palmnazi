@@ -4,6 +4,7 @@ import 'package:palmnazi/screens/resort_city_screen.dart';
 import 'package:palmnazi/widgets/animated_background.dart';
 import 'package:palmnazi/widgets/stats_counter.dart';
 import 'package:palmnazi/models/models.dart';
+import 'package:palmnazi/widgets/robust_asset_image.dart';
 import 'dart:async';
 
 class LandingPage extends StatefulWidget {
@@ -29,14 +30,13 @@ class _LandingPageState extends State<LandingPage>
   double _scrollOffset = 0;
   bool _showMainContent = false;
 
-  // Resort Cities Data - This will come from backend
   final List<ResortCityItem> _resortCities = [
     ResortCityItem(
       id: '1',
       name: 'Mombasa',
       tagline: 'The Coastal Paradise',
       description: 'Experience pristine beaches, rich Swahili culture, and world-class resorts along the Indian Ocean coastline.',
-      imagePath: 'images/cities/mombasa.jpg',
+      imagePath: 'cities/mombasa.jpg',
       color: const Color(0xFF0D7377),
       highlights: ['Pristine Beaches', 'Water Sports', 'Cultural Heritage', 'Luxury Resorts'],
     ),
@@ -45,7 +45,7 @@ class _LandingPageState extends State<LandingPage>
       name: 'Malindi',
       tagline: 'Where History Meets the Sea',
       description: 'Discover ancient ruins, marine parks, and serene coastal beauty in this historic coastal town.',
-      imagePath: 'images/cities/malindi.jpg',
+      imagePath: 'cities/malindi.jpg',
       color: const Color(0xFF2196F3),
       highlights: ['Marine Parks', 'Historic Sites', 'Beach Resorts', 'Water Activities'],
     ),
@@ -54,7 +54,7 @@ class _LandingPageState extends State<LandingPage>
       name: 'Diani Beach',
       tagline: 'Tropical Heaven on Earth',
       description: 'Indulge in powder-white sand beaches, crystal-clear waters, and luxury beachfront accommodations.',
-      imagePath: 'images/cities/diani.jpg',
+      imagePath: 'cities/diani.jpg',
       color: const Color(0xFF00897B),
       highlights: ['White Sand Beaches', 'Diving & Snorkeling', 'Luxury Villas', 'Nightlife'],
     ),
@@ -374,17 +374,13 @@ class _LandingPageState extends State<LandingPage>
                       ],
                     ),
                     child: Center(
-                      child: Image.asset(
-                        'images/logo.png',
+                      child: RobustAssetImage(
+                        imagePath: 'logo.png',
                         width: 90,
                         height: 90,
-                        errorBuilder: (context, error, stackTrace) {
-                          return const Icon(
-                            Icons.landscape,
-                            size: 70,
-                            color: Colors.white,
-                          );
-                        },
+                        fit: BoxFit.contain,
+                        fallbackIcon: Icons.landscape,
+                        fallbackColor: const Color(0xFF14FFEC),
                       ),
                     ),
                   ),
@@ -456,7 +452,6 @@ class _LandingPageState extends State<LandingPage>
           child: SizedBox(height: kToolbarHeight + 10),
         ),
         
-        // Resort Cities Section Header
         SliverToBoxAdapter(
           child: FadeTransition(
             opacity: _fadeAnimation,
@@ -495,7 +490,6 @@ class _LandingPageState extends State<LandingPage>
           ),
         ),
         
-        // Resort Cities Grid
         SliverToBoxAdapter(
           child: FadeTransition(
             opacity: _fadeAnimation,
@@ -503,7 +497,6 @@ class _LandingPageState extends State<LandingPage>
           ),
         ),
         
-        // Stats Counter
         SliverToBoxAdapter(
           child: FadeTransition(
             opacity: _fadeAnimation,
@@ -511,12 +504,10 @@ class _LandingPageState extends State<LandingPage>
           ),
         ),
 
-        // Call to Action Section
         SliverToBoxAdapter(
           child: _buildCallToAction(),
         ),
         
-        // Footer
         SliverToBoxAdapter(
           child: _buildFooter(),
         ),
@@ -572,29 +563,15 @@ class _LandingPageState extends State<LandingPage>
           borderRadius: BorderRadius.circular(24),
           child: Stack(
             children: [
-              // Background Image
               Positioned.fill(
-                child: Image.asset(
-                  city.imagePath,
+                child: RobustAssetImage(
+                  imagePath: city.assetPath,
                   fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            city.color,
-                            city.color.withValues(alpha: 0.7),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
+                  fallbackColor: city.color,
+                  fallbackIcon: Icons.location_city,
                 ),
               ),
               
-              // Gradient Overlay
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
@@ -610,7 +587,6 @@ class _LandingPageState extends State<LandingPage>
                 ),
               ),
               
-              // Content
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -620,7 +596,6 @@ class _LandingPageState extends State<LandingPage>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // City Name
                       Text(
                         city.name,
                         style: const TextStyle(
@@ -632,7 +607,6 @@ class _LandingPageState extends State<LandingPage>
                       ),
                       const SizedBox(height: 8),
                       
-                      // Tagline
                       Text(
                         city.tagline,
                         style: TextStyle(
@@ -643,7 +617,6 @@ class _LandingPageState extends State<LandingPage>
                       ),
                       const SizedBox(height: 12),
                       
-                      // Description
                       Text(
                         city.description,
                         style: TextStyle(
@@ -656,7 +629,6 @@ class _LandingPageState extends State<LandingPage>
                       ),
                       const SizedBox(height: 16),
                       
-                      // Highlights
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
@@ -686,7 +658,6 @@ class _LandingPageState extends State<LandingPage>
                       ),
                       const SizedBox(height: 20),
                       
-                      // Explore Button
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 24,

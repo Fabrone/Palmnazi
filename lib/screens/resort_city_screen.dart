@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:palmnazi/screens/channel_screen.dart';
 import 'package:palmnazi/widgets/animated_background.dart';
+import 'package:palmnazi/widgets/robust_asset_image.dart';
 import 'package:palmnazi/models/models.dart';
 
 class ResortCityScreen extends StatefulWidget {
@@ -29,7 +30,7 @@ class _ResortCityScreenState extends State<ResortCityScreen>
       title: 'Accommodation',
       description: 'Premium stays and luxury lodging',
       color: const Color(0xFF0D7377),
-      imagePath: 'images/channels/accommodation.jpg',
+      imagePath: 'channels/accommodation.jpg',
       subcategories: [
         'Luxury Hotels',
         'Beach Resorts',
@@ -45,7 +46,7 @@ class _ResortCityScreenState extends State<ResortCityScreen>
       title: 'Dining',
       description: 'Culinary experiences and local cuisine',
       color: const Color(0xFFE91E63),
-      imagePath: 'images/channels/dining.jpg',
+      imagePath: 'channels/dining.jpg',
       subcategories: [
         'Fine Dining',
         'Local Cuisine',
@@ -61,7 +62,7 @@ class _ResortCityScreenState extends State<ResortCityScreen>
       title: 'Events',
       description: 'Festivals and cultural experiences',
       color: const Color(0xFFFF9800),
-      imagePath: 'images/channels/events.jpg',
+      imagePath: 'channels/events.jpg',
       subcategories: [
         'Music Festivals',
         'Cultural Ceremonies',
@@ -77,7 +78,7 @@ class _ResortCityScreenState extends State<ResortCityScreen>
       title: 'Shopping',
       description: 'Markets and artisan crafts',
       color: const Color(0xFF9C27B0),
-      imagePath: 'images/channels/shopping.jpg',
+      imagePath: 'channels/shopping.jpg',
       subcategories: [
         'Artisan Markets',
         'Shopping Malls',
@@ -93,7 +94,7 @@ class _ResortCityScreenState extends State<ResortCityScreen>
       title: 'Adventure',
       description: 'Nature and outdoor activities',
       color: const Color(0xFF2196F3),
-      imagePath: 'images/channels/adventure.jpg',
+      imagePath: 'channels/adventure.jpg',
       subcategories: [
         'Safari Tours',
         'Hiking Trails',
@@ -109,7 +110,7 @@ class _ResortCityScreenState extends State<ResortCityScreen>
       title: 'Wellness',
       description: 'Relaxation and rejuvenation',
       color: const Color(0xFF00897B),
-      imagePath: 'images/channels/wellness.jpg',
+      imagePath: 'channels/wellness.jpg',
       subcategories: [
         'Spa & Massage',
         'Yoga Retreats',
@@ -193,23 +194,11 @@ class _ResortCityScreenState extends State<ResortCityScreen>
                   background: Stack(
                     fit: StackFit.expand,
                     children: [
-                      Image.asset(
-                        widget.city.imagePath,
+                      RobustAssetImage(
+                        imagePath: widget.city.assetPath,
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  widget.city.color,
-                                  widget.city.color.withValues(alpha: 0.7),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
+                        fallbackColor: widget.city.color,
+                        fallbackIcon: Icons.location_city,
                       ),
                       Container(
                         decoration: BoxDecoration(
@@ -362,25 +351,13 @@ class _ResortCityScreenState extends State<ResortCityScreen>
           borderRadius: BorderRadius.circular(20),
           child: Stack(
             children: [
-              // Background Image or Color
+              // Background Image using RobustAssetImage
               Positioned.fill(
-                child: Image.asset(
-                  channel.imagePath,
+                child: RobustAssetImage(
+                  imagePath: channel.assetPath,
                   fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            channel.color.withValues(alpha: 0.8),
-                            channel.color.withValues(alpha: 0.5),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
+                  fallbackColor: channel.color,
+                  fallbackIcon: channel.icon,
                 ),
               ),
               

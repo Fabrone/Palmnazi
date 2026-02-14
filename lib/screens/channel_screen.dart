@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:palmnazi/screens/place_details_screen.dart';
 import 'package:palmnazi/widgets/animated_background.dart';
+import 'package:palmnazi/widgets/robust_asset_image.dart';
 import 'package:palmnazi/models/models.dart';
 
 class ChannelScreen extends StatefulWidget {
@@ -34,7 +35,7 @@ class _ChannelScreenState extends State<ChannelScreen>
       rating: 4.8,
       reviewCount: 342,
       description: 'Experience ultimate luxury at this 5-star beachfront resort with world-class amenities and breathtaking ocean views.',
-      imagePath: 'images/places/serena_beach.jpg',
+      imagePath: 'places/serena_beach.jpg',
       address: 'Shanzu Beach, North Coast',
       phone: '+254 712 345 678',
       website: 'www.serenabeach.com',
@@ -49,7 +50,7 @@ class _ChannelScreenState extends State<ChannelScreen>
       rating: 4.6,
       reviewCount: 289,
       description: 'All-inclusive beach resort with exciting activities, entertainment, and family-friendly facilities.',
-      imagePath: 'images/places/voyager.jpg',
+      imagePath: 'places/voyager.jpg',
       address: 'Nyali Beach Road',
       phone: '+254 712 345 679',
       website: 'www.voyagerbeach.com',
@@ -64,7 +65,7 @@ class _ChannelScreenState extends State<ChannelScreen>
       rating: 4.5,
       reviewCount: 215,
       description: 'Comfortable beachfront hotel with excellent service and stunning sunset views.',
-      imagePath: 'images/places/bamburi.jpg',
+      imagePath: 'places/bamburi.jpg',
       address: 'Bamburi Beach',
       phone: '+254 712 345 680',
       website: 'www.bamburibeach.com',
@@ -155,23 +156,11 @@ class _ChannelScreenState extends State<ChannelScreen>
                   background: Stack(
                     fit: StackFit.expand,
                     children: [
-                      Image.asset(
-                        widget.channel.imagePath,
+                      RobustAssetImage(
+                        imagePath: widget.channel.assetPath,
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  widget.channel.color,
-                                  widget.channel.color.withValues(alpha: 0.7),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
+                        fallbackColor: widget.channel.color,
+                        fallbackIcon: widget.channel.icon,
                       ),
                       Container(
                         decoration: BoxDecoration(
@@ -395,32 +384,17 @@ class _ChannelScreenState extends State<ChannelScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Image
+                // Image using RobustAssetImage
                 Stack(
                   children: [
                     SizedBox(
                       height: 200,
                       width: double.infinity,
-                      child: Image.asset(
-                        place.imagePath,
+                      child: RobustAssetImage(
+                        imagePath: place.assetPath,
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  widget.channel.color,
-                                  widget.channel.color.withValues(alpha: 0.7),
-                                ],
-                              ),
-                            ),
-                            child: Icon(
-                              widget.channel.icon,
-                              size: 80,
-                              color: Colors.white.withValues(alpha: 0.3),
-                            ),
-                          );
-                        },
+                        fallbackColor: widget.channel.color,
+                        fallbackIcon: widget.channel.icon,
                       ),
                     ),
                     
