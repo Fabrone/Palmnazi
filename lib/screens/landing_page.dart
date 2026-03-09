@@ -20,12 +20,13 @@ class _LandingPageState extends State<LandingPage>
   late AnimationController _fadeController;
   late AnimationController _slideController;
   late AnimationController _logoController;
-  late AnimationController _textController;
+  late AnimationController _nameController;
+  late AnimationController _logoExitController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _logoScaleAnimation;
-  late Animation<Offset> _logoSlideAnimation;
-  late Animation<double> _textFadeAnimation;
+  late Animation<double> _nameFadeAnimation;
+  late Animation<Offset> _logoExitAnimation;
   
   double _scrollOffset = 0;
   bool _showMainContent = false;
@@ -67,22 +68,30 @@ class _LandingPageState extends State<LandingPage>
       ..addListener(_onScroll);
     
     _fadeController = AnimationController(
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 500),
       vsync: this,
     );
     
     _slideController = AnimationController(
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 400),
       vsync: this,
     );
 
+    // Logo entrance — scale up then settle. No slide: exit is separate.
     _logoController = AnimationController(
-      duration: const Duration(milliseconds: 4000),
+      duration: const Duration(milliseconds: 2800),
       vsync: this,
     );
 
-    _textController = AnimationController(
-      duration: const Duration(milliseconds: 2500),
+    // Fades in "PALMNAZI" + taglines after the 3-second logo period.
+    _nameController = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
+
+    // Slides the logo off screen after the 2-second name+logo window.
+    _logoExitController = AnimationController(
+      duration: const Duration(milliseconds: 600),
       vsync: this,
     );
     
@@ -97,6 +106,8 @@ class _LandingPageState extends State<LandingPage>
       CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
     );
 
+    // Scale up 0.5→1.1 (easeOut), then settle to 1.0 (easeInOut).
+    // No shrink — the logo holds full size until _logoExitController fires.
     _logoScaleAnimation = TweenSequence<double>([
       TweenSequenceItem(
         tween: Tween<double>(begin: 0.5, end: 1.1).chain(
@@ -105,70 +116,57 @@ class _LandingPageState extends State<LandingPage>
         weight: 40,
       ),
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.1, end: 0.6).chain(
+        tween: Tween<double>(begin: 1.1, end: 1.0).chain(
           CurveTween(curve: Curves.easeInOut),
         ),
         weight: 60,
       ),
     ]).animate(_logoController);
 
-    _logoSlideAnimation = TweenSequence<Offset>([
-      TweenSequenceItem(
-        tween: Tween<Offset>(
-          begin: Offset.zero,
-          end: Offset.zero,
-        ),
-        weight: 50,
-      ),
-      TweenSequenceItem(
-        tween: Tween<Offset>(
-          begin: Offset.zero,
-          end: const Offset(0, -2.5),
-        ).chain(
-          CurveTween(curve: Curves.easeInOut),
-        ),
-        weight: 50,
-      ),
-    ]).animate(_logoController);
+    // Simple 0→1 fade — text stays visible until the screen switches.
+    // No fade-out needed: _showMainContent replaces the intro screen entirely.
+    _nameFadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _nameController, curve: Curves.easeIn),
+    );
 
-    _textFadeAnimation = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween<double>(begin: 0.0, end: 1.0).chain(
-          CurveTween(curve: Curves.easeIn),
-        ),
-        weight: 25,
-      ),
-      TweenSequenceItem(
-        tween: ConstantTween<double>(1.0),
-        weight: 50,
-      ),
-      TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 0.0).chain(
-          CurveTween(curve: Curves.easeOut),
-        ),
-        weight: 25,
-      ),
-    ]).animate(_textController);
+    // Slides the logo straight upward off screen.
+    _logoExitAnimation = Tween<Offset>(
+      begin: Offset.zero,
+      end: const Offset(0, -2.5),
+    ).animate(
+      CurvedAnimation(parent: _logoExitController, curve: Curves.easeInOut),
+    );
     
     _startIntroAnimation();
   }
 
   void _startIntroAnimation() async {
+    // ── Phase 1: Logo entrance (3 seconds) ──────────────────────────────────
+    // Logo scales up from 0.5× to 1.0× and holds. No slide yet.
     _logoController.forward();
-    
-    await Future.delayed(const Duration(milliseconds: 1000));
-    _textController.forward();
-    
-    await Future.delayed(const Duration(milliseconds: 5000));
-    
+
+    await Future.delayed(const Duration(milliseconds: 3000));
+
+    // ── Phase 2: Name reveal (2 seconds) ────────────────────────────────────
+    // "PALMNAZI" and taglines fade in while the logo stays on screen.
+    if (!mounted) return;
+    _nameController.forward();
+
+    await Future.delayed(const Duration(milliseconds: 2000));
+
+    // ── Phase 3: Exit + main content ────────────────────────────────────────
+    // Logo slides upward off screen, then main content fades in beneath it.
+    if (!mounted) return;
+    _logoExitController.forward();
+
+    await Future.delayed(const Duration(milliseconds: 350));
+
     if (mounted) {
-      setState(() {
-        _showMainContent = true;
-      });
+      setState(() => _showMainContent = true);
       _fadeController.forward();
       _slideController.forward();
-      
-      Timer(const Duration(milliseconds: 800), _scrollToCities);
+
+      Timer(const Duration(milliseconds: 400), _scrollToCities);
     }
   }
 
@@ -203,7 +201,8 @@ class _LandingPageState extends State<LandingPage>
     _fadeController.dispose();
     _slideController.dispose();
     _logoController.dispose();
-    _textController.dispose();
+    _nameController.dispose();
+    _logoExitController.dispose();
     super.dispose();
   }
 
@@ -342,13 +341,14 @@ class _LandingPageState extends State<LandingPage>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          // ── Logo (scale-up entrance + slide-away exit) ──────────────────
           AnimatedBuilder(
-            animation: Listenable.merge([_logoScaleAnimation, _logoSlideAnimation]),
+            animation: Listenable.merge([_logoScaleAnimation, _logoExitAnimation]),
             builder: (context, child) {
               return Transform.translate(
                 offset: Offset(
                   0,
-                  _logoSlideAnimation.value.dy * MediaQuery.of(context).size.height,
+                  _logoExitAnimation.value.dy * MediaQuery.of(context).size.height,
                 ),
                 child: Transform.scale(
                   scale: _logoScaleAnimation.value,
@@ -389,54 +389,60 @@ class _LandingPageState extends State<LandingPage>
             },
           ),
           const SizedBox(height: 40),
-          
-          Opacity(
-            opacity: _textFadeAnimation.value,
-            child: ShaderMask(
-              shaderCallback: (bounds) => const LinearGradient(
-                colors: [Color(0xFF14FFEC), Colors.white, Color(0xFF14FFEC)],
-              ).createShader(bounds),
-              child: const Text(
-                'PALMNAZI',
-                style: TextStyle(
-                  fontSize: 64,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 6,
-                  color: Colors.white,
-                ),
-              ),
+
+          // ── Name + taglines (fade in after 3-second logo period) ─────────
+          // AnimatedBuilder is REQUIRED here. A plain Opacity that reads
+          // _nameFadeAnimation.value outside a builder captures 0.0 at
+          // construction and never rebuilds — which is why the text was
+          // invisible. The builder callback re-runs on every animation tick.
+          AnimatedBuilder(
+            animation: _nameFadeAnimation,
+            builder: (context, child) => Opacity(
+              opacity: _nameFadeAnimation.value,
+              child: child,
             ),
-          ),
-          const SizedBox(height: 12),
-          
-          Opacity(
-            opacity: _textFadeAnimation.value,
-            child: const Text(
-              'RESORT CITIES',
-              style: TextStyle(
-                fontSize: 20,
-                letterSpacing: 10,
-                fontWeight: FontWeight.w300,
-                color: Colors.white70,
-              ),
-            ),
-          ),
-          const SizedBox(height: 30),
-          
-          Opacity(
-            opacity: _textFadeAnimation.value,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 48),
-              child: Text(
-                'Discover Kenya\'s Most Exquisite Resort Destinations',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w400,
-                  color: const Color(0xFF14FFEC).withValues(alpha: 0.9),
-                  letterSpacing: 0.5,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ShaderMask(
+                  shaderCallback: (bounds) => const LinearGradient(
+                    colors: [Color(0xFF14FFEC), Colors.white, Color(0xFF14FFEC)],
+                  ).createShader(bounds),
+                  child: const Text(
+                    'PALMNAZI',
+                    style: TextStyle(
+                      fontSize: 64,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 6,
+                      color: Colors.white,
+                    ),
+                  ),
                 ),
-                textAlign: TextAlign.center,
-              ),
+                const SizedBox(height: 12),
+                const Text(
+                  'RESORT CITIES',
+                  style: TextStyle(
+                    fontSize: 20,
+                    letterSpacing: 10,
+                    fontWeight: FontWeight.w300,
+                    color: Colors.white70,
+                  ),
+                ),
+                const SizedBox(height: 30),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 48),
+                  child: Text(
+                    "Discover Kenya's Most Exquisite Resort Destinations",
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w400,
+                      color: const Color(0xFF14FFEC).withValues(alpha: 0.9),
+                      letterSpacing: 0.5,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
