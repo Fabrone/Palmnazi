@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
@@ -27,6 +28,39 @@ final Logger _apiLog = Logger(
 // To switch to local development:
 //   1. Comment out the live baseUrl line.
 //   2. Uncomment the localhost line and set your port number.
+//
+// ── CORS — REQUIRED FOR FLUTTER WEB ─────────────────────────────────────────
+//
+// Flutter Web runs inside a browser. Every HTTP request is routed through the
+// browser's fetch() API, which enforces the Same-Origin Policy. Before sending
+// a POST/PUT/DELETE (or any request with a custom header like Authorization)
+// the browser sends an OPTIONS preflight. If the backend does not reply with
+// the correct Access-Control headers the browser aborts the request and the
+// Dart http package throws: ClientException: Failed to fetch.
+//
+// ADD THIS TO YOUR NODE.JS BACKEND (index.js / server.js / app.js):
+//
+//   const cors = require('cors');          // npm install cors
+//
+//   app.use(cors({
+//     origin: '*',                         // replace '*' with your exact
+//                                          // deployed domain in production
+//     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+//     allowedHeaders: ['Content-Type', 'Authorization'],
+//     credentials: false,                  // set true only if using cookies
+//   }));
+//
+//   // Handle preflight for every route
+//   app.options('*', cors());
+//
+// If you are on Vercel and your backend is a Next.js API route, add this to
+// each route handler instead:
+//
+//   res.setHeader('Access-Control-Allow-Origin', '*');
+//   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+//   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+//   if (req.method === 'OPTIONS') { res.status(200).end(); return; }
+//
 // ─────────────────────────────────────────────────────────────────────────────
 class AppConfig {
   AppConfig._();
@@ -493,6 +527,35 @@ class ApiClient {
   /// Convert low-level network exceptions into human-readable messages.
   static String friendlyNetworkError(Object e) {
     final msg = e.toString().toLowerCase();
+
+    // ── CORS / browser fetch failure ────────────────────────────────────────
+    // On Flutter Web every request goes through the browser's fetch() API.
+    // When the backend is missing CORS headers the browser blocks the request
+    // and dart:html reports it as a generic "Failed to fetch" ClientException
+    // with NO status code — indistinguishable from a real network outage at
+    // the Dart level.  We detect it here so we can surface a meaningful message
+    // instead of "Check your internet connection."
+    //
+    // Root cause: the backend at pnrcapi.vercel.app must return:
+    //   Access-Control-Allow-Origin: *   (or your app's exact origin)
+    //   Access-Control-Allow-Methods: GET, POST, OPTIONS
+    //   Access-Control-Allow-Headers: Content-Type, Authorization
+    // on every response, including the preflight OPTIONS response.
+    // See the backend fix snippet in api_client.dart comments below.
+    if (kIsWeb && msg.contains('failed to fetch')) {
+      _apiLog.e(
+        '🌐 ApiClient: CORS or network error on web.'
+
+        '   The browser blocked the request — most likely the backend is missing Access-Control-Allow-Origin headers.'
+
+        '   Check the browser DevTools → Network tab → look for a failed OPTIONS preflight request to confirm.',
+      );
+      return 'Request blocked by browser security policy. '
+          'The server may need CORS headers configured. '
+          'Please contact support or try the mobile app.';
+    }
+
+    // ── Standard network errors ──────────────────────────────────────────────
     if (msg.contains('socketexception')    ||
         msg.contains('failed to fetch')    ||
         msg.contains('connection refused') ||

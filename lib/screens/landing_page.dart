@@ -411,7 +411,7 @@ class _LandingPageState extends State<LandingPage>
                   child: const Text(
                     'PALMNAZI',
                     style: TextStyle(
-                      fontSize: 64,
+                      fontSize: 56,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 6,
                       color: Colors.white,
