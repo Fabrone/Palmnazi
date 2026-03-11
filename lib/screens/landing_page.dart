@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:palmnazi/admin/admin_dashboard.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/resort_city_screen.dart';
 import 'package:palmnazi/widgets/animated_background.dart';
@@ -251,19 +252,29 @@ class _LandingPageState extends State<LandingPage>
               children: [
                 Row(
                   children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF14FFEC), Color(0xFF0D7377)],
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const AdminDashboard(),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF14FFEC), Color(0xFF0D7377)],
+                          ),
                         ),
-                      ),
-                      child: const Icon(
-                        Icons.landscape,
-                        color: Colors.white,
-                        size: 24,
+                        child: const Icon(
+                          Icons.landscape,
+                          color: Colors.white,
+                          size: 24,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),

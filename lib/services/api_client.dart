@@ -20,47 +20,6 @@ final Logger _apiLog = Logger(
 // ─────────────────────────────────────────────────────────────────────────────
 // APP CONFIGURATION
 //
-// HOW URLS WORK IN THIS PROJECT:
-//   Full URL = baseUrl + endpoint path
-//   e.g.  https://pnrcapi.vercel.app  +  /api/auth/login
-//       = https://pnrcapi.vercel.app/api/auth/login
-//
-// To switch to local development:
-//   1. Comment out the live baseUrl line.
-//   2. Uncomment the localhost line and set your port number.
-//
-// ── CORS — REQUIRED FOR FLUTTER WEB ─────────────────────────────────────────
-//
-// Flutter Web runs inside a browser. Every HTTP request is routed through the
-// browser's fetch() API, which enforces the Same-Origin Policy. Before sending
-// a POST/PUT/DELETE (or any request with a custom header like Authorization)
-// the browser sends an OPTIONS preflight. If the backend does not reply with
-// the correct Access-Control headers the browser aborts the request and the
-// Dart http package throws: ClientException: Failed to fetch.
-//
-// ADD THIS TO YOUR NODE.JS BACKEND (index.js / server.js / app.js):
-//
-//   const cors = require('cors');          // npm install cors
-//
-//   app.use(cors({
-//     origin: '*',                         // replace '*' with your exact
-//                                          // deployed domain in production
-//     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-//     allowedHeaders: ['Content-Type', 'Authorization'],
-//     credentials: false,                  // set true only if using cookies
-//   }));
-//
-//   // Handle preflight for every route
-//   app.options('*', cors());
-//
-// If you are on Vercel and your backend is a Next.js API route, add this to
-// each route handler instead:
-//
-//   res.setHeader('Access-Control-Allow-Origin', '*');
-//   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-//   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
-//   if (req.method === 'OPTIONS') { res.status(200).end(); return; }
-//
 // ─────────────────────────────────────────────────────────────────────────────
 class AppConfig {
   AppConfig._();
@@ -69,25 +28,12 @@ class AppConfig {
   static const String baseUrl = 'https://pnrcapi.vercel.app';
 
   // ── Local development (uncomment to use) ─────
-  // static const String baseUrl = 'http://localhost:3000';
-
-  // ── Google Sign-In ───────────────────────────
-  // Replace with your actual Web Client ID from Google Cloud Console.
   static const String googleWebClientId =
       'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // API ENDPOINTS
-//
-// All paths are relative to AppConfig.baseUrl.
-// Every endpoint begins with /api/ as required by the backend.
-// Use ApiEndpoints.url(path) to get the full absolute URL.
-//
-// ── Adding new endpoints ─────────────────────────────────────────────────────
-// As each backend section is ready (cities, channels, places), add its
-// constant here.  Every screen imports this file and uses the constant —
-// never a raw string.  Changing a URL only ever requires editing one line here.
 // ─────────────────────────────────────────────────────────────────────────────
 class ApiEndpoints {
   ApiEndpoints._();
@@ -99,28 +45,18 @@ class ApiEndpoints {
   static const String register = '/api/auth/register';
 
   /// Log in with email + password.
-  /// POST  Body: { email, password }
-  /// Returns: { accessToken, refreshToken, user }
   static const String login = '/api/auth/login';
 
   /// Log in / register via Google.
-  /// POST  Body: { idToken }
-  /// Returns: { accessToken, refreshToken, user }
   static const String googleAuth = '/api/auth/google';
 
   /// Revoke a refresh token (logout).
-  /// POST  Body: { refreshTokenId }  ← the stored refreshToken value
-  /// Auth: Bearer required
   static const String logout = '/api/auth/logout';
 
   /// Rotate an expired access token.
-  /// POST  Body: { userId, refreshToken }
-  /// Returns: { accessToken, refreshToken }
   static const String refresh = '/api/auth/refresh';
 
   /// Get the currently authenticated user's profile.
-  /// GET   Auth: Bearer required
-  /// Returns: { user: { sub, email, roles[], permissions[], iat, exp } }
   static const String me = '/api/auth/me';
 
   /// Send a password-reset email.
@@ -135,25 +71,74 @@ class ApiEndpoints {
   /// POST  Body: { newPassword }  Auth: Bearer required
   static const String changePassword = '/api/auth/resetpassword';
 
-  // ── Resort Cities  (uncomment when backend is ready) ────────────────────
-  // static const String cities   = '/api/cities';
-  // static const String channels = '/api/channels';
-  // static const String places   = '/api/places';
+  // ── Resort Cities ────────────────────────────────────────────────────────
+
+  /// List all cities, or filter with query params e.g. ?country=Kenya&isActive=true
+  /// GET   Auth: Bearer required
+  static const String cities = '/api/cities';
+
+  /// Create a new resort city.
+  /// POST  Body: { name, country, region, slug, latitude, longitude,
+  ///              coverImage, description, isActive }
+  /// Auth: Bearer + admin role required
+  static const String createCity = '/api/cities';
+
+  /// Fetch a single city by its database ID.
+  /// GET   Auth: Bearer required
+  static String cityById(String id) => '/api/cities/$id';
+
+  /// Partial-update a city.  Only send the fields that changed.
+  /// PUT   Auth: Bearer + admin role required
+  static String updateCity(String id) => '/api/cities/$id';
+
+  /// Permanently delete a city and all nested channels/places.
+  /// DELETE  Auth: Bearer + admin role required
+  static String deleteCity(String id) => '/api/cities/$id';
+
+  // ── Channels ─────────────────────────────────────────────────────────────
+
+  /// List all channels for a city.
+  /// GET   Auth: Bearer required
+  static String channels(String cityId) => '/api/cities/$cityId/channels';
+
+  /// Create a channel inside a city.
+  /// POST  Auth: Bearer + admin role required
+  static String createChannel(String cityId) =>
+      '/api/cities/$cityId/channels';
+
+  /// Update or delete a specific channel.
+  /// PUT / DELETE  Auth: Bearer + admin role required
+  static String channelById(String cityId, String channelId) =>
+      '/api/cities/$cityId/channels/$channelId';
+
+  // ── Places ────────────────────────────────────────────────────────────────
+
+  /// List all places in a channel. Supports filters as query params.
+  /// GET   Auth: Bearer required
+  static String places(String cityId, String channelId) =>
+      '/api/cities/$cityId/channels/$channelId/places';
+
+  /// Create a place inside a channel.
+  /// POST  Auth: Bearer + admin role required
+  static String createPlace(String cityId, String channelId) =>
+      '/api/cities/$cityId/channels/$channelId/places';
+
+  /// Update or delete a specific place.
+  /// PUT / DELETE  Auth: Bearer + admin role required
+  static String placeById(String cityId, String channelId, String placeId) =>
+      '/api/cities/$cityId/channels/$channelId/places/$placeId';
+
+  // ── Admin Dashboard ──────────────────────
+  static const String adminStats = '/api/admin/stats';
 
   // ────────────────────────────────────────────────────────────────────────
   /// Build the absolute URL for a given endpoint path.
-  ///
-  /// Every HTTP call should use this so that switching environments
-  /// (live vs local) only ever requires changing [AppConfig.baseUrl].
   // ────────────────────────────────────────────────────────────────────────
   static String url(String endpoint) => '${AppConfig.baseUrl}$endpoint';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECURE STORAGE KEYS
-//
-// Every key used with FlutterSecureStorage is declared here.
-// Never write raw strings when reading or writing to storage.
 // ─────────────────────────────────────────────────────────────────────────────
 class StorageKeys {
   StorageKeys._();
@@ -171,61 +156,18 @@ class StorageKeys {
   static const String userRoles = 'user_roles';
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
 // API CLIENT
-//
-// Central HTTP helper used by every service class in the app.
-//
-// Public surface:
-//   post()               — unauthenticated POST
-//   authPost()           — authenticated POST  (auto-refresh on 401)
-//   authGet()            — authenticated GET   (auto-refresh on 401)
-//   saveSession()        — persist tokens + user info after login
-//   clearSession()       — wipe storage on logout or hard-expired session
-//   refreshAccessToken() — rotate the access + refresh token pair
-//
-// ── 401 Auto-Refresh Behaviour ───────────────────────────────────────────────
-//
-// When authPost() or authGet() receives a 401 from the server:
-//   1. refreshAccessToken() is called automatically behind the scenes.
-//   2. If the refresh succeeds, the original request is retried once
-//      with the new token.  The caller never notices the recovery.
-//   3. If the refresh also fails (expired, revoked, or network error),
-//      clearSession() is called and [onSessionExpired] fires so the
-//      app can navigate the user back to the login screen.
-//
-// ── Registering the Expiry Callback ─────────────────────────────────────────
-//
-// Do this once in main.dart (or wherever you hold your NavigatorKey)
-// after the key is available:
-//
-//   final navigatorKey = GlobalKey<NavigatorState>();
-//
-//   void main() {
-//     WidgetsFlutterBinding.ensureInitialized();
-//     ApiClient.onSessionExpired = () {
-//       navigatorKey.currentState?.pushAndRemoveUntil(
-//         MaterialPageRoute(builder: (_) => const AuthScreen(isLogin: true)),
-//         (route) => false,
-//       );
-//     };
-//     runApp(MyApp(navigatorKey: navigatorKey));
-//   }
-// ─────────────────────────────────────────────────────────────────────────────
 class ApiClient {
   ApiClient._();
 
   static const FlutterSecureStorage _storage = FlutterSecureStorage();
   static const Duration _timeout = Duration(seconds: 20);
 
-  // ── Session-Expired Callback ──────────────────────────────────────────────
-  //
-  // Register once at app start-up (see class-level docs above).
-  // Fires only when a session is confirmed unrecoverable — i.e. both the
-  // original request and the post-refresh retry returned 401.
+  // ── Session-Expired Callback ─────────────────────────────
   static void Function()? onSessionExpired;
 
-  // ── Token / Session Accessors ─────────────────────────────────────────────
+  // ── Token / Session Accessors ────────────────────────────
 
   static Future<String?> getAccessToken()  async =>
       _storage.read(key: StorageKeys.accessToken);
@@ -301,12 +243,7 @@ class ApiClient {
     };
   }
 
-  // ── Public HTTP Helpers ───────────────────────────────────────────────────
-
-  /// Unauthenticated POST.
-  ///
-  /// Use for endpoints that do not require a Bearer token:
-  /// register, login, forgot-password, reset-password.
+  // ── Public HTTP Helpers ───────────────────────────
   static Future<http.Response> post(
     String endpoint, {
     Map<String, dynamic>? body,
@@ -325,13 +262,6 @@ class ApiClient {
   }
 
   /// Authenticated POST with automatic 401 recovery.
-  ///
-  /// The Bearer token is attached from storage automatically.
-  /// On 401 the token is refreshed and the request is retried once.
-  /// If the retry also fails the session is cleared and
-  /// [onSessionExpired] fires.
-  ///
-  /// Use for: logout, change-password, and any future protected POSTs.
   static Future<http.Response> authPost(
     String endpoint, {
     Map<String, dynamic>? body,
@@ -374,9 +304,6 @@ class ApiClient {
   }
 
   /// Authenticated GET with automatic 401 recovery.
-  ///
-  /// Same 401-refresh-retry logic as [authPost].
-  /// Use for: GET /api/auth/me and any future protected GETs.
   static Future<http.Response> authGet(String endpoint) async {
     _apiLog.d('📥 ApiClient.authGet ──► ${ApiEndpoints.url(endpoint)}');
 
@@ -414,18 +341,135 @@ class ApiClient {
     return response;
   }
 
+  /// Authenticated PUT with automatic 401 recovery.
+  static Future<http.Response> authPut(
+    String endpoint, {
+    Map<String, dynamic>? body,
+  }) async {
+    _apiLog.d('📝 ApiClient.authPut ──► ${ApiEndpoints.url(endpoint)}');
+    if (body != null) _apiLog.d('   body: $body');
+
+    var response = await _doAuthPut(endpoint, body: body);
+
+    if (response.statusCode == 401) {
+      _apiLog.w(
+        '⚠️ ApiClient.authPut: 401 on $endpoint — '
+        'attempting token refresh before retry',
+      );
+      final refreshed = await refreshAccessToken();
+
+      if (refreshed) {
+        _apiLog.i('🔄 ApiClient.authPut: Refresh succeeded — retrying $endpoint');
+        response = await _doAuthPut(endpoint, body: body);
+
+        if (response.statusCode == 401) {
+          _apiLog.e(
+            '❌ ApiClient.authPut: Still 401 after retry on $endpoint — '
+            'session is unrecoverable',
+          );
+          await _handleSessionExpired();
+        }
+      } else {
+        _apiLog.e(
+          '❌ ApiClient.authPut: Token refresh failed for $endpoint — '
+          'session is unrecoverable',
+        );
+        await _handleSessionExpired();
+      }
+    }
+
+    return response;
+  }
+
+  /// Use for: DELETE /api/cities/:id and any other protected deletes.
+  static Future<http.Response> authDelete(String endpoint) async {
+    _apiLog.d('🗑️  ApiClient.authDelete ──► ${ApiEndpoints.url(endpoint)}');
+
+    var response = await _doAuthDelete(endpoint);
+
+    if (response.statusCode == 401) {
+      _apiLog.w(
+        '⚠️ ApiClient.authDelete: 401 on $endpoint — '
+        'attempting token refresh before retry',
+      );
+      final refreshed = await refreshAccessToken();
+
+      if (refreshed) {
+        _apiLog.i(
+            '🔄 ApiClient.authDelete: Refresh succeeded — retrying $endpoint');
+        response = await _doAuthDelete(endpoint);
+
+        if (response.statusCode == 401) {
+          _apiLog.e(
+            '❌ ApiClient.authDelete: Still 401 after retry on $endpoint — '
+            'session is unrecoverable',
+          );
+          await _handleSessionExpired();
+        }
+      } else {
+        _apiLog.e(
+          '❌ ApiClient.authDelete: Token refresh failed for $endpoint — '
+          'session is unrecoverable',
+        );
+        await _handleSessionExpired();
+      }
+    }
+
+    return response;
+  }
+
+  /// Authenticated GET with query parameters and automatic 401 recovery.
+
+  /// [queryParams] are appended to the URL automatically.
+  static Future<http.Response> authGetWithParams(
+    String endpoint, {
+    Map<String, String>? queryParams,
+  }) async {
+    final baseUri = Uri.parse(ApiEndpoints.url(endpoint));
+    final uri = (queryParams != null && queryParams.isNotEmpty)
+        ? baseUri.replace(queryParameters: queryParams)
+        : baseUri;
+
+    _apiLog.d('📥 ApiClient.authGetWithParams ──► $uri');
+
+    final headers = await _authHeaders;
+    var response = await http.get(uri, headers: headers).timeout(_timeout);
+
+    if (response.statusCode == 401) {
+      _apiLog.w(
+        '⚠️ ApiClient.authGetWithParams: 401 on $endpoint — '
+        'attempting token refresh before retry',
+      );
+      final refreshed = await refreshAccessToken();
+
+      if (refreshed) {
+        _apiLog.i(
+            '🔄 ApiClient.authGetWithParams: Refresh succeeded — retrying');
+        final newHeaders = await _authHeaders;
+        response =
+            await http.get(uri, headers: newHeaders).timeout(_timeout);
+
+        if (response.statusCode == 401) {
+          _apiLog.e(
+            '❌ ApiClient.authGetWithParams: Still 401 after retry — '
+            'session is unrecoverable',
+          );
+          await _handleSessionExpired();
+        }
+      } else {
+        _apiLog.e(
+          '❌ ApiClient.authGetWithParams: Token refresh failed — '
+          'session is unrecoverable',
+        );
+        await _handleSessionExpired();
+      }
+    }
+
+    return response;
+  }
+
   // ── Token Refresh ─────────────────────────────────────────────────────────
 
-  /// Rotate the access + refresh token pair using the stored refresh token.
-  ///
-  /// Returns [true] on success.  New tokens are written to storage so the
-  /// next authPost / authGet call carries the updated token automatically.
-  ///
-  /// Endpoint : POST /api/auth/refresh
-  /// Body     : { userId, refreshToken }
-  /// 200 OK   : { accessToken, refreshToken }  (old refresh token revoked)
-  /// 401      : Invalid refresh token
-  /// 403      : User inactive
   static Future<bool> refreshAccessToken() async {
     _apiLog.i('🔄 ApiClient.refreshAccessToken: ━━━ START ━━━');
 
@@ -528,20 +572,6 @@ class ApiClient {
   static String friendlyNetworkError(Object e) {
     final msg = e.toString().toLowerCase();
 
-    // ── CORS / browser fetch failure ────────────────────────────────────────
-    // On Flutter Web every request goes through the browser's fetch() API.
-    // When the backend is missing CORS headers the browser blocks the request
-    // and dart:html reports it as a generic "Failed to fetch" ClientException
-    // with NO status code — indistinguishable from a real network outage at
-    // the Dart level.  We detect it here so we can surface a meaningful message
-    // instead of "Check your internet connection."
-    //
-    // Root cause: the backend at pnrcapi.vercel.app must return:
-    //   Access-Control-Allow-Origin: *   (or your app's exact origin)
-    //   Access-Control-Allow-Methods: GET, POST, OPTIONS
-    //   Access-Control-Allow-Headers: Content-Type, Authorization
-    // on every response, including the preflight OPTIONS response.
-    // See the backend fix snippet in api_client.dart comments below.
     if (kIsWeb && msg.contains('failed to fetch')) {
       _apiLog.e(
         '🌐 ApiClient: CORS or network error on web.'
@@ -598,10 +628,33 @@ class ApiClient {
     return http.get(uri, headers: headers).timeout(_timeout);
   }
 
+  /// Internal authenticated PUT — no retry logic.
+  /// Called by [authPut] which owns the 401-recovery logic.
+  static Future<http.Response> _doAuthPut(
+    String endpoint, {
+    Map<String, dynamic>? body,
+  }) async {
+    final uri     = Uri.parse(ApiEndpoints.url(endpoint));
+    final headers = await _authHeaders;
+    return http
+        .put(
+          uri,
+          headers: headers,
+          body: body != null ? jsonEncode(body) : null,
+        )
+        .timeout(_timeout);
+  }
+
+  /// Internal authenticated DELETE — no retry logic.
+  /// Called by [authDelete] which owns the 401-recovery logic.
+  static Future<http.Response> _doAuthDelete(String endpoint) async {
+    final uri     = Uri.parse(ApiEndpoints.url(endpoint));
+    final headers = await _authHeaders;
+    return http.delete(uri, headers: headers).timeout(_timeout);
+  }
+
   /// Clear the session and fire [onSessionExpired].
-  ///
-  /// Called only after a confirmed, unrecoverable 401 — i.e. both the
-  /// original request and the post-refresh retry returned 401.
+
   static Future<void> _handleSessionExpired() async {
     await clearSession();
     if (onSessionExpired != null) {
