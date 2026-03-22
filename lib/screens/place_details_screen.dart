@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:palmnazi/widgets/animated_background.dart';
 import 'package:palmnazi/models/models.dart';
+
+// ── Shared palette ───────────────────────────────────────────────────────────
+abstract final class _P {
+  static const Color aquaBright = Color(0xFF00E5FF);
+  static const Color aqua       = Color(0xFF00B8D4);
+  static const Color amber      = Color(0xFFFFB300);
+  static const Color deepNavy   = Color(0xFF01263F);
+}
 
 class PlaceDetailsScreen extends StatefulWidget {
   final ResortCityItem city;
-  final ChannelItem channel;
-  final PlaceItem place;
+  final ChannelItem    channel;
+  final PlaceItem      place;
 
   const PlaceDetailsScreen({
     super.key,
@@ -23,23 +30,24 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
   late ScrollController _scrollController;
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
+  double _scrollOffset = 0;
 
   @override
   void initState() {
     super.initState();
-    _scrollController = ScrollController();
-    
+    _scrollController = ScrollController()..addListener(_onScroll);
+
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 800),
       vsync: this,
     );
-    
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.easeIn),
     );
-    
     _fadeController.forward();
   }
+
+  void _onScroll() => setState(() => _scrollOffset = _scrollController.offset);
 
   @override
   void dispose() {
@@ -48,130 +56,72 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     super.dispose();
   }
 
+  // ════════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
-          const AnimatedBackground(),
-          
-          CustomScrollView(
-            controller: _scrollController,
-            slivers: [
-              // Place Header with Image
-              SliverAppBar(
-                expandedHeight: 350,
-                pinned: true,
-                backgroundColor: widget.channel.color.withValues(alpha: 0.9),
-                leading: IconButton(
-                  icon: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.arrow_back, color: Colors.white),
-                  ),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                flexibleSpace: FlexibleSpaceBar(
-                  background: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Image.asset(
-                        widget.place.imagePath,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  widget.channel.color,
-                                  widget.channel.color.withValues(alpha: 0.7),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.black.withValues(alpha: 0.3),
-                              Colors.black.withValues(alpha: 0.8),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
+          // ── Static place image as full-screen background ──────────────────
+          Positioned.fill(
+            child: Image.asset(
+              widget.place.assetPath,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [widget.channel.color, Colors.black],
                   ),
                 ),
               ),
-              
-              // Main Content
+            ),
+          ),
+
+          // Dark scrim for text readability
+          Positioned.fill(
+            child: Container(color: Colors.black.withValues(alpha: 0.52)),
+          ),
+
+          // ── Scrollable content ────────────────────────────────────────────
+          CustomScrollView(
+            controller: _scrollController,
+            slivers: [
+              // Space for top nav
+              const SliverToBoxAdapter(child: SizedBox(height: 80)),
+
+              // Main content
               SliverToBoxAdapter(
                 child: FadeTransition(
                   opacity: _fadeAnimation,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Breadcrumb Navigation
-                      Container(
-                        padding: const EdgeInsets.all(24),
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _buildBreadcrumb(widget.city.name, widget.city.color),
-                            Icon(
-                              Icons.chevron_right,
-                              size: 16,
-                              color: Colors.white.withValues(alpha: 0.5),
-                            ),
-                            _buildBreadcrumb(widget.channel.title, widget.channel.color),
-                            Icon(
-                              Icons.chevron_right,
-                              size: 16,
-                              color: Colors.white.withValues(alpha: 0.5),
-                            ),
-                            Text(
-                              widget.place.name,
-                              style: const TextStyle(
-                                color: Color(0xFF14FFEC),
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      
-                      // Place Info Card
+                      // Breadcrumb
+                      _buildBreadcrumb(),
+
+                      // Place info card — first visible content after breadcrumb
                       _buildPlaceInfoCard(),
-                      
-                      // Quick Actions
+
+                      // Quick actions
                       _buildQuickActions(),
-                      
+
                       // Description
                       _buildDescriptionSection(),
-                      
+
                       // Features
                       _buildFeaturesSection(),
-                      
-                      // Contact Information
+
+                      // Contact
                       _buildContactSection(),
-                      
-                      // Reviews Section
+
+                      // Reviews
                       _buildReviewsSection(),
-                      
-                      // Action Buttons
+
+                      // Action buttons
                       _buildActionButtons(),
-                      
+
                       const SizedBox(height: 48),
                     ],
                   ),
@@ -179,37 +129,172 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               ),
             ],
           ),
+
+          // ── Top nav bar ────────────────────────────────────────────────────
+          _buildTopNav(),
         ],
       ),
     );
   }
 
-  Widget _buildBreadcrumb(String text, Color color) {
-    return Text(
-      text,
-      style: TextStyle(
-        color: color,
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
+  // ── Top nav bar ───────────────────────────────────────────────────────────
+  Widget _buildTopNav() {
+    final navOpacity = (_scrollOffset / 80).clamp(0.0, 1.0);
+    return Positioned(
+      top: 0, left: 0, right: 0,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black.withValues(alpha: 0.30 + 0.45 * navOpacity),
+              Colors.transparent,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                // Back
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.15),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.30)),
+                    ),
+                    child: const Icon(Icons.arrow_back,
+                        color: Colors.white, size: 18),
+                  ),
+                ),
+                const SizedBox(width: 10),
+
+                // Logo orb
+                Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      colors: [_P.aquaBright, _P.aqua],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                          color: _P.aqua.withValues(alpha: 0.50),
+                          blurRadius: 10),
+                    ],
+                  ),
+                  child: const Icon(Icons.landscape,
+                      color: Colors.white, size: 18),
+                ),
+                const SizedBox(width: 10),
+
+                // Brand name
+                ShaderMask(
+                  shaderCallback: (b) => const LinearGradient(
+                    colors: [_P.aquaBright, Colors.white],
+                  ).createShader(b),
+                  child: const Text(
+                    'PALMNAZI',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+
+                // Place name pill
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: widget.channel.color.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      widget.place.name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
 
+  // ── Breadcrumb ────────────────────────────────────────────────────────────
+  Widget _buildBreadcrumb() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text(
+            widget.city.name,
+            style: TextStyle(
+              color: widget.city.color,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Icon(Icons.chevron_right,
+              size: 16, color: Colors.white.withValues(alpha: 0.50)),
+          Text(
+            widget.channel.title,
+            style: TextStyle(
+              color: widget.channel.color,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Icon(Icons.chevron_right,
+              size: 16, color: Colors.white.withValues(alpha: 0.50)),
+          Text(
+            widget.place.name,
+            style: const TextStyle(
+              color: _P.aquaBright,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Place info card ───────────────────────────────────────────────────────
   Widget _buildPlaceInfoCard() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 24),
+      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            widget.channel.color.withValues(alpha: 0.3),
-            widget.channel.color.withValues(alpha: 0.1),
+            widget.channel.color.withValues(alpha: 0.30),
+            widget.channel.color.withValues(alpha: 0.10),
           ],
         ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: widget.channel.color.withValues(alpha: 0.5),
-        ),
+        border: Border.all(color: widget.channel.color.withValues(alpha: 0.50)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -242,9 +327,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               ),
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
+                    horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: widget.place.isOpen ? Colors.green : Colors.red,
                   borderRadius: BorderRadius.circular(12),
@@ -265,20 +348,14 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             children: [
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
+                    horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFB300),
+                  color: _P.amber,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.star,
-                      size: 18,
-                      color: Colors.white,
-                    ),
+                    const Icon(Icons.star, size: 18, color: Colors.white),
                     const SizedBox(width: 6),
                     Text(
                       widget.place.rating.toString(),
@@ -295,16 +372,14 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               Text(
                 '${widget.place.reviewCount} reviews',
                 style: const TextStyle(
-                  fontSize: 14,
-                  color: Colors.white70,
-                ),
+                    fontSize: 14, color: Colors.white70),
               ),
               const Spacer(),
               Text(
                 widget.place.priceRange,
                 style: const TextStyle(
                   fontSize: 20,
-                  color: Color(0xFF14FFEC),
+                  color: _P.aquaBright,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -315,42 +390,27 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     );
   }
 
+  // ── Quick actions ─────────────────────────────────────────────────────────
   Widget _buildQuickActions() {
     return Container(
       margin: const EdgeInsets.all(24),
       child: Row(
         children: [
           Expanded(
-            child: _buildQuickActionButton(
-              Icons.phone,
-              'Call',
-              widget.channel.color,
-            ),
-          ),
+              child: _buildQuickActionButton(
+                  Icons.phone, 'Call', widget.channel.color)),
           const SizedBox(width: 12),
           Expanded(
-            child: _buildQuickActionButton(
-              Icons.directions,
-              'Directions',
-              const Color(0xFF2196F3),
-            ),
-          ),
+              child: _buildQuickActionButton(
+                  Icons.directions, 'Directions', const Color(0xFF2979FF))),
           const SizedBox(width: 12),
           Expanded(
-            child: _buildQuickActionButton(
-              Icons.language,
-              'Website',
-              const Color(0xFF9C27B0),
-            ),
-          ),
+              child: _buildQuickActionButton(
+                  Icons.language, 'Website', const Color(0xFFAA00FF))),
           const SizedBox(width: 12),
           Expanded(
-            child: _buildQuickActionButton(
-              Icons.share,
-              'Share',
-              const Color(0xFF00897B),
-            ),
-          ),
+              child: _buildQuickActionButton(
+                  Icons.share, 'Share', const Color(0xFF00BFA5))),
         ],
       ),
     );
@@ -360,11 +420,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 16),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
+        color: Colors.white.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: color.withValues(alpha: 0.5),
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.50)),
       ),
       child: Column(
         children: [
@@ -383,6 +441,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     );
   }
 
+  // ── Description ───────────────────────────────────────────────────────────
   Widget _buildDescriptionSection() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -392,25 +451,20 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           const Text(
             'About',
             style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
+                fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
           const SizedBox(height: 12),
           Text(
             widget.place.description,
             style: const TextStyle(
-              fontSize: 15,
-              color: Colors.white70,
-              height: 1.6,
-            ),
+                fontSize: 15, color: Colors.white70, height: 1.6),
           ),
         ],
       ),
     );
   }
 
+  // ── Features ──────────────────────────────────────────────────────────────
   Widget _buildFeaturesSection() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -420,10 +474,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           const Text(
             'Features & Amenities',
             style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
+                fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
           const SizedBox(height: 16),
           Wrap(
@@ -432,29 +483,23 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             children: widget.place.features.map((feature) {
               return Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
+                    horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      widget.channel.color.withValues(alpha: 0.3),
-                      widget.channel.color.withValues(alpha: 0.1),
+                      widget.channel.color.withValues(alpha: 0.30),
+                      widget.channel.color.withValues(alpha: 0.10),
                     ],
                   ),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: widget.channel.color.withValues(alpha: 0.5),
-                  ),
+                      color: widget.channel.color.withValues(alpha: 0.50)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.check_circle,
-                      size: 16,
-                      color: const Color(0xFF14FFEC),
-                    ),
+                    const Icon(Icons.check_circle,
+                        size: 16, color: _P.aquaBright),
                     const SizedBox(width: 8),
                     Text(
                       feature,
@@ -474,6 +519,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     );
   }
 
+  // ── Contact ───────────────────────────────────────────────────────────────
   Widget _buildContactSection() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -481,9 +527,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.2),
-        ),
+        border:
+            Border.all(color: Colors.white.withValues(alpha: 0.20)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -491,29 +536,18 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           const Text(
             'Contact Information',
             style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.white),
           ),
           const SizedBox(height: 16),
           _buildContactItem(
-            Icons.location_on,
-            'Address',
-            widget.place.address,
-          ),
+              Icons.location_on, 'Address', widget.place.address),
+          const SizedBox(height: 12),
+          _buildContactItem(Icons.phone, 'Phone', widget.place.phone),
           const SizedBox(height: 12),
           _buildContactItem(
-            Icons.phone,
-            'Phone',
-            widget.place.phone,
-          ),
-          const SizedBox(height: 12),
-          _buildContactItem(
-            Icons.language,
-            'Website',
-            widget.place.website,
-          ),
+              Icons.language, 'Website', widget.place.website),
         ],
       ),
     );
@@ -523,32 +557,21 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(
-          icon,
-          color: const Color(0xFF14FFEC),
-          size: 20,
-        ),
+        Icon(icon, color: _P.aquaBright, size: 20),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.white54,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              Text(label,
+                  style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.white54,
+                      fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: Colors.white,
-                ),
-              ),
+              Text(value,
+                  style: const TextStyle(
+                      fontSize: 14, color: Colors.white)),
             ],
           ),
         ),
@@ -556,6 +579,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     );
   }
 
+  // ── Reviews ───────────────────────────────────────────────────────────────
   Widget _buildReviewsSection() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -568,27 +592,23 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               const Text(
                 'Reviews',
                 style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white),
               ),
               TextButton(
                 onPressed: () {
-                  // Placeholder: Reviews page will be implemented with backend
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Full reviews feature coming soon!'),
-                      backgroundColor: Color(0xFF0D7377),
+                      backgroundColor: Color(0xFF006064),
                     ),
                   );
                 },
                 child: const Text(
                   'See All',
                   style: TextStyle(
-                    color: Color(0xFF14FFEC),
-                    fontWeight: FontWeight.w600,
-                  ),
+                      color: _P.aquaBright, fontWeight: FontWeight.w600),
                 ),
               ),
             ],
@@ -598,7 +618,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             'Reviews feature will be integrated with backend',
             style: TextStyle(
               fontSize: 14,
-              color: Colors.white.withValues(alpha: 0.6),
+              color: Colors.white.withValues(alpha: 0.60),
               fontStyle: FontStyle.italic,
             ),
           ),
@@ -607,6 +627,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     );
   }
 
+  // ── Action buttons ────────────────────────────────────────────────────────
   Widget _buildActionButtons() {
     return Container(
       margin: const EdgeInsets.all(24),
@@ -615,56 +636,46 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           Expanded(
             child: ElevatedButton.icon(
               onPressed: () {
-                // Placeholder: Booking functionality will be implemented with backend
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Booking feature coming soon!'),
-                    backgroundColor: Color(0xFF0D7377),
+                    backgroundColor: Color(0xFF006064),
                   ),
                 );
               },
               icon: const Icon(Icons.calendar_today, size: 20),
               label: const Text(
                 'Book Now',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF14FFEC),
-                foregroundColor: widget.channel.color,
+                backgroundColor: _P.aquaBright,
+                foregroundColor: _P.deepNavy,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                    borderRadius: BorderRadius.circular(12)),
+                elevation: 4,
+                shadowColor: _P.aqua.withValues(alpha: 0.50),
               ),
             ),
           ),
           const SizedBox(width: 12),
           Container(
             decoration: BoxDecoration(
-              border: Border.all(
-                color: const Color(0xFF14FFEC),
-                width: 2,
-              ),
+              border: Border.all(color: _P.aquaBright, width: 2),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
               onPressed: () {
-                // Placeholder: Favorites functionality will be implemented with backend
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Favorites feature coming soon!'),
-                    backgroundColor: Color(0xFF0D7377),
+                    content: Text('Favourites feature coming soon!'),
+                    backgroundColor: Color(0xFF006064),
                   ),
                 );
               },
-              icon: const Icon(
-                Icons.favorite_border,
-                color: Color(0xFF14FFEC),
-                size: 24,
-              ),
+              icon: const Icon(Icons.favorite_border,
+                  color: _P.aquaBright, size: 24),
               padding: const EdgeInsets.all(12),
             ),
           ),

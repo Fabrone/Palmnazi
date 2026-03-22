@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:palmnazi/screens/place_details_screen.dart';
-import 'package:palmnazi/widgets/animated_background.dart';
 import 'package:palmnazi/widgets/robust_asset_image.dart';
 import 'package:palmnazi/models/models.dart';
+
+// ── Shared palette ───────────────────────────────────────────────────────────
+abstract final class _P {
+  static const Color aquaBright = Color(0xFF00E5FF);
+  static const Color aqua       = Color(0xFF00B8D4);
+  static const Color deepNavy   = Color(0xFF01263F);
+}
 
 class ChannelScreen extends StatefulWidget {
   final ResortCityItem city;
@@ -24,10 +30,9 @@ class _ChannelScreenState extends State<ChannelScreen>
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
   String? _selectedSubcategory;
+  double _scrollOffset = 0;
 
-  // Places/Businesses Data - This will come from backend based on city and channel
   final List<PlaceItem> _places = [
-    // Sample data - replace with API call
     PlaceItem(
       id: '1',
       name: 'Serena Beach Resort & Spa',
@@ -73,38 +78,34 @@ class _ChannelScreenState extends State<ChannelScreen>
       priceRange: '\$\$',
       isOpen: true,
     ),
-    // Add more places as needed
   ];
 
   List<PlaceItem> get filteredPlaces {
-    if (_selectedSubcategory == null) {
-      return _places;
-    }
-    return _places.where((place) => place.category == _selectedSubcategory).toList();
+    if (_selectedSubcategory == null) return _places;
+    return _places.where((p) => p.category == _selectedSubcategory).toList();
   }
 
   @override
   void initState() {
     super.initState();
-    _scrollController = ScrollController();
-    
+    _scrollController = ScrollController()..addListener(_onScroll);
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 800),
       vsync: this,
     );
-    
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.easeIn),
     );
-    
     _fadeController.forward();
   }
+
+  void _onScroll() => setState(() => _scrollOffset = _scrollController.offset);
 
   void _navigateToPlaceDetails(PlaceItem place) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => PlaceDetailsScreen(
+        builder: (_) => PlaceDetailsScreen(
           city: widget.city,
           channel: widget.channel,
           place: place,
@@ -120,496 +121,181 @@ class _ChannelScreenState extends State<ChannelScreen>
     super.dispose();
   }
 
+  // ════════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
-          const AnimatedBackground(),
-          
+          // ── Static channel image as full-screen background ────────────────
+          Positioned.fill(
+            child: Image.asset(
+              widget.channel.assetPath,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [widget.channel.color, Colors.black],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Scrim for readability
+          Positioned.fill(
+            child: Container(color: Colors.black.withValues(alpha: 0.50)),
+          ),
+
+          // ── Scrollable content ────────────────────────────────────────────
           CustomScrollView(
             controller: _scrollController,
             slivers: [
-              // Channel Header
-              SliverAppBar(
-                expandedHeight: 250,
-                pinned: true,
-                backgroundColor: widget.channel.color.withValues(alpha: 0.9),
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                flexibleSpace: FlexibleSpaceBar(
-                  title: Text(
-                    widget.channel.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      shadows: [
-                        Shadow(
-                          color: Colors.black45,
-                          blurRadius: 10,
-                        ),
-                      ],
-                    ),
-                  ),
-                  background: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      RobustAssetImage(
-                        imagePath: widget.channel.assetPath,
-                        fit: BoxFit.cover,
-                        fallbackColor: widget.channel.color,
-                        fallbackIcon: widget.channel.icon,
-                      ),
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.black.withValues(alpha: 0.3),
-                              Colors.black.withValues(alpha: 0.7),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              
-              // Breadcrumb Navigation
-              SliverToBoxAdapter(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  child: Row(
-                    children: [
-                      Text(
-                        widget.city.name,
-                        style: TextStyle(
-                          color: widget.city.color,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Icon(
-                        Icons.chevron_right,
-                        size: 16,
-                        color: Colors.white.withValues(alpha: 0.5),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        widget.channel.title,
-                        style: const TextStyle(
-                          color: Color(0xFF14FFEC),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              
-              // Channel Description
+              const SliverToBoxAdapter(child: SizedBox(height: 80)),
+              SliverToBoxAdapter(child: _buildBreadcrumb()),
               SliverToBoxAdapter(
                 child: FadeTransition(
                   opacity: _fadeAnimation,
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          widget.channel.color.withValues(alpha: 0.3),
-                          widget.channel.color.withValues(alpha: 0.1),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: widget.channel.color.withValues(alpha: 0.5),
-                      ),
-                    ),
-                    child: Text(
-                      widget.channel.description,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Colors.white70,
-                        height: 1.5,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
+                  child: _buildChannelDescription(),
                 ),
               ),
-              
-              // Subcategory Filter
               SliverToBoxAdapter(
                 child: FadeTransition(
                   opacity: _fadeAnimation,
                   child: _buildSubcategoryFilter(),
                 ),
               ),
-              
-              // Places Count
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 24, vertical: 8),
                   child: Text(
-                    '${filteredPlaces.length} ${filteredPlaces.length == 1 ? 'place' : 'places'} found',
-                    style: const TextStyle(
-                      fontSize: 16,
+                    '${filteredPlaces.length} '
+                    '${filteredPlaces.length == 1 ? 'place' : 'places'} found',
+                    style: TextStyle(
+                      fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white70,
+                      color: Colors.white.withValues(alpha: 0.80),
                     ),
                   ),
                 ),
               ),
-              
-              // Places List
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      return FadeTransition(
-                        opacity: _fadeAnimation,
-                        child: _buildPlaceCard(filteredPlaces[index]),
-                      );
-                    },
+                    (context, index) => FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: _buildPlaceCard(filteredPlaces[index]),
+                    ),
                     childCount: filteredPlaces.length,
                   ),
                 ),
               ),
-              
-              // Bottom Spacing
-              const SliverToBoxAdapter(
-                child: SizedBox(height: 48),
-              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 48)),
             ],
           ),
+
+          // ── Top nav bar ────────────────────────────────────────────────────
+          _buildTopNav(),
         ],
       ),
     );
   }
 
-  Widget _buildSubcategoryFilter() {
-    return Container(
-      height: 50,
-      margin: const EdgeInsets.symmetric(vertical: 16),
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        children: [
-          _buildFilterChip('All', null),
-          const SizedBox(width: 12),
-          ...widget.channel.subcategories.map((subcategory) => Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: _buildFilterChip(subcategory, subcategory),
-            )),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilterChip(String label, String? value) {
-    final isSelected = _selectedSubcategory == value;
-    
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedSubcategory = value;
-        });
-      },
+  // ── Top nav bar ───────────────────────────────────────────────────────────
+  Widget _buildTopNav() {
+    final double navOpacity = (_scrollOffset / 80).clamp(0.0, 1.0);
+    return Positioned(
+      top: 0, left: 0, right: 0,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         decoration: BoxDecoration(
-          gradient: isSelected
-              ? LinearGradient(
-                  colors: [
-                    const Color(0xFF14FFEC),
-                    widget.channel.color,
-                  ],
-                )
-              : null,
-          color: isSelected ? null : Colors.white.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(25),
-          border: Border.all(
-            color: isSelected
-                ? Colors.transparent
-                : Colors.white.withValues(alpha: 0.3),
-            width: 1,
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black.withValues(alpha: 0.30 + 0.45 * navOpacity),
+              Colors.transparent,
+            ],
           ),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-            fontSize: 14,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPlaceCard(PlaceItem place) {
-    return GestureDetector(
-      onTap: () => _navigateToPlaceDetails(place),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 20),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: widget.channel.color.withValues(alpha: 0.2),
-              blurRadius: 10,
-              spreadRadius: 1,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.2),
-              ),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
               children: [
-                // Image using RobustAssetImage
-                Stack(
-                  children: [
-                    SizedBox(
-                      height: 200,
-                      width: double.infinity,
-                      child: RobustAssetImage(
-                        imagePath: place.assetPath,
-                        fit: BoxFit.cover,
-                        fallbackColor: widget.channel.color,
-                        fallbackIcon: widget.channel.icon,
-                      ),
+                // Back
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.15),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.30)),
                     ),
-                    
-                    // Status Badge
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: place.isOpen
-                              ? Colors.green
-                              : Colors.red,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          place.isOpen ? 'Open' : 'Closed',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                    
-                    // Price Range
-                    Positioned(
-                      top: 12,
-                      left: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          place.priceRange,
-                          style: const TextStyle(
-                            color: Color(0xFF14FFEC),
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                    child: const Icon(Icons.arrow_back,
+                        color: Colors.white, size: 18),
+                  ),
                 ),
-                
-                // Content
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(width: 10),
+                // Logo orb
+                Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                        colors: [_P.aquaBright, _P.aqua]),
+                    boxShadow: [
+                      BoxShadow(
+                          color: _P.aqua.withValues(alpha: 0.50),
+                          blurRadius: 10),
+                    ],
+                  ),
+                  child: const Icon(Icons.landscape,
+                      color: Colors.white, size: 18),
+                ),
+                const SizedBox(width: 10),
+                // Brand name
+                ShaderMask(
+                  shaderCallback: (b) => const LinearGradient(
+                    colors: [_P.aquaBright, Colors.white],
+                  ).createShader(b),
+                  child: const Text(
+                    'PALMNAZI',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                // Channel title pill
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: widget.channel.color.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Name and Rating
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              place.name,
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFB300),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  Icons.star,
-                                  size: 14,
-                                  color: Colors.white,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  place.rating.toString(),
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      
-                      // Category and Reviews
-                      Row(
-                        children: [
-                          Text(
-                            place.category,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: widget.channel.color,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '•',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.5),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '${place.reviewCount} reviews',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.white.withValues(alpha: 0.7),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      
-                      // Description
+                      Icon(widget.channel.icon,
+                          color: Colors.white, size: 14),
+                      const SizedBox(width: 6),
                       Text(
-                        place.description,
-                        style: TextStyle(
+                        widget.channel.title,
+                        style: const TextStyle(
+                          color: Colors.white,
                           fontSize: 13,
-                          color: Colors.white.withValues(alpha: 0.8),
-                          height: 1.4,
+                          fontWeight: FontWeight.w700,
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 12),
-                      
-                      // Features
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: place.features.take(4).map((feature) {
-                          return Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.2),
-                              ),
-                            ),
-                            child: Text(
-                              feature,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: Colors.white70,
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 16),
-                      
-                      // View Details Button
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    const Color(0xFF14FFEC),
-                                    widget.channel.color,
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    'View Details',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  SizedBox(width: 8),
-                                  Icon(
-                                    Icons.arrow_forward,
-                                    color: Colors.white,
-                                    size: 16,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
                       ),
                     ],
                   ),
@@ -620,5 +306,381 @@ class _ChannelScreenState extends State<ChannelScreen>
         ),
       ),
     );
+  }
+
+  // ── Breadcrumb ────────────────────────────────────────────────────────────
+  Widget _buildBreadcrumb() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      child: Row(
+        children: [
+          Text(
+            widget.city.name,
+            style: TextStyle(
+              color: widget.city.color,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(Icons.chevron_right,
+              size: 16, color: Colors.white.withValues(alpha: 0.5)),
+          const SizedBox(width: 8),
+          Text(
+            widget.channel.title,
+            style: const TextStyle(
+              color: _P.aquaBright,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Channel description card ──────────────────────────────────────────────
+  Widget _buildChannelDescription() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            widget.channel.color.withValues(alpha: 0.30),
+            widget.channel.color.withValues(alpha: 0.10),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+            color: widget.channel.color.withValues(alpha: 0.50)),
+      ),
+      child: Text(
+        widget.channel.description,
+        style: TextStyle(
+          fontSize: 14,
+          color: Colors.white.withValues(alpha: 0.90),
+          height: 1.5,
+        ),
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
+
+  // ── Subcategory filter ────────────────────────────────────────────────────
+  Widget _buildSubcategoryFilter() {
+    return SizedBox(
+      height: 50,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        children: [
+          _buildFilterChip('All', null),
+          const SizedBox(width: 12),
+          ...widget.channel.subcategories.map((s) => Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: _buildFilterChip(s, s),
+              )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChip(String label, String? value) {
+    final bool isSelected = _selectedSubcategory == value;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedSubcategory = value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: isSelected
+              ? LinearGradient(
+                  colors: [_P.aquaBright, widget.channel.color])
+              : null,
+          color: isSelected ? null : Colors.white.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(25),
+          border: Border.all(
+            color: isSelected
+                ? Colors.transparent
+                : Colors.white.withValues(alpha: 0.30),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? _P.deepNavy : Colors.white,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Place card ────────────────────────────────────────────────────────────
+  Widget _buildPlaceCard(PlaceItem place) {
+    return GestureDetector(
+      onTap: () => _navigateToPlaceDetails(place),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 20),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          color: Colors.white.withValues(alpha: 0.08),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+          boxShadow: [
+            BoxShadow(
+              color: widget.channel.color.withValues(alpha: 0.20),
+              blurRadius: 12,
+              spreadRadius: 1,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Image section: 3-column layout — centre holds the image ──
+              // left spacer | square image | right spacer
+              // LayoutBuilder reads the card width so the image scales
+              // proportionally: ~45 % of card width, clamped 120–190 px.
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final double imgSize =
+                      (constraints.maxWidth * 0.45).clamp(120.0, 190.0);
+
+                  return Stack(
+                    alignment: Alignment.topCenter,
+                    children: [
+                      // Row: spacer | image | spacer
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            const Expanded(child: SizedBox()),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: Container(
+                                width: imgSize,
+                                height: imgSize,
+                                color: Colors.black.withValues(alpha: 0.20),
+                                child: RobustAssetImage(
+                                  imagePath: place.assetPath,
+                                  fit: BoxFit.contain,
+                                  fallbackColor: widget.channel.color,
+                                  fallbackIcon: widget.channel.icon,
+                                ),
+                              ),
+                            ),
+                            const Expanded(child: SizedBox()),
+                          ],
+                        ),
+                      ),
+
+                      // Open / Closed badge — floats top-right of the section
+                      Positioned(
+                        top: 12, right: 12,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: place.isOpen ? Colors.green : Colors.red,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            place.isOpen ? 'Open' : 'Closed',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // Price badge — floats top-left of the section
+                      Positioned(
+                        top: 12, left: 12,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.60),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            place.priceRange,
+                            style: const TextStyle(
+                              color: _P.aquaBright,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ], // Stack children
+                  ); // Stack
+                }, // builder
+              ), // LayoutBuilder
+
+              // ── Place summary ─────────────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Name + rating
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            place.name,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFB300),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.star,
+                                  size: 14, color: Colors.white),
+                              const SizedBox(width: 4),
+                              Text(
+                                place.rating.toString(),
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Category · reviews
+                    Row(
+                      children: [
+                        Text(
+                          place.category,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: widget.channel.color,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '•',
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.5)),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${place.reviewCount} reviews',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.white.withValues(alpha: 0.70),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+
+                    // Description
+                    Text(
+                      place.description,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.white.withValues(alpha: 0.80),
+                        height: 1.4,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Feature chips
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: place.features.take(4).map((f) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.20)),
+                          ),
+                          child: Text(
+                            f,
+                            style: const TextStyle(
+                                fontSize: 11, color: Colors.white70),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // View Details button
+                    SizedBox(
+                      width: double.infinity,
+                      child: Container(
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [_P.aquaBright, widget.channel.color],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _P.aqua.withValues(alpha: 0.40),
+                              blurRadius: 10,
+                              spreadRadius: 1,
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'View Details',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Icon(Icons.arrow_forward,
+                                color: Colors.white, size: 16),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ], // Column children
+          ), // Column
+        ), // ClipRRect
+      ), // Container
+    ); // GestureDetector
   }
 }
