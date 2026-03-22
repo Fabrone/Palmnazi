@@ -37,23 +37,23 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Hero Background Image
+        // Hero Background Image — unchanged, image source preserved
         Positioned.fill(
           child: Image.asset(
             'assets/images/hero_background.png',
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) {
-              // Fallback gradient if image not found
+              // Fallback gradient — brighter, more vivid than the old dark navy
               return Container(
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Color(0xFF0A1128), // Deep navy
-                      Color(0xFF1E3A5F), // Medium blue
-                      Color(0xFF0D7377), // Teal
-                      Color(0xFF0A1128), // Back to deep navy
+                      Color(0xFF0D2461), // rich deep navy  (was dull 0xFF0A1128)
+                      Color(0xFF1565C0), // vibrant royal blue (was flat 0xFF1E3A5F)
+                      Color(0xFF00ACC1), // vivid cyan        (was muddy 0xFF0D7377)
+                      Color(0xFF0D2461), // back to rich navy (was dull 0xFF0A1128)
                     ],
                     stops: [0.0, 0.35, 0.7, 1.0],
                   ),
@@ -63,7 +63,10 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
           ),
         ),
         
-        // Opaque overlay for better content visibility
+        // ── Overlay — SIGNIFICANTLY LIGHTENED ─────────────────────────────
+        // The original alpha (0.55 / 0.65 / 0.55) smothered both the hero
+        // image and every colour beneath it. Reduced to 0.28 / 0.35 / 0.28
+        // so the background image breathes and accent colours pop.
         Positioned.fill(
           child: Container(
             decoration: BoxDecoration(
@@ -71,16 +74,16 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.black.withValues(alpha: 0.55),
-                  Colors.black.withValues(alpha: 0.65),
-                  Colors.black.withValues(alpha: 0.55),
+                  Colors.black.withValues(alpha: 0.28), // was 0.55
+                  Colors.black.withValues(alpha: 0.35), // was 0.65
+                  Colors.black.withValues(alpha: 0.28), // was 0.55
                 ],
               ),
             ),
           ),
         ),
         
-        // Animated gradient overlay with subtle movement
+        // Animated gradient overlay — brighter, more visible sweep
         AnimatedBuilder(
           animation: _controller,
           builder: (context, child) {
@@ -96,9 +99,9 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
                     -math.sin(_controller.value * 2 * math.pi),
                   ),
                   colors: [
-                    const Color(0xFF14FFEC).withValues(alpha: 0.06),
-                    const Color(0xFF0D7377).withValues(alpha: 0.08),
-                    const Color(0xFF14FFEC).withValues(alpha: 0.06),
+                    const Color(0xFF00FFEA).withValues(alpha: 0.14), // was 0xFF14FFEC @ 0.06
+                    const Color(0xFF00BCD4).withValues(alpha: 0.18), // was 0xFF0D7377 @ 0.08
+                    const Color(0xFF00FFEA).withValues(alpha: 0.14), // was 0xFF14FFEC @ 0.06
                   ],
                 ),
               ),
@@ -106,7 +109,7 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
           },
         ),
         
-        // Floating particles (bubbles)
+        // Floating particles (bubbles) — brighter colours & stronger glow
         AnimatedBuilder(
           animation: _controller,
           builder: (context, child) {
@@ -131,9 +134,9 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
           },
         ),
         
-        // Subtle geometric pattern overlay
+        // Subtle geometric pattern overlay — slightly more visible
         Opacity(
-          opacity: 0.04,
+          opacity: 0.08, // was 0.04
           child: CustomPaint(
             painter: GeometricPatternPainter(),
             size: Size.infinite,
@@ -160,10 +163,11 @@ class Particle {
     speedX = (random.nextDouble() - 0.5) * 0.0003;
     speedY = (random.nextDouble() - 0.5) * 0.0003;
     
+    // Brighter particle colours — higher alpha for better visibility
     final colors = [
-      Colors.white.withValues(alpha: 0.4),
-      const Color(0xFF14FFEC).withValues(alpha: 0.5),
-      const Color(0xFF0D7377).withValues(alpha: 0.4),
+      Colors.white.withValues(alpha: 0.70),                    // was 0.4
+      const Color(0xFF00FFEA).withValues(alpha: 0.80),         // was 0xFF14FFEC @ 0.5
+      const Color(0xFF40C4FF).withValues(alpha: 0.65),         // was 0xFF0D7377 @ 0.4 (dull)
     ];
     color = colors[random.nextInt(colors.length)];
   }
@@ -204,10 +208,10 @@ class ParticlePainter extends CustomPainter {
         paint,
       );
       
-      // Draw glow effect for bubble appearance
+      // Glow effect — stronger alpha for better bubble brightness
       final glowPaint = Paint()
-        ..color = particle.color.withValues(alpha: 0.15)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
+        ..color = particle.color.withValues(alpha: 0.30) // was 0.15
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
       
       canvas.drawCircle(
         Offset(particle.x * size.width, particle.y * size.height),
@@ -235,10 +239,11 @@ class AnimatedCirclesPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
 
-    // Draw multiple animated circles with different sizes and positions
+    // Draw multiple animated circles with brighter, more visible strokes
     for (int i = 0; i < 5; i++) {
       final radius = (size.width / 4) + (i * 50) + (animationValue * 20);
-      paint.color = const Color(0xFF14FFEC).withValues(alpha: 0.05 - (i * 0.01));
+      // was: alpha: 0.05 - (i * 0.01) — too faint; now 0.12 - (i * 0.02)
+      paint.color = const Color(0xFF00FFEA).withValues(alpha: 0.12 - (i * 0.02).clamp(0.0, 0.12));
       
       canvas.drawCircle(
         Offset(size.width * 0.3, size.height * 0.4),
@@ -253,7 +258,7 @@ class AnimatedCirclesPainter extends CustomPainter {
       );
     }
     
-    // Add some random bubble positions with pulsing effect
+    // Pulsing bubble positions — brighter
     final random = math.Random(42); // Fixed seed for consistency
     for (int i = 0; i < 10; i++) {
       final x = random.nextDouble() * size.width;
@@ -261,15 +266,15 @@ class AnimatedCirclesPainter extends CustomPainter {
       final baseRadius = 40.0 + (i * 25);
       final radius = baseRadius + (math.sin(animationValue * 2 * math.pi + i) * 15);
       
-      paint.color = const Color(0xFF14FFEC).withValues(alpha: 0.03);
+      paint.color = const Color(0xFF00FFEA).withValues(alpha: 0.07); // was 0.03
       canvas.drawCircle(
         Offset(x, y),
         radius,
         paint,
       );
       
-      // Add inner glow for bubble effect
-      paint.color = const Color(0xFF14FFEC).withValues(alpha: 0.02);
+      // Inner glow ring
+      paint.color = const Color(0xFF00FFEA).withValues(alpha: 0.05); // was 0.02
       canvas.drawCircle(
         Offset(x, y),
         radius * 0.7,
@@ -284,18 +289,18 @@ class AnimatedCirclesPainter extends CustomPainter {
   }
 }
 
-// Custom geometric pattern painter with bubble intersections
+// Custom geometric pattern painter
 class GeometricPatternPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.06)
+      ..color = Colors.white.withValues(alpha: 0.10) // was 0.06
       ..strokeWidth = 1
       ..style = PaintingStyle.stroke;
 
     const spacing = 60.0;
     
-    // Draw diagonal grid lines
+    // Diagonal grid lines
     for (double i = -size.height; i < size.width + size.height; i += spacing) {
       canvas.drawLine(
         Offset(i, 0),
@@ -304,14 +309,14 @@ class GeometricPatternPainter extends CustomPainter {
       );
     }
     
-    // Draw circles at intersections (small bubble effect)
+    // Bright intersection dots
     for (double x = 0; x < size.width; x += spacing) {
       for (double y = 0; y < size.height; y += spacing) {
         canvas.drawCircle(
           Offset(x, y),
           2,
           Paint()
-            ..color = const Color(0xFF14FFEC).withValues(alpha: 0.2)
+            ..color = const Color(0xFF00FFEA).withValues(alpha: 0.45) // was 0xFF14FFEC @ 0.2
             ..style = PaintingStyle.fill,
         );
       }

@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 
+abstract final class _SC {
+  static const Color aquaBright = Color(0xFF00E5FF);
+  static const Color teal       = Color(0xFF00838F);
+}
+
 class StatsCounter extends StatefulWidget {
   const StatsCounter({super.key});
 
@@ -11,135 +16,150 @@ class _StatsCounterState extends State<StatsCounter> {
   bool _hasAnimated = false;
 
   final List<StatItem> _stats = [
-    StatItem(
-      icon: Icons.location_city,
-      count: 15,
-      label: 'Resort Cities',
-      suffix: '+',
-    ),
-    StatItem(
-      icon: Icons.business,
-      count: 500,
-      label: 'Businesses',
-      suffix: '+',
-    ),
-    StatItem(
-      icon: Icons.people,
-      count: 10000,
-      label: 'Happy Visitors',
-      suffix: '+',
-    ),
-    StatItem(
-      icon: Icons.star,
-      count: 4,
-      label: 'Average Rating',
-      suffix: '.8',
-      decimal: true,
-    ),
+    StatItem(icon: Icons.location_city, count: 15,    label: 'Resort Cities',  suffix: '+'),
+    StatItem(icon: Icons.business,      count: 500,   label: 'Businesses',     suffix: '+'),
+    StatItem(icon: Icons.people,        count: 10000, label: 'Happy Visitors', suffix: '+'),
+    StatItem(icon: Icons.star,          count: 4,     label: 'Average Rating', suffix: '.8', decimal: true),
   ];
 
   @override
-  Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isLargeScreen = screenWidth > 1200;
-    final isMediumScreen = screenWidth > 800;
+  void initState() {
+    super.initState();
+    // Trigger animation once after first frame — no MediaQuery, no
+    // VisibilityDetector, no window size dependency.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_hasAnimated) {
+        setState(() => _hasAnimated = true);
+      }
+    });
+  }
 
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
-      padding: const EdgeInsets.all(48),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            const Color(0xFF1A237E).withValues(alpha: 0.8),
-            const Color(0xFF00897B).withValues(alpha: 0.8),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF00897B).withValues(alpha: 0.3),
-            blurRadius: 30,
-            spreadRadius: 5,
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double w        = constraints.maxWidth;
+        final bool   isLarge  = w > 1200;
+        final bool   isMedium = w > 700;
+
+        final double hPad = isLarge ? 32 : isMedium ? 24 : 16;
+        final double vPad = isLarge ? 28 : isMedium ? 24 : 18;
+
+        final List<Widget> items = _stats
+            .map((s) => Expanded(child: _buildStatItem(s, isLarge, isMedium)))
+            .toList();
+
+        return Container(
+          margin: const EdgeInsets.symmetric(vertical: 48, horizontal: 16),
+          padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xCC00838F),
+                Color(0xCC005F6B),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: _SC.aquaBright.withValues(alpha: 0.35),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: _SC.teal.withValues(alpha: 0.45),
+                blurRadius: 36,
+                spreadRadius: 4,
+              ),
+            ],
           ),
-        ],
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          if (isLargeScreen || isMediumScreen) {
-            return Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: _stats
-                  .map((stat) => Expanded(
-                        child: _buildStatItem(stat),
-                      ))
-                  .toList(),
-            );
-          } else {
-            return Column(
-              children: _stats
-                  .asMap()
-                  .entries
-                  .map((entry) => Padding(
-                        padding: EdgeInsets.only(
-                          bottom: entry.key < _stats.length - 1 ? 32 : 0,
-                        ),
-                        child: _buildStatItem(entry.value),
-                      ))
-                  .toList(),
-            );
-          }
-        },
-      ),
+          // Always horizontal — Column only on very narrow phones
+          child: w < 360
+              ? Column(
+                  children: _stats
+                      .asMap()
+                      .entries
+                      .map((e) => Padding(
+                            padding: EdgeInsets.only(
+                                bottom: e.key < _stats.length - 1 ? 28 : 0),
+                            child: _buildStatItem(e.value, isLarge, isMedium),
+                          ))
+                      .toList(),
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: items,
+                ),
+        );
+      },
     );
   }
 
-  Widget _buildStatItem(StatItem stat) {
-    return VisibilityDetector(
-      key: Key(stat.label),
-      onVisibilityChanged: (info) {
-        if (info.visibleFraction > 0.5 && !_hasAnimated) {
-          setState(() {
-            _hasAnimated = true;
-          });
-        }
-      },
+  Widget _buildStatItem(StatItem stat, bool isLarge, bool isMedium) {
+    final double iconContainerSize = isLarge ? 48 : isMedium ? 44 : 38;
+    final double iconSize          = isLarge ? 22 : isMedium ? 20 : 18;
+    final double iconPad           = isLarge ? 10 : isMedium ? 10 : 8;
+    final double counterSize       = isLarge ? 30 : isMedium ? 26 : 22;
+    final double labelSize         = isLarge ? 13 : isMedium ? 12 : 11;
+    final double spacingAbove      = isLarge ? 10 : isMedium ? 8  : 6;
+    final double spacingBelowNum   = isLarge ? 4  : isMedium ? 4  : 3;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
+          // Icon orb
           Container(
-            padding: const EdgeInsets.all(16),
+            width: iconContainerSize,
+            height: iconContainerSize,
+            padding: EdgeInsets.all(iconPad),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.1),
+              color: Colors.white.withValues(alpha: 0.18),
               shape: BoxShape.circle,
               border: Border.all(
-                color: Colors.white.withValues(alpha: 0.3),
-                width: 2,
+                color: _SC.aquaBright.withValues(alpha: 0.60),
+                width: 1.5,
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: _SC.aquaBright.withValues(alpha: 0.25),
+                  blurRadius: 12,
+                  spreadRadius: 1,
+                ),
+              ],
             ),
-            child: Icon(
-              stat.icon,
-              size: 40,
-              color: Colors.white,
-            ),
+            child: Icon(stat.icon, size: iconSize, color: Colors.white),
           ),
-          const SizedBox(height: 16),
+
+          SizedBox(height: spacingAbove),
+
+          // Animated number
           AnimatedCounter(
-            count: stat.count,
-            duration: const Duration(seconds: 2),
-            suffix: stat.suffix,
-            decimal: stat.decimal,
+            count:         stat.count,
+            duration:      const Duration(seconds: 2),
+            suffix:        stat.suffix,
+            decimal:       stat.decimal,
             shouldAnimate: _hasAnimated,
+            fontSize:      counterSize,
           ),
-          const SizedBox(height: 8),
+
+          SizedBox(height: spacingBelowNum),
+
+          // Label
           Text(
             stat.label,
-            style: const TextStyle(
-              fontSize: 16,
-              color: Colors.white70,
-              fontWeight: FontWeight.w500,
+            style: TextStyle(
+              fontSize:      labelSize,
+              color:         Colors.white.withValues(alpha: 0.92),
+              fontWeight:    FontWeight.w600,
+              letterSpacing: 0.3,
             ),
             textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -147,20 +167,24 @@ class _StatsCounterState extends State<StatsCounter> {
   }
 }
 
+// ── AnimatedCounter ──────────────────────────────────────────────────────────
+
 class AnimatedCounter extends StatefulWidget {
-  final int count;
+  final int      count;
   final Duration duration;
-  final String suffix;
-  final bool decimal;
-  final bool shouldAnimate;
+  final String   suffix;
+  final bool     decimal;
+  final bool     shouldAnimate;
+  final double   fontSize;
 
   const AnimatedCounter({
     super.key,
     required this.count,
     required this.duration,
-    this.suffix = '',
-    this.decimal = false,
+    this.suffix        = '',
+    this.decimal       = false,
     required this.shouldAnimate,
+    this.fontSize      = 48,
   });
 
   @override
@@ -170,23 +194,14 @@ class AnimatedCounter extends StatefulWidget {
 class _AnimatedCounterState extends State<AnimatedCounter>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  late Animation<double> _animation;
+  late Animation<double>   _animation;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      duration: widget.duration,
-      vsync: this,
-    );
-
-    _animation = Tween<double>(
-      begin: 0,
-      end: widget.count.toDouble(),
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
-    ));
+    _controller = AnimationController(duration: widget.duration, vsync: this);
+    _animation  = Tween<double>(begin: 0, end: widget.count.toDouble())
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
   }
 
   @override
@@ -207,24 +222,21 @@ class _AnimatedCounterState extends State<AnimatedCounter>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _animation,
-      builder: (context, child) {
-        String value = widget.decimal
+      builder: (context, _) {
+        final String value = widget.decimal
             ? _animation.value.toStringAsFixed(1)
             : _animation.value.toInt().toString();
-        
+
         return ShaderMask(
           shaderCallback: (bounds) => const LinearGradient(
-            colors: [
-              Colors.white,
-              Color(0xFF00897B),
-            ],
+            colors: [Colors.white, _SC.aquaBright],
           ).createShader(bounds),
           child: Text(
             '$value${widget.suffix}',
-            style: const TextStyle(
-              fontSize: 48,
+            style: TextStyle(
+              fontSize:   widget.fontSize,
               fontWeight: FontWeight.bold,
-              color: Colors.white,
+              color:      Colors.white,
             ),
           ),
         );
@@ -233,75 +245,20 @@ class _AnimatedCounterState extends State<AnimatedCounter>
   }
 }
 
+// ── Data model ───────────────────────────────────────────────────────────────
+
 class StatItem {
   final IconData icon;
-  final int count;
-  final String label;
-  final String suffix;
-  final bool decimal;
+  final int      count;
+  final String   label;
+  final String   suffix;
+  final bool     decimal;
 
   StatItem({
     required this.icon,
     required this.count,
     required this.label,
-    this.suffix = '',
+    this.suffix  = '',
     this.decimal = false,
   });
-}
-
-// Simple visibility detector implementation
-class VisibilityDetector extends StatefulWidget {
-  final Widget child;
-  final Function(VisibilityInfo) onVisibilityChanged;
-
-  const VisibilityDetector({
-    required super.key,
-    required this.child,
-    required this.onVisibilityChanged,
-  });
-
-  @override
-  State<VisibilityDetector> createState() => _VisibilityDetectorState();
-}
-
-class _VisibilityDetectorState extends State<VisibilityDetector> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkVisibility();
-    });
-  }
-
-  void _checkVisibility() {
-    final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
-    if (renderBox != null && renderBox.hasSize) {
-      final position = renderBox.localToGlobal(Offset.zero);
-      final size = renderBox.size;
-      final screenHeight = MediaQuery.of(context).size.height;
-
-      final visibleHeight = size.height -
-          (position.dy < 0 ? -position.dy : 0) -
-          (position.dy + size.height > screenHeight
-              ? position.dy + size.height - screenHeight
-              : 0);
-
-      final visibleFraction = visibleHeight / size.height;
-
-      widget.onVisibilityChanged(VisibilityInfo(
-        visibleFraction: visibleFraction.clamp(0.0, 1.0),
-      ));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return widget.child;
-  }
-}
-
-class VisibilityInfo {
-  final double visibleFraction;
-
-  VisibilityInfo({required this.visibleFraction});
 }
