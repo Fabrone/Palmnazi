@@ -14,10 +14,10 @@ abstract final class PalmColors {
   static const Color aqua        = Color(0xFF00B8D4);
   static const Color aquaBright  = Color(0xFF00E5FF);
   static const Color amber       = Color(0xFFFFB300);
-  static const Color deepNavy    = Color(0xFF01263F);
-  static const Color mombasaCoral = Color(0xFF8B2500); // deep burnt coral
-  static const Color malindiBlue  = Color(0xFF0A3D7A); // deep navy blue
-  static const Color dianiGreen   = Color(0xFF1B5E20); // deep forest green
+  static const Color deepNavy    = Color.fromARGB(255, 33, 2, 60);
+  static const Color mombasaCoral = Color.fromRGBO(41, 5, 83, 1); // near-black burnt coral
+  static const Color malindiBlue  = Color.fromARGB(255, 2, 32, 76); // near-black navy
+  static const Color dianiGreen   = Color(0xFF0A2E0D); // near-black forest green
 }
 
 class LandingPage extends StatefulWidget {

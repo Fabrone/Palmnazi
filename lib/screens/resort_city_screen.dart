@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/channel_screen.dart';
-import 'package:palmnazi/widgets/animated_background.dart';
 import 'package:palmnazi/widgets/robust_asset_image.dart';
 import 'package:palmnazi/models/models.dart';
 
@@ -146,18 +145,39 @@ class _ResortCityScreenState extends State<ResortCityScreen>
     return Scaffold(
       body: Stack(
         children: [
-          // Animated background — keeps motion effects on inner screens
-          const AnimatedBackground(),
+          // ── Static city image background — no animations ──────────────
+          Positioned.fill(
+            child: Image.asset(
+              widget.city.assetPath,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      widget.city.color,
+                      Colors.black,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
 
-          // Main scrollable content
+          // Thin dark scrim for readability over the city image
+          Positioned.fill(
+            child: Container(
+              color: Colors.black.withValues(alpha: 0.45),
+            ),
+          ),
+
+          // Main scrollable content — starts directly at city info card
           CustomScrollView(
             controller: _scrollController,
             slivers: [
               // Space below the custom top nav bar
-              const SliverToBoxAdapter(child: SizedBox(height: 70)),
-
-              // ── City hero image + info ──────────────────────────────────
-              SliverToBoxAdapter(child: _buildCityHero()),
+              const SliverToBoxAdapter(child: SizedBox(height: 80)),
 
               // ── City info card ─────────────────────────────────────────
               SliverToBoxAdapter(
@@ -339,66 +359,6 @@ class _ResortCityScreenState extends State<ResortCityScreen>
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  // ── City hero image ───────────────────────────────────────────────────────
-  Widget _buildCityHero() {
-    return SizedBox(
-      height: 280,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          RobustAssetImage(
-            imagePath: widget.city.assetPath,
-            fit: BoxFit.cover,
-            fallbackColor: widget.city.color,
-            fallbackIcon: Icons.location_city,
-          ),
-          // Bottom gradient for text legibility
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withValues(alpha: 0.10),
-                  Colors.black.withValues(alpha: 0.68),
-                ],
-              ),
-            ),
-          ),
-          // City name overlay
-          Positioned(
-            bottom: 24, left: 24, right: 24,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.city.name,
-                  style: const TextStyle(
-                    fontSize: 36,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                    letterSpacing: 1,
-                    shadows: [Shadow(color: Colors.black45, blurRadius: 12)],
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  widget.city.tagline,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: widget.city.color,
-                    shadows: const [Shadow(color: Colors.black38, blurRadius: 8)],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
