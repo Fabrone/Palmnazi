@@ -32,9 +32,18 @@ flutter:
     - assets/images/cities/
     - assets/images/places/
 
+# Configuration for the flutter_launcher_icons package
 flutter_launcher_icons:
-  android: true
+  # 1. Main configuration keys (android, ios, web, etc.)
+  android: "launcher_icon" # Use a specific name
   ios: true
+  
+  # 2. Source image path
   image_path: "assets/images/logo.png"
-  adaptive_icon_background: "#ffffff"
-  adaptive_icon_foreground: "assets/images/logo.png"
+
+  # 3. Web configuration (Must be a map/nested block)
+  web:
+    generate: true
+    image_path: "assets/images/logo.png"
+    background_color: "#FFFFFF"
+    theme_color: "#000000"
