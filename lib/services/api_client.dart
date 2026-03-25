@@ -381,6 +381,48 @@ class ApiClient {
     return response;
   }
 
+  /// Authenticated PATCH with automatic 401 recovery.
+  /// Used by AdminApiService for all progressive place update endpoints:
+  /// PATCH /api/places/:id, /location, /contact, /attributes, /media, /booking
+  static Future<http.Response> authPatch(
+    String endpoint, {
+    Map<String, dynamic>? body,
+  }) async {
+    _apiLog.d('📝 ApiClient.authPatch ──► ${ApiEndpoints.url(endpoint)}');
+    if (body != null) _apiLog.d('   body: $body');
+
+    var response = await _doAuthPatch(endpoint, body: body);
+
+    if (response.statusCode == 401) {
+      _apiLog.w(
+        '⚠️ ApiClient.authPatch: 401 on $endpoint — '
+        'attempting token refresh before retry',
+      );
+      final refreshed = await refreshAccessToken();
+
+      if (refreshed) {
+        _apiLog.i('🔄 ApiClient.authPatch: Refresh succeeded — retrying $endpoint');
+        response = await _doAuthPatch(endpoint, body: body);
+
+        if (response.statusCode == 401) {
+          _apiLog.e(
+            '❌ ApiClient.authPatch: Still 401 after retry on $endpoint — '
+            'session is unrecoverable',
+          );
+          await _handleSessionExpired();
+        }
+      } else {
+        _apiLog.e(
+          '❌ ApiClient.authPatch: Token refresh failed for $endpoint — '
+          'session is unrecoverable',
+        );
+        await _handleSessionExpired();
+      }
+    }
+
+    return response;
+  }
+
   /// Use for: DELETE /api/cities/:id and any other protected deletes.
   static Future<http.Response> authDelete(String endpoint) async {
     _apiLog.d('🗑️  ApiClient.authDelete ──► ${ApiEndpoints.url(endpoint)}');
@@ -638,6 +680,23 @@ class ApiClient {
     final headers = await _authHeaders;
     return http
         .put(
+          uri,
+          headers: headers,
+          body: body != null ? jsonEncode(body) : null,
+        )
+        .timeout(_timeout);
+  }
+
+  /// Internal authenticated PATCH — no retry logic.
+  /// Called by [authPatch] which owns the 401-recovery logic.
+  static Future<http.Response> _doAuthPatch(
+    String endpoint, {
+    Map<String, dynamic>? body,
+  }) async {
+    final uri     = Uri.parse(ApiEndpoints.url(endpoint));
+    final headers = await _authHeaders;
+    return http
+        .patch(
           uri,
           headers: headers,
           body: body != null ? jsonEncode(body) : null,

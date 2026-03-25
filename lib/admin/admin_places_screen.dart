@@ -1,28 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:palmnazi/admin/admin_api_service.dart';
+import 'package:palmnazi/admin/admin_place_wizard_screen.dart';
 import 'package:palmnazi/admin/admin_shared_widgets.dart';
 import 'package:palmnazi/models/city_model.dart';
-import 'package:palmnazi/models/models.dart';
+import 'package:palmnazi/models/category_model.dart';
+import 'package:palmnazi/models/place_model.dart';
 
-/// ─────────────────────────────────────────────────────────────────────────────
-/// Admin Places Screen
-/// Lists all places for a given (city + channel) pair.
-/// Both city and channel must be selected before managing places.
-/// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// AdminPlacesScreen
+//
+// List view for all places. Supports:
+//   • Optional city and category filter (passed down from dashboard context)
+//   • Status tab filter: All / Active / Pending / Suspended / Archived
+//   • Search by name or location
+//   • Launch the 11-step AdminPlaceWizardScreen to create or edit a place
+//   • Delete a place (with confirmation)
+//
+// This screen owns the city and category lists so the wizard has them when
+// launched. Both lists are fetched on init alongside the places list.
+// ─────────────────────────────────────────────────────────────────────────────
+
 class AdminPlacesScreen extends StatefulWidget {
   final AdminApiService apiService;
-  final CityModel? selectedCity;
-  final ChannelItem? selectedChannel;
-  final VoidCallback onCityPickRequested;
-  final VoidCallback onChannelPickRequested;
+  final CityModel? filterCity;
+  final CategoryModel? filterCategory;
+  final ValueChanged<CityModel?> onCityFilterChanged;
+  final ValueChanged<CategoryModel?> onCategoryFilterChanged;
 
   const AdminPlacesScreen({
     super.key,
     required this.apiService,
-    required this.selectedCity,
-    required this.selectedChannel,
-    required this.onCityPickRequested,
-    required this.onChannelPickRequested,
+    required this.onCityFilterChanged,
+    required this.onCategoryFilterChanged,
+    this.filterCity,
+    this.filterCategory,
   });
 
   @override
@@ -30,87 +41,130 @@ class AdminPlacesScreen extends StatefulWidget {
 }
 
 class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
-  List<PlaceItem> _places = [];
+  // ── Data ──────────────────────────────────────────────────────────────────
+  List<PlaceModel> _places = [];
+  List<CityModel> _cities = [];
+  List<CategoryModel> _categories = [];
+
   bool _loading = false;
   String? _error;
   String _search = '';
+  String? _statusFilter; // null = all
+
+  // Local filter copies (user can change inside this screen)
+  CityModel? _cityFilter;
+  CategoryModel? _categoryFilter;
+
+  static const _statusTabs = [null, 'ACTIVE', 'PENDING', 'SUSPENDED', 'ARCHIVED'];
+  static const _statusLabels = ['All', 'Active', 'Pending', 'Suspended', 'Archived'];
 
   @override
   void initState() {
     super.initState();
-    if (widget.selectedCity != null && widget.selectedChannel != null) _fetch();
+    _cityFilter = widget.filterCity;
+    _categoryFilter = widget.filterCategory;
+    _loadAll();
   }
 
   @override
   void didUpdateWidget(AdminPlacesScreen old) {
     super.didUpdateWidget(old);
-    final cityChanged = widget.selectedCity?.id != old.selectedCity?.id;
-    final channelChanged = widget.selectedChannel?.id != old.selectedChannel?.id;
-    if (cityChanged || channelChanged) {
-      _places = [];
-      if (widget.selectedCity != null && widget.selectedChannel != null) {
-        _fetch();
-      }
+    // Re-sync if parent dashboard changes context
+    final cityChanged = widget.filterCity?.id != old.filterCity?.id;
+    final catChanged = widget.filterCategory?.id != old.filterCategory?.id;
+    if (cityChanged || catChanged) {
+      _cityFilter = widget.filterCity;
+      _categoryFilter = widget.filterCategory;
+      _fetchPlaces();
     }
   }
 
-  Future<void> _fetch() async {
+  Future<void> _loadAll() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final pl = await widget.apiService.getPlaces(
-          widget.selectedCity!.id, widget.selectedChannel!.id);
-      if (mounted) setState(() { _places = pl; _loading = false; });
+      final results = await Future.wait([
+        widget.apiService.getCities(),
+        widget.apiService.getCategoryTree(),
+        widget.apiService.getPlaces(
+          cityId: _cityFilter?.id,
+          categoryId: _categoryFilter?.id,
+          status: _statusFilter,
+          search: _search.trim().isNotEmpty ? _search.trim() : null,
+          limit: 50,
+        ),
+      ]);
+      if (mounted) {
+        setState(() {
+          _cities = results[0] as List<CityModel>;
+          _categories = results[1] as List<CategoryModel>;
+          _places = results[2] as List<PlaceModel>;
+          _loading = false;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _loading = false; });
     }
   }
 
-  Future<void> _delete(PlaceItem place) async {
-    final confirmed =
-        await adminConfirm(context, 'Delete "${place.name}"?',
-            'This action cannot be undone.');
+  Future<void> _fetchPlaces() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final list = await widget.apiService.getPlaces(
+        cityId: _cityFilter?.id,
+        categoryId: _categoryFilter?.id,
+        status: _statusFilter,
+        search: _search.trim().isNotEmpty ? _search.trim() : null,
+        limit: 50,
+      );
+      if (mounted) setState(() { _places = list; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  Future<void> _delete(PlaceModel place) async {
+    final confirmed = await adminConfirm(
+      context,
+      'Delete "${place.name}"?',
+      place.isActive
+          ? 'This place is currently ACTIVE. Deleting it will remove it from the app. This cannot be undone.'
+          : 'This action cannot be undone.',
+      confirmLabel: 'Delete',
+    );
     if (!confirmed) return;
     try {
-      await widget.apiService.deletePlace(
-          widget.selectedCity!.id, widget.selectedChannel!.id, place.id);
-      _fetch();
+      await widget.apiService.deletePlaceById(place.id);
       _snack('Deleted ${place.name}', isError: false);
+      _fetchPlaces();
+    } on AdminApiException catch (e) {
+      _snack(e.message, isError: true);
     } catch (e) {
       _snack('Delete failed: $e', isError: true);
     }
   }
 
-  void _openForm({PlaceItem? place}) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _PlaceFormDialog(
-        existing: place,
-        channelTitle: widget.selectedChannel?.title ?? '',
-        onSave: (payload) async {
-          try {
-            if (place == null) {
-              await widget.apiService.createPlace(
-                  widget.selectedCity!.id,
-                  widget.selectedChannel!.id,
-                  payload);
-              _snack('Place created!', isError: false);
-            } else {
-              await widget.apiService.updatePlace(
-                  widget.selectedCity!.id,
-                  widget.selectedChannel!.id,
-                  place.id,
-                  payload);
-              _snack('Place updated!', isError: false);
-            }
-            _fetch();
-          } catch (e) {
-            _snack('Error: $e', isError: true);
-            rethrow;
-          }
-        },
+  void _openWizard({PlaceModel? existing}) async {
+    // Ensure we have cities and categories loaded before launching
+    if (_cities.isEmpty || _categories.isEmpty) {
+      _snack('Loading data…', isError: false);
+      await _loadAll();
+    }
+
+    if (!mounted) return;
+
+    final refreshed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => AdminPlaceWizardScreen(
+          apiService: widget.apiService,
+          cities: _cities,
+          categories: _categories,
+          existingPlace: existing,
+        ),
       ),
     );
+    // true = submitted & activated, false = saved & exited draft
+    if (refreshed != null) _fetchPlaces();
   }
 
   void _snack(String msg, {required bool isError}) {
@@ -123,671 +177,651 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
     ));
   }
 
-  List<PlaceItem> get _filtered {
-    if (_search.trim().isEmpty) return _places;
-    final q = _search.toLowerCase();
-    return _places
-        .where((p) =>
-            p.name.toLowerCase().contains(q) ||
-            p.category.toLowerCase().contains(q) ||
-            p.address.toLowerCase().contains(q))
-        .toList();
+  List<PlaceModel> get _filtered {
+    var list = _places;
+    if (_search.trim().isNotEmpty) {
+      final q = _search.toLowerCase();
+      list = list
+          .where((p) =>
+              p.name.toLowerCase().contains(q) ||
+              (p.address?.toLowerCase().contains(q) ?? false) ||
+              p.cityName.toLowerCase().contains(q))
+          .toList();
+    }
+    return list;
   }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final ready =
-        widget.selectedCity != null && widget.selectedChannel != null;
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
+          // ── Header ──────────────────────────────────────────────────
           Row(children: [
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (ready) ...[
-                    // Breadcrumb
-                    Wrap(spacing: 6, children: [
-                      _Crumb(
-                          icon: Icons.location_city_rounded,
-                          label: widget.selectedCity!.name,
-                          color: const Color(0xFF0D7377)),
-                      const Icon(Icons.chevron_right_rounded,
-                          color: Colors.white24, size: 16),
-                      _Crumb(
-                          icon: widget.selectedChannel!.icon,
-                          label: widget.selectedChannel!.title,
-                          color: widget.selectedChannel!.color),
-                    ]),
-                    const SizedBox(height: 6),
-                  ],
                   const Text('Places',
                       style: TextStyle(
                           color: Colors.white,
                           fontSize: 20,
                           fontWeight: FontWeight.bold)),
                   Text(
-                    ready
-                        ? 'Listings in ${widget.selectedChannel!.title}'
-                        : 'Select a city and channel first',
-                    style: const TextStyle(
-                        color: Colors.white38, fontSize: 12),
+                    _buildSubtitle(),
+                    style: const TextStyle(color: Colors.white38, fontSize: 12),
                   ),
                 ],
               ),
             ),
-            if (ready)
-              AdminAddButton(
-                label: 'Add Place',
-                onTap: () => _openForm(),
-              ),
+            AdminAddButton(
+              label: 'Add Place',
+              onTap: () => _openWizard(),
+            ),
           ]),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
 
-          // Search bar (only when data exists)
-          if (ready && _places.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: TextField(
-                onChanged: (v) => setState(() => _search = v),
-                style: const TextStyle(color: Colors.white, fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: 'Search places…',
-                  hintStyle:
-                      const TextStyle(color: Colors.white24, fontSize: 13),
-                  prefixIcon: const Icon(Icons.search_rounded,
-                      color: Colors.white38, size: 18),
-                  filled: true,
-                  fillColor: const Color(0xFF111827),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.white12),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.white12),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide:
-                        const BorderSide(color: Color(0xFF9C27B0)),
-                  ),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                ),
-              ),
+          // ── Active filter chips ──────────────────────────────────────
+          if (_cityFilter != null || _categoryFilter != null)
+            _ActiveFilterBar(
+              cityFilter: _cityFilter,
+              categoryFilter: _categoryFilter,
+              onClearCity: () {
+                setState(() => _cityFilter = null);
+                widget.onCityFilterChanged(null);
+                _fetchPlaces();
+              },
+              onClearCategory: () {
+                setState(() => _categoryFilter = null);
+                widget.onCategoryFilterChanged(null);
+                _fetchPlaces();
+              },
             ),
 
-          Expanded(child: _buildContent(ready)),
+          // ── Filter dropdowns ─────────────────────────────────────────
+          _FilterRow(
+            cities: _cities,
+            categories: _categories,
+            selectedCity: _cityFilter,
+            selectedCategory: _categoryFilter,
+            onCityChanged: (city) {
+              setState(() => _cityFilter = city);
+              widget.onCityFilterChanged(city);
+              _fetchPlaces();
+            },
+            onCategoryChanged: (cat) {
+              setState(() => _categoryFilter = cat);
+              widget.onCategoryFilterChanged(cat);
+              _fetchPlaces();
+            },
+          ),
+          const SizedBox(height: 12),
+
+          // ── Search ───────────────────────────────────────────────────
+          TextField(
+            onChanged: (v) => setState(() => _search = v),
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'Search by name, city, or address…',
+              hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+              prefixIcon: const Icon(Icons.search_rounded,
+                  color: Colors.white38, size: 18),
+              suffixIcon: _search.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear_rounded,
+                          color: Colors.white38, size: 16),
+                      onPressed: () => setState(() => _search = ''),
+                    )
+                  : null,
+              filled: true,
+              fillColor: const Color(0xFF111827),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Colors.white12)),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Colors.white12)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFF9C27B0))),
+              contentPadding: const EdgeInsets.symmetric(vertical: 0),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // ── Status tabs ──────────────────────────────────────────────
+          SizedBox(
+            height: 36,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _statusTabs.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, i) => _StatusTab(
+                label: _statusLabels[i],
+                selected: _statusFilter == _statusTabs[i],
+                onTap: () {
+                  setState(() => _statusFilter = _statusTabs[i]);
+                  _fetchPlaces();
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Body ─────────────────────────────────────────────────────
+          Expanded(child: _buildBody()),
         ],
       ),
     );
   }
 
-  Widget _buildContent(bool ready) {
-    if (!ready) {
-      return _NeedSelectionView(
-        hasCity: widget.selectedCity != null,
-        onSelectCity: widget.onCityPickRequested,
-        onSelectChannel: widget.onChannelPickRequested,
-      );
-    }
+  String _buildSubtitle() {
+    final parts = <String>[];
+    if (_cityFilter != null) parts.add(_cityFilter!.name);
+    if (_categoryFilter != null) parts.add(_categoryFilter!.name);
+    if (parts.isEmpty) return 'All places across all cities';
+    return 'Filtered by: ${parts.join(' · ')}';
+  }
+
+  Widget _buildBody() {
     if (_loading) return const AdminLoader();
-    if (_error != null) return AdminErrorView(error: _error!, onRetry: _fetch);
+    if (_error != null) return AdminErrorView(error: _error!, onRetry: _loadAll);
+
     final filtered = _filtered;
-    if (filtered.isEmpty && _places.isEmpty) {
+    if (filtered.isEmpty) {
       return AdminEmptyState(
         icon: Icons.place_rounded,
-        title: 'No Places Yet',
-        body: 'Add the first listing to '
-            '${widget.selectedChannel!.title}.',
-        actionLabel: 'Add Place',
-        onAction: () => _openForm(),
+        title: _places.isEmpty ? 'No places yet' : 'No matches',
+        body: _places.isEmpty
+            ? 'Create your first place using the 11-step wizard.\nFill in basic info, location, media, and link it to categories.'
+            : 'Try a different search or filter.',
+        actionLabel: _places.isEmpty ? 'Add First Place' : null,
+        onAction: _places.isEmpty ? () => _openWizard() : null,
       );
     }
-    if (filtered.isEmpty) {
-      return Center(
-        child: Text('No results for "$_search"',
-            style: const TextStyle(color: Colors.white38)),
-      );
-    }
+
     return RefreshIndicator(
-      onRefresh: _fetch,
+      onRefresh: _fetchPlaces,
       color: const Color(0xFF9C27B0),
-      child: ListView.separated(
-        itemCount: filtered.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 12),
-        itemBuilder: (_, i) => _PlaceRow(
-          place: filtered[i],
-          channelColor: widget.selectedChannel?.color ?? Colors.grey,
-          onEdit: () => _openForm(place: filtered[i]),
-          onDelete: () => _delete(filtered[i]),
+      child: LayoutBuilder(builder: (_, c) {
+        final cols = c.maxWidth > 1000 ? 3 : (c.maxWidth > 620 ? 2 : 1);
+        return GridView.builder(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cols,
+            childAspectRatio: cols == 1 ? 3.0 : 1.55,
+            crossAxisSpacing: 14,
+            mainAxisSpacing: 14,
+          ),
+          itemCount: filtered.length,
+          itemBuilder: (_, i) => _PlaceCard(
+            place: filtered[i],
+            onEdit: () => _openWizard(existing: filtered[i]),
+            onDelete: () => _delete(filtered[i]),
+          ),
+        );
+      }),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _ActiveFilterBar — shows removable chips for current city/category filters
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ActiveFilterBar extends StatelessWidget {
+  final CityModel? cityFilter;
+  final CategoryModel? categoryFilter;
+  final VoidCallback onClearCity;
+  final VoidCallback onClearCategory;
+
+  const _ActiveFilterBar({
+    required this.cityFilter,
+    required this.categoryFilter,
+    required this.onClearCity,
+    required this.onClearCategory,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        children: [
+          if (cityFilter != null)
+            _RemovableChip(
+              icon: Icons.location_city_rounded,
+              label: cityFilter!.name,
+              color: const Color(0xFF0D7377),
+              onRemove: onClearCity,
+            ),
+          if (categoryFilter != null)
+            _RemovableChip(
+              icon: Icons.category_rounded,
+              label: categoryFilter!.name,
+              color: const Color(0xFF2196F3),
+              onRemove: onClearCategory,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RemovableChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onRemove;
+  const _RemovableChip(
+      {required this.icon, required this.label, required this.color, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 5),
+          Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: onRemove,
+            child: Icon(Icons.close_rounded, size: 14, color: color.withValues(alpha: 0.7)),
+          ),
+        ]),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _FilterRow — city and category dropdowns
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _FilterRow extends StatelessWidget {
+  final List<CityModel> cities;
+  final List<CategoryModel> categories;
+  final CityModel? selectedCity;
+  final CategoryModel? selectedCategory;
+  final ValueChanged<CityModel?> onCityChanged;
+  final ValueChanged<CategoryModel?> onCategoryChanged;
+
+  const _FilterRow({
+    required this.cities,
+    required this.categories,
+    required this.selectedCity,
+    required this.selectedCategory,
+    required this.onCityChanged,
+    required this.onCategoryChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(children: [
+      Expanded(
+        child: _FilterDropdown<CityModel>(
+          hint: 'All cities',
+          icon: Icons.location_city_rounded,
+          value: selectedCity,
+          items: cities
+              .map((c) => DropdownMenuItem<CityModel>(
+                    value: c,
+                    child: Text(c.name),
+                  ))
+              .toList(),
+          onChanged: onCityChanged,
+        ),
+      ),
+      const SizedBox(width: 10),
+      Expanded(
+        child: _FilterDropdown<CategoryModel>(
+          hint: 'All categories',
+          icon: Icons.category_rounded,
+          value: selectedCategory,
+          items: categories
+              .where((c) => c.isRoot)
+              .map((c) => DropdownMenuItem<CategoryModel>(
+                    value: c,
+                    child: Row(children: [
+                      if (c.icon != null) ...[
+                        Text(c.icon!, style: const TextStyle(fontSize: 14)),
+                        const SizedBox(width: 6),
+                      ],
+                      Flexible(child: Text(c.name, overflow: TextOverflow.ellipsis)),
+                    ]),
+                  ))
+              .toList(),
+          onChanged: onCategoryChanged,
+        ),
+      ),
+    ]);
+  }
+}
+
+class _FilterDropdown<T> extends StatelessWidget {
+  final String hint;
+  final IconData icon;
+  final T? value;
+  final List<DropdownMenuItem<T>> items;
+  final ValueChanged<T?> onChanged;
+
+  const _FilterDropdown({
+    required this.hint,
+    required this.icon,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFF111827),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+              color: value != null
+                  ? const Color(0xFF9C27B0).withValues(alpha: 0.4)
+                  : Colors.white12),
+        ),
+        child: DropdownButton<T>(
+          value: value,
+          isExpanded: true,
+          dropdownColor: const Color(0xFF1F2937),
+          style: const TextStyle(color: Colors.white70, fontSize: 13),
+          underline: const SizedBox.shrink(),
+          hint: Row(children: [
+            Icon(icon, size: 13, color: Colors.white38),
+            const SizedBox(width: 6),
+            Text(hint, style: const TextStyle(color: Colors.white24, fontSize: 13)),
+          ]),
+          onChanged: onChanged,
+          items: [
+            DropdownMenuItem<T>(
+              value: null,
+              child: Text(hint, style: const TextStyle(color: Colors.white54)),
+            ),
+            ...items,
+          ],
+        ),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _StatusTab
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StatusTab extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _StatusTab({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    const accent = Color(0xFF9C27B0);
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? accent.withValues(alpha: 0.15) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+              color: selected ? accent.withValues(alpha: 0.5) : Colors.white12),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: selected ? accent : Colors.white38,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+          ),
         ),
       ),
     );
   }
 }
 
-// ─────────────────────────── PLACE ROW ───────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// _PlaceCard
+// ─────────────────────────────────────────────────────────────────────────────
 
-class _PlaceRow extends StatefulWidget {
-  final PlaceItem place;
-  final Color channelColor;
+class _PlaceCard extends StatefulWidget {
+  final PlaceModel place;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
-  const _PlaceRow({
+  const _PlaceCard({
     required this.place,
-    required this.channelColor,
     required this.onEdit,
     required this.onDelete,
   });
 
   @override
-  State<_PlaceRow> createState() => _PlaceRowState();
+  State<_PlaceCard> createState() => _PlaceCardState();
 }
 
-class _PlaceRowState extends State<_PlaceRow> {
+class _PlaceCardState extends State<_PlaceCard> {
   bool _hovering = false;
 
   @override
   Widget build(BuildContext context) {
     final p = widget.place;
-    final c = widget.channelColor;
+    const accent = Color(0xFF9C27B0);
+
     return MouseRegion(
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
           color: const Color(0xFF111827),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: _hovering
-                ? c.withValues(alpha: 0.5)
+                ? accent.withValues(alpha: 0.5)
                 : Colors.white12,
+            width: _hovering ? 1.5 : 1,
           ),
           boxShadow: _hovering
-              ? [BoxShadow(
-                  color: c.withValues(alpha: 0.15), blurRadius: 14)]
+              ? [BoxShadow(color: accent.withValues(alpha: 0.15), blurRadius: 16)]
               : [],
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Category icon bubble
-            Container(
-              width: 46, height: 46,
-              decoration: BoxDecoration(
-                color: c.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: c.withValues(alpha: 0.3)),
-              ),
-              child: Icon(Icons.place_rounded, color: c, size: 22),
-            ),
-            const SizedBox(width: 16),
-
-            // Info column
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Expanded(
-                      child: Text(p.name,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Top row: cover image thumb + status + menu ─────────
+              Row(children: [
+                // Thumbnail
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white12),
+                    image: p.coverImage != null
+                        ? DecorationImage(
+                            image: NetworkImage(p.coverImage!),
+                            fit: BoxFit.cover,
+                            onError: (_, __) {},
+                          )
+                        : null,
+                  ),
+                  child: p.coverImage == null
+                      ? const Icon(Icons.image_rounded,
+                          color: Colors.white24, size: 22)
+                      : null,
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(p.name,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14)),
+                    if (p.cityName.isNotEmpty)
+                      Text(p.cityName,
                           style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15)),
+                              color: Colors.white38, fontSize: 11)),
+                  ],
+                )),
+                const SizedBox(width: 6),
+                AdminStatusBadge(status: p.status),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert_rounded,
+                      color: Colors.white38, size: 16),
+                  color: const Color(0xFF1F2937),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                  onSelected: (v) {
+                    if (v == 'edit') widget.onEdit();
+                    if (v == 'delete') widget.onDelete();
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                        value: 'edit',
+                        child: AdminPopItem(Icons.edit_rounded, 'Edit / Continue')),
+                    const PopupMenuItem(
+                        value: 'delete',
+                        child: AdminPopItem(Icons.delete_rounded, 'Delete',
+                            color: Colors.redAccent)),
+                  ],
+                ),
+              ]),
+
+              const SizedBox(height: 10),
+
+              // ── Description snippet ──────────────────────────────────
+              if (p.shortDescription != null && p.shortDescription!.isNotEmpty)
+                Text(
+                  p.shortDescription!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: Colors.white38, fontSize: 11, height: 1.5),
+                ),
+
+              const Spacer(),
+
+              // ── Category pills ───────────────────────────────────────
+              if (p.categoryLinks.isNotEmpty)
+                Wrap(
+                  spacing: 5,
+                  runSpacing: 4,
+                  children: p.categoryLinks.take(3).map((link) => Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: accent.withValues(alpha: 0.2)),
                     ),
-                    _StatusBadge(isOpen: p.isOpen),
-                  ]),
-                  const SizedBox(height: 4),
-                  Text(p.category,
-                      style: TextStyle(
-                          color: c, fontSize: 11,
-                          fontWeight: FontWeight.w500)),
-                  const SizedBox(height: 6),
-                  Text(p.description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    child: Text(
+                      link.parentName != null
+                          ? '${link.parentName} › ${link.categoryName}'
+                          : link.categoryName,
                       style: const TextStyle(
-                          color: Colors.white54,
-                          fontSize: 12,
-                          height: 1.5)),
-                  const SizedBox(height: 10),
-                  Row(children: [
-                    _InfoChip(
-                        icon: Icons.star_rounded,
-                        label: p.rating.toStringAsFixed(1),
-                        color: Colors.amber),
-                    const SizedBox(width: 8),
-                    _InfoChip(
-                        icon: Icons.rate_review_rounded,
-                        label: '${p.reviewCount} reviews',
-                        color: Colors.white38),
-                    const SizedBox(width: 8),
-                    _InfoChip(
-                        icon: Icons.attach_money_rounded,
-                        label: p.priceRange,
-                        color: Colors.greenAccent.shade400),
-                  ]),
-                ],
-              ),
-            ),
-
-            const SizedBox(width: 12),
-            // Action buttons
-            Column(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.edit_rounded,
-                      color: Colors.white38, size: 18),
-                  tooltip: 'Edit',
-                  onPressed: widget.onEdit,
+                          color: Colors.white38, fontSize: 9),
+                    ),
+                  )).toList(),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete_rounded,
-                      color: Colors.redAccent, size: 18),
-                  tooltip: 'Delete',
-                  onPressed: widget.onDelete,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
-// ─────────────────────────── PLACE FORM ──────────────────────────────────────
+              const SizedBox(height: 10),
 
-class _PlaceFormDialog extends StatefulWidget {
-  final PlaceItem? existing;
-  final String channelTitle;
-  final Future<void> Function(Map<String, dynamic>) onSave;
-
-  const _PlaceFormDialog({
-    this.existing,
-    required this.channelTitle,
-    required this.onSave,
-  });
-
-  @override
-  State<_PlaceFormDialog> createState() => _PlaceFormDialogState();
-}
-
-class _PlaceFormDialogState extends State<_PlaceFormDialog> {
-  final _formKey = GlobalKey<FormState>();
-  bool _saving = false;
-
-  late TextEditingController _name;
-  late TextEditingController _category;
-  late TextEditingController _description;
-  late TextEditingController _imagePath;
-  late TextEditingController _address;
-  late TextEditingController _phone;
-  late TextEditingController _website;
-  late TextEditingController _features;
-  late TextEditingController _priceRange;
-  late TextEditingController _rating;
-  late TextEditingController _reviewCount;
-  bool _isOpen = true;
-
-  @override
-  void initState() {
-    super.initState();
-    final e = widget.existing;
-    _name = TextEditingController(text: e?.name ?? '');
-    _category = TextEditingController(text: e?.category ?? widget.channelTitle);
-    _description = TextEditingController(text: e?.description ?? '');
-    _imagePath = TextEditingController(text: e?.imagePath ?? '');
-    _address = TextEditingController(text: e?.address ?? '');
-    _phone = TextEditingController(text: e?.phone ?? '');
-    _website = TextEditingController(text: e?.website ?? '');
-    _features = TextEditingController(
-        text: e?.features.join(', ') ?? '');
-    _priceRange = TextEditingController(text: e?.priceRange ?? '\$\$');
-    _rating = TextEditingController(
-        text: e != null ? e.rating.toString() : '4.0');
-    _reviewCount = TextEditingController(
-        text: e != null ? e.reviewCount.toString() : '0');
-    _isOpen = e?.isOpen ?? true;
-  }
-
-  @override
-  void dispose() {
-    _name.dispose(); _category.dispose(); _description.dispose();
-    _imagePath.dispose(); _address.dispose(); _phone.dispose();
-    _website.dispose(); _features.dispose(); _priceRange.dispose();
-    _rating.dispose(); _reviewCount.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _saving = true);
-    final features = _features.text
-        .split(',')
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty)
-        .toList();
-    final payload = {
-      'name': _name.text.trim(),
-      'category': _category.text.trim(),
-      'description': _description.text.trim(),
-      'imagePath': _imagePath.text.trim(),
-      'address': _address.text.trim(),
-      'phone': _phone.text.trim(),
-      'website': _website.text.trim(),
-      'features': features,
-      'priceRange': _priceRange.text.trim(),
-      'rating': double.tryParse(_rating.text) ?? 0.0,
-      'reviewCount': int.tryParse(_reviewCount.text) ?? 0,
-      'isOpen': _isOpen,
-    };
-    try {
-      await widget.onSave(payload);
-      if (mounted) Navigator.pop(context);
-    } catch (_) {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isEdit = widget.existing != null;
-    return AdminDialog(
-      title: isEdit ? 'Edit Place' : 'Add Place',
-      icon: Icons.place_rounded,
-      color: const Color(0xFF9C27B0),
-      saving: _saving,
-      onSave: _save,
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Basic Info ──────────────────────────────────────────
-            _SectionHeader('Basic Information'),
-            AdminField(ctrl: _name, label: 'Place Name',
-                hint: 'e.g. Sarova Whitesands', required: true),
-            AdminField(ctrl: _category, label: 'Category',
-                hint: 'e.g. Luxury Hotels', required: true),
-            AdminField(ctrl: _description, label: 'Description',
-                hint: 'A detailed description of this place',
-                maxLines: 3, required: true),
-            AdminField(ctrl: _imagePath, label: 'Image Path',
-                hint: 'e.g. places/sarova_whitesands.jpg',
-                helperText: 'Relative path inside assets/images/'),
-
-            // ── Contact ─────────────────────────────────────────────
-            _SectionHeader('Contact Details'),
-            AdminField(ctrl: _address, label: 'Address',
-                hint: 'Full address of the place'),
-            AdminField(ctrl: _phone, label: 'Phone',
-                hint: '+254 712 345 678',
-                keyboardType: TextInputType.phone),
-            AdminField(ctrl: _website, label: 'Website',
-                hint: 'https://example.com',
-                keyboardType: TextInputType.url),
-
-            // ── Meta ────────────────────────────────────────────────
-            _SectionHeader('Ratings & Info'),
-            Row(children: [
-              Expanded(
-                child: AdminField(ctrl: _rating, label: 'Rating',
-                    hint: '4.5',
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true)),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: AdminField(ctrl: _reviewCount, label: 'Review Count',
-                    hint: '120',
-                    keyboardType: TextInputType.number),
-              ),
-            ]),
-            Row(children: [
-              Expanded(
-                child: AdminField(ctrl: _priceRange, label: 'Price Range',
-                    hint: '\$, \$\$, \$\$\$ or \$\$\$\$'),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
+              // ── Bottom row: completion bar + edit button ─────────────
+              Row(children: [
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Status',
-                          style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500)),
-                      const SizedBox(height: 8),
-                      GestureDetector(
-                        onTap: () =>
-                            setState(() => _isOpen = !_isOpen),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 11),
-                          decoration: BoxDecoration(
-                            color: _isOpen
-                                ? Colors.green.withValues(alpha: 0.15)
-                                : Colors.red.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: _isOpen
-                                  ? Colors.green.withValues(alpha: 0.4)
-                                  : Colors.red.withValues(alpha: 0.4),
+                      Row(children: [
+                        Text('${p.completionPercent}% complete',
+                            style: const TextStyle(
+                                color: Colors.white38, fontSize: 10)),
+                        if (p.isDraft) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.blueAccent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(3),
                             ),
+                            child: const Text('DRAFT',
+                                style: TextStyle(
+                                    color: Colors.blueAccent,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold)),
                           ),
-                          child: Row(children: [
-                            Icon(
-                              _isOpen
-                                  ? Icons.check_circle_rounded
-                                  : Icons.cancel_rounded,
-                              color: _isOpen
-                                  ? Colors.greenAccent
-                                  : Colors.redAccent,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              _isOpen ? 'Open Now' : 'Closed',
-                              style: TextStyle(
-                                color: _isOpen
-                                    ? Colors.greenAccent
-                                    : Colors.redAccent,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ]),
+                        ],
+                      ]),
+                      const SizedBox(height: 4),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: LinearProgressIndicator(
+                          value: p.completionPercent / 100,
+                          backgroundColor: Colors.white12,
+                          color: p.isActive
+                              ? Colors.greenAccent
+                              : p.isDraft
+                                  ? Colors.blueAccent
+                                  : accent,
+                          minHeight: 3,
                         ),
                       ),
                     ],
                   ),
                 ),
-              ),
-            ]),
-
-            AdminField(ctrl: _features, label: 'Features',
-                hint: 'Pool, Free WiFi, Parking, Pet Friendly',
-                helperText: 'Comma-separated list of amenities/features'),
-          ],
+                const SizedBox(width: 10),
+                GestureDetector(
+                  onTap: widget.onEdit,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: accent.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(
+                        p.isDraft
+                            ? Icons.arrow_forward_rounded
+                            : Icons.edit_rounded,
+                        size: 12,
+                        color: accent,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        p.isDraft ? 'Continue' : 'Edit',
+                        style: TextStyle(
+                            color: accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ]),
+                  ),
+                ),
+              ]),
+            ],
+          ),
         ),
       ),
     );
   }
-}
-
-// ──────────────────────────── SUPPORT WIDGETS ────────────────────────────────
-
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  const _SectionHeader(this.title);
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(top: 8, bottom: 14),
-        child: Row(children: [
-          Expanded(
-              child: Divider(
-                  color: Colors.white12,
-                  thickness: 1,
-                  endIndent: 10)),
-          Text(title,
-              style: const TextStyle(
-                  color: Colors.white38,
-                  fontSize: 11,
-                  letterSpacing: 1,
-                  fontWeight: FontWeight.w500)),
-          Expanded(
-              child: Divider(
-                  color: Colors.white12,
-                  thickness: 1,
-                  indent: 10)),
-        ]),
-      );
-}
-
-class _StatusBadge extends StatelessWidget {
-  final bool isOpen;
-  const _StatusBadge({required this.isOpen});
-  @override
-  Widget build(BuildContext context) => Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: isOpen
-              ? Colors.green.withValues(alpha: 0.15)
-              : Colors.red.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isOpen
-                ? Colors.greenAccent.withValues(alpha: 0.4)
-                : Colors.redAccent.withValues(alpha: 0.4),
-          ),
-        ),
-        child: Text(
-          isOpen ? 'Open' : 'Closed',
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            color: isOpen ? Colors.greenAccent : Colors.redAccent,
-          ),
-        ),
-      );
-}
-
-class _InfoChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  const _InfoChip(
-      {required this.icon, required this.label, required this.color});
-  @override
-  Widget build(BuildContext context) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: color),
-          const SizedBox(width: 3),
-          Text(label, style: TextStyle(color: color, fontSize: 11)),
-        ],
-      );
-}
-
-class _Crumb extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  const _Crumb(
-      {required this.icon, required this.label, required this.color});
-  @override
-  Widget build(BuildContext context) => Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: color.withValues(alpha: 0.25)),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 11, color: color),
-          const SizedBox(width: 5),
-          Text(label,
-              style: TextStyle(
-                  color: color, fontSize: 11, fontWeight: FontWeight.w600)),
-        ]),
-      );
-}
-
-class _NeedSelectionView extends StatelessWidget {
-  final bool hasCity;
-  final VoidCallback onSelectCity;
-  final VoidCallback onSelectChannel;
-  const _NeedSelectionView({
-    required this.hasCity,
-    required this.onSelectCity,
-    required this.onSelectChannel,
-  });
-  @override
-  Widget build(BuildContext context) => Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.place_rounded, color: Colors.white24, size: 56),
-          const SizedBox(height: 16),
-          Text(
-            hasCity ? 'Select a Channel' : 'Select a City First',
-            style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 18,
-                fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            hasCity
-                ? 'Pick a channel to manage its places.'
-                : 'You need to select a city, then a channel before managing places.',
-            style:
-                const TextStyle(color: Colors.white38, fontSize: 13),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          if (!hasCity)
-            ElevatedButton.icon(
-              onPressed: onSelectCity,
-              icon: const Icon(Icons.location_city_rounded, size: 16),
-              label: const Text('Select Resort City'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0D7377),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 24, vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-            )
-          else
-            ElevatedButton.icon(
-              onPressed: onSelectChannel,
-              icon: const Icon(Icons.layers_rounded, size: 16),
-              label: const Text('Select Channel'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2196F3),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 24, vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-        ]),
-      );
 }

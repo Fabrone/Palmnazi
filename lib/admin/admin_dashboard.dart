@@ -1,15 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:palmnazi/admin/admin_api_service.dart';
 import 'package:palmnazi/admin/admin_resort_cities_screen.dart';
-import 'package:palmnazi/admin/admin_channels_screen.dart';
+import 'package:palmnazi/admin/admin_categories_screen.dart';
 import 'package:palmnazi/admin/admin_places_screen.dart';
 import 'package:palmnazi/models/city_model.dart';
-import 'package:palmnazi/models/models.dart';
+import 'package:palmnazi/models/category_model.dart';
 
-/// ─────────────────────────────────────────────────────────────────────────────
-/// Admin Dashboard
-/// Shell that hosts the sidebar/rail navigation and renders the active section.
-/// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin Dashboard
+//
+// Navigation:
+//   0 — Dashboard overview
+//   1 — Resort Cities CRUD
+//   2 — Categories CRUD (global — no city scope)
+//   3 — Places CRUD (city + category filter, multi-step wizard)
+//
+// Key architectural change from previous version:
+//   • Channels are now Categories — they are GLOBAL, not scoped to a city.
+//   • Selecting a city is not required to manage categories.
+//   • The Places tab accepts optional city/category filter context
+//     but does not require them — it shows all places by default.
+// ─────────────────────────────────────────────────────────────────────────────
+
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
 
@@ -22,19 +34,18 @@ class _AdminDashboardState extends State<AdminDashboard>
   int _selectedIndex = 0;
   late AnimationController _sidebarAnim;
 
-  // Drill-down context
-  CityModel? _selectedCity;
-  ChannelItem? _selectedChannel;
+  // Optional filter context passed to the Places tab
+  CityModel? _filterCity;
+  CategoryModel? _filterCategory;
 
   final _apiService = AdminApiService();
   Map<String, dynamic> _stats = {};
   bool _statsLoading = true;
 
-  // Sidebar item definition
   static const _navItems = [
     _NavItem(Icons.dashboard_rounded, 'Dashboard'),
     _NavItem(Icons.location_city_rounded, 'Resort Cities'),
-    _NavItem(Icons.layers_rounded, 'Channels'),
+    _NavItem(Icons.category_rounded, 'Categories'),
     _NavItem(Icons.place_rounded, 'Places'),
   ];
 
@@ -67,9 +78,11 @@ class _AdminDashboardState extends State<AdminDashboard>
   void _onNavTap(int index) {
     setState(() {
       _selectedIndex = index;
-      // Reset drill-down when switching top-level tabs
-      if (index != 2) _selectedChannel = null;
-      if (index != 2 && index != 3) _selectedCity = null;
+      // Only reset filters when explicitly leaving Places
+      if (index != 3) {
+        _filterCategory = null;
+        // Keep _filterCity so it can be re-used when returning to Places
+      }
     });
   }
 
@@ -83,18 +96,15 @@ class _AdminDashboardState extends State<AdminDashboard>
       backgroundColor: const Color(0xFF0A0E1A),
       body: Row(
         children: [
-          // ── Sidebar (desktop/tablet) ────────────────────────────────────
           if (isTablet)
             _AdminSidebar(
               items: _navItems,
               selectedIndex: _selectedIndex,
               isExpanded: isDesktop,
               onTap: _onNavTap,
-              selectedCity: _selectedCity,
-              selectedChannel: _selectedChannel,
+              filterCity: _filterCity,
+              filterCategory: _filterCategory,
             ),
-
-          // ── Main content ────────────────────────────────────────────────
           Expanded(
             child: Column(
               children: [
@@ -109,8 +119,6 @@ class _AdminDashboardState extends State<AdminDashboard>
           ),
         ],
       ),
-
-      // ── Bottom nav (mobile) ─────────────────────────────────────────────
       bottomNavigationBar: isTablet
           ? null
           : NavigationBar(
@@ -120,10 +128,9 @@ class _AdminDashboardState extends State<AdminDashboard>
               onDestinationSelected: _onNavTap,
               destinations: _navItems
                   .map((e) => NavigationDestination(
-                        icon: Icon(e.icon,
-                            color: Colors.white54),
-                        selectedIcon: Icon(e.icon,
-                            color: const Color(0xFF14FFEC)),
+                        icon: Icon(e.icon, color: Colors.white54),
+                        selectedIcon:
+                            Icon(e.icon, color: const Color(0xFF14FFEC)),
                         label: e.label,
                       ))
                   .toList(),
@@ -135,14 +142,13 @@ class _AdminDashboardState extends State<AdminDashboard>
     switch (_selectedIndex) {
       case 0: return 'Admin Console';
       case 1: return 'Resort Cities';
-      case 2:
-        if (_selectedCity != null) return 'Channels — ${_selectedCity!.name}';
-        return 'Channels';
+      case 2: return 'Categories';
       case 3:
-        if (_selectedChannel != null) {
-          return 'Places — ${_selectedChannel!.title}';
+        if (_filterCategory != null && _filterCity != null) {
+          return '${_filterCategory!.name} — ${_filterCity!.name}';
         }
-        if (_selectedCity != null) return 'Places — ${_selectedCity!.name}';
+        if (_filterCity != null) return 'Places — ${_filterCity!.name}';
+        if (_filterCategory != null) return 'Places — ${_filterCategory!.name}';
         return 'Places';
       default: return 'Admin';
     }
@@ -152,8 +158,8 @@ class _AdminDashboardState extends State<AdminDashboard>
     switch (_selectedIndex) {
       case 0: return 'System overview & quick actions';
       case 1: return 'Add, edit and remove resort destinations';
-      case 2: return 'Manage categories within a city';
-      case 3: return 'Manage specific listings & places';
+      case 2: return 'Manage global categories and subcategories';
+      case 3: return 'Manage listings and places';
       default: return '';
     }
   }
@@ -169,32 +175,23 @@ class _AdminDashboardState extends State<AdminDashboard>
       case 1:
         return AdminResortCitiesScreen(
           apiService: _apiService,
-          onCitySelected: (city) {
-            setState(() {
-              _selectedCity = city;
-              _selectedIndex = 2;
-            });
-          },
+          // Tapping a city → jump to Places tab pre-filtered by that city
+          onCitySelected: (city) => setState(() {
+            _filterCity = city;
+            _selectedIndex = 3;
+          }),
         );
       case 2:
-        return AdminChannelsScreen(
-          apiService: _apiService,
-          selectedCity: _selectedCity,
-          onCityPickRequested: () => setState(() => _selectedIndex = 1),
-          onChannelSelected: (channel) {
-            setState(() {
-              _selectedChannel = channel;
-              _selectedIndex = 3;
-            });
-          },
-        );
+        // Categories are global — no city context required
+        return AdminCategoriesScreen(apiService: _apiService);
       case 3:
         return AdminPlacesScreen(
           apiService: _apiService,
-          selectedCity: _selectedCity,
-          selectedChannel: _selectedChannel,
-          onCityPickRequested: () => setState(() => _selectedIndex = 1),
-          onChannelPickRequested: () => setState(() => _selectedIndex = 2),
+          filterCity: _filterCity,
+          filterCategory: _filterCategory,
+          onCityFilterChanged: (city) => setState(() => _filterCity = city),
+          onCategoryFilterChanged: (cat) =>
+              setState(() => _filterCategory = cat),
         );
       default:
         return const SizedBox.shrink();
@@ -246,292 +243,257 @@ class _AdminDashboardState extends State<AdminDashboard>
   }
 }
 
-// ─────────────────────────────── SIDEBAR ─────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Sidebar
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _AdminSidebar extends StatelessWidget {
   final List<_NavItem> items;
   final int selectedIndex;
   final bool isExpanded;
   final ValueChanged<int> onTap;
-  final CityModel? selectedCity;
-  final ChannelItem? selectedChannel;
+  final CityModel? filterCity;
+  final CategoryModel? filterCategory;
 
   const _AdminSidebar({
     required this.items,
     required this.selectedIndex,
     required this.isExpanded,
     required this.onTap,
-    this.selectedCity,
-    this.selectedChannel,
+    this.filterCity,
+    this.filterCategory,
   });
 
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 260),
-      width: isExpanded ? 230 : 72,
-      decoration: const BoxDecoration(
-        color: Color(0xFF0D1117),
-        border: Border(right: BorderSide(color: Color(0xFF1F2937), width: 1)),
-      ),
+      duration: const Duration(milliseconds: 250),
+      width: isExpanded ? 220 : 72,
+      color: const Color(0xFF111827),
       child: Column(
         children: [
-          const SizedBox(height: 24),
+          const SizedBox(height: 48),
           // Logo
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                Container(
-                  width: 42, height: 42,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF14FFEC), Color(0xFF0D7377)],
-                    ),
-                  ),
-                  child: const Icon(Icons.landscape, color: Colors.white, size: 22),
-                ),
-                if (isExpanded) ...[
-                  const SizedBox(width: 12),
-                  const Flexible(
-                    child: Text(
-                      'PALMNAZI',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 2,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (isExpanded)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(children: [
+              Container(
+                width: 36, height: 36,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF14FFEC).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.shield_rounded, size: 12, color: Color(0xFF14FFEC)),
-                    SizedBox(width: 4),
-                    Text('Admin Console',
-                        style: TextStyle(fontSize: 10, color: Color(0xFF14FFEC))),
-                  ],
-                ),
-              ),
-            ),
-          const SizedBox(height: 32),
-          Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              itemCount: items.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 4),
-              itemBuilder: (_, i) {
-                final selected = selectedIndex == i;
-                return Tooltip(
-                  message: isExpanded ? '' : items[i].label,
-                  child: InkWell(
-                    onTap: () => onTap(i),
-                    borderRadius: BorderRadius.circular(12),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      padding: EdgeInsets.symmetric(
-                        horizontal: isExpanded ? 14 : 14,
-                        vertical: 13,
-                      ),
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? const Color(0xFF14FFEC).withValues(alpha: 0.12)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(12),
-                        border: selected
-                            ? Border.all(
-                                color:
-                                    const Color(0xFF14FFEC).withValues(alpha: 0.3),
-                                width: 1)
-                            : null,
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            items[i].icon,
-                            size: 20,
-                            color: selected
-                                ? const Color(0xFF14FFEC)
-                                : Colors.white38,
-                          ),
-                          if (isExpanded) ...[
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                items[i].label,
-                                style: TextStyle(
-                                  color: selected
-                                      ? const Color(0xFF14FFEC)
-                                      : Colors.white54,
-                                  fontWeight: selected
-                                      ? FontWeight.w600
-                                      : FontWeight.normal,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          // Breadcrumb trail
-          if (isExpanded && (selectedCity != null || selectedChannel != null))
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1A2233),
+                  color: const Color(0xFF14FFEC).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
-                  border:
-                      Border.all(color: Colors.white12),
+                  border: Border.all(
+                      color: const Color(0xFF14FFEC).withValues(alpha: 0.3)),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Context',
-                        style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.white38,
-                            letterSpacing: 1)),
-                    const SizedBox(height: 6),
-                    if (selectedCity != null)
-                      _crumb(Icons.location_city_rounded, selectedCity!.name),
-                    if (selectedChannel != null) ...[
-                      const SizedBox(height: 4),
-                      _crumb(Icons.layers_rounded, selectedChannel!.title),
-                    ],
+                child: const Icon(Icons.admin_panel_settings_rounded,
+                    color: Color(0xFF14FFEC), size: 20),
+              ),
+              if (isExpanded) ...[
+                const SizedBox(width: 12),
+                const Text('Admin',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16)),
+              ],
+            ]),
+          ),
+          const SizedBox(height: 24),
+
+          // Nav items
+          ...items.asMap().entries.map((e) {
+            final isSelected = selectedIndex == e.key;
+            return _SidebarItem(
+              icon: e.value.icon,
+              label: e.value.label,
+              isSelected: isSelected,
+              isExpanded: isExpanded,
+              onTap: () => onTap(e.key),
+            );
+          }),
+
+          const Spacer(),
+
+          // Active filter context chips
+          if (isExpanded && (filterCity != null || filterCategory != null)) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Active filters',
+                      style:
+                          TextStyle(color: Colors.white38, fontSize: 11)),
+                  const SizedBox(height: 6),
+                  if (filterCity != null)
+                    _ContextChip(
+                        icon: Icons.location_city_rounded,
+                        label: filterCity!.name,
+                        color: const Color(0xFF0D7377)),
+                  if (filterCategory != null) ...[
+                    const SizedBox(height: 4),
+                    _ContextChip(
+                        icon: Icons.category_rounded,
+                        label: filterCategory!.name,
+                        color: const Color(0xFF2196F3)),
                   ],
-                ),
+                ],
               ),
             ),
-          const SizedBox(height: 16),
+          ],
+          const SizedBox(height: 24),
         ],
       ),
     );
   }
+}
 
-  Widget _crumb(IconData icon, String label) {
-    return Row(
-      children: [
-        Icon(icon, size: 12, color: const Color(0xFF14FFEC)),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(label,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, color: Colors.white70)),
+class _SidebarItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isSelected;
+  final bool isExpanded;
+  final VoidCallback onTap;
+
+  const _SidebarItem({
+    required this.icon,
+    required this.label,
+    required this.isSelected,
+    required this.isExpanded,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+        padding: EdgeInsets.symmetric(
+            horizontal: isExpanded ? 12 : 0, vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFF14FFEC).withValues(alpha: 0.1)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: isSelected
+              ? Border.all(
+                  color: const Color(0xFF14FFEC).withValues(alpha: 0.2))
+              : null,
         ),
-      ],
+        child: Row(
+          mainAxisAlignment: isExpanded
+              ? MainAxisAlignment.start
+              : MainAxisAlignment.center,
+          children: [
+            Icon(icon,
+                size: 20,
+                color: isSelected
+                    ? const Color(0xFF14FFEC)
+                    : Colors.white38),
+            if (isExpanded) ...[
+              const SizedBox(width: 12),
+              Text(label,
+                  style: TextStyle(
+                      color: isSelected ? const Color(0xFF14FFEC) : Colors.white54,
+                      fontSize: 14,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal)),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
 
-// ─────────────────────────────── TOP BAR ─────────────────────────────────────
+class _ContextChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  const _ContextChip(
+      {required this.icon, required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withValues(alpha: 0.25)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 10, color: color),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: color, fontSize: 10, fontWeight: FontWeight.w600)),
+          ),
+        ]),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Top Bar
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _AdminTopBar extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback? onMenuTap;
 
-  const _AdminTopBar({
-    required this.title,
-    required this.subtitle,
-    this.onMenuTap,
-  });
+  const _AdminTopBar(
+      {required this.title, required this.subtitle, this.onMenuTap});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 72,
+      height: 64,
       padding: const EdgeInsets.symmetric(horizontal: 24),
-      decoration: const BoxDecoration(
-        color: Color(0xFF0D1117),
-        border: Border(bottom: BorderSide(color: Color(0xFF1F2937), width: 1)),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.07))),
       ),
-      child: Row(
-        children: [
-          if (onMenuTap != null)
-            IconButton(
-              icon: const Icon(Icons.menu_rounded, color: Colors.white54),
-              onPressed: onMenuTap,
-            ),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18)),
-                if (subtitle.isNotEmpty)
-                  Text(subtitle,
-                      style: const TextStyle(
-                          color: Colors.white38, fontSize: 12)),
-              ],
-            ),
+      child: Row(children: [
+        if (onMenuTap != null) ...[
+          IconButton(
+            onPressed: onMenuTap,
+            icon: const Icon(Icons.menu_rounded, color: Colors.white54, size: 22),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF14FFEC).withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                  color: const Color(0xFF14FFEC).withValues(alpha: 0.25)),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.shield_rounded,
-                    size: 14, color: Color(0xFF14FFEC)),
-                SizedBox(width: 8),
-                Text('Admin',
-                    style: TextStyle(
-                        color: Color(0xFF14FFEC),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
+          const SizedBox(width: 8),
         ],
-      ),
+        Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold)),
+            Text(subtitle,
+                style:
+                    const TextStyle(color: Colors.white38, fontSize: 11)),
+          ],
+        ),
+      ]),
     );
   }
 }
 
-// ──────────────────────────── OVERVIEW SCREEN ────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Dashboard overview
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _DashboardOverview extends StatelessWidget {
   final Map<String, dynamic> stats;
   final bool isLoading;
   final ValueChanged<int> onGoTo;
 
-  const _DashboardOverview({
-    required this.stats,
-    required this.isLoading,
-    required this.onGoTo,
-  });
+  const _DashboardOverview(
+      {required this.stats, required this.isLoading, required this.onGoTo});
 
   @override
   Widget build(BuildContext context) {
@@ -540,66 +502,41 @@ class _DashboardOverview extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Overview',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          const Text('Manage all resort city data from this console.',
-              style: TextStyle(color: Colors.white38, fontSize: 13)),
-          const SizedBox(height: 28),
-
-          // Stats row
-          LayoutBuilder(builder: (_, c) {
-            final cols = c.maxWidth > 800 ? 4 : (c.maxWidth > 500 ? 2 : 1);
-            return GridView.count(
-              crossAxisCount: cols,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              childAspectRatio: 1.8,
-              children: [
-                _StatCard(
-                  icon: Icons.location_city_rounded,
-                  label: 'Resort Cities',
-                  value: isLoading
-                      ? '—'
-                      : '${stats['resortCities'] ?? 0}',
-                  color: const Color(0xFF0D7377),
-                  onTap: () => onGoTo(1),
-                ),
-                _StatCard(
-                  icon: Icons.layers_rounded,
-                  label: 'Channels',
-                  value: isLoading ? '—' : '${stats['channels'] ?? 0}',
-                  color: const Color(0xFF2196F3),
-                  onTap: () => onGoTo(2),
-                ),
-                _StatCard(
-                  icon: Icons.place_rounded,
-                  label: 'Places',
-                  value: isLoading ? '—' : '${stats['places'] ?? 0}',
-                  color: const Color(0xFF9C27B0),
-                  onTap: () => onGoTo(3),
-                ),
-                _StatCard(
-                  icon: Icons.visibility_rounded,
-                  label: 'Published',
-                  value: isLoading
-                      ? '—'
-                      : '${stats['published'] ?? 0}',
-                  color: const Color(0xFF14FFEC),
-                  onTap: null,
-                ),
-              ],
-            );
-          }),
-
+          Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            children: [
+              _StatCard(
+                icon: Icons.location_city_rounded,
+                label: 'Resort Cities',
+                value: isLoading ? '…' : '${stats['totalCities'] ?? 0}',
+                color: const Color(0xFF0D7377),
+                onTap: () => onGoTo(1),
+              ),
+              _StatCard(
+                icon: Icons.category_rounded,
+                label: 'Categories',
+                value: isLoading ? '…' : '${stats['totalCategories'] ?? 0}',
+                color: const Color(0xFF2196F3),
+                onTap: () => onGoTo(2),
+              ),
+              _StatCard(
+                icon: Icons.place_rounded,
+                label: 'Active Places',
+                value: isLoading ? '…' : '${stats['totalPlaces'] ?? 0}',
+                color: const Color(0xFF9C27B0),
+                onTap: () => onGoTo(3),
+              ),
+              _StatCard(
+                icon: Icons.pending_actions_rounded,
+                label: 'Pending Drafts',
+                value: isLoading ? '…' : '${stats['pendingPlaces'] ?? 0}',
+                color: const Color(0xFFFF9800),
+                onTap: () => onGoTo(3),
+              ),
+            ],
+          ),
           const SizedBox(height: 32),
-
-          // Quick-action cards
           const Text('Quick Actions',
               style: TextStyle(
                   color: Colors.white,
@@ -619,8 +556,8 @@ class _DashboardOverview extends StatelessWidget {
               ),
               _QuickAction(
                 icon: Icons.add_box_rounded,
-                label: 'Add Channel',
-                description: 'Add a category to an existing city',
+                label: 'Add Category',
+                description: 'Create a global service category',
                 color: const Color(0xFF2196F3),
                 onTap: () => onGoTo(2),
               ),
@@ -633,10 +570,7 @@ class _DashboardOverview extends StatelessWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 32),
-
-          // How-to guide
           _WorkflowGuide(),
         ],
       ),
@@ -652,27 +586,22 @@ class _StatCard extends StatelessWidget {
   final VoidCallback? onTap;
 
   const _StatCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-    this.onTap,
+    required this.icon, required this.label,
+    required this.value, required this.color, this.onTap,
   });
 
   @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: const Color(0xFF111827),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withValues(alpha: 0.25)),
-        ),
-        child: Row(
-          children: [
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF111827),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withValues(alpha: 0.25)),
+          ),
+          child: Row(children: [
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
@@ -682,25 +611,16 @@ class _StatCard extends StatelessWidget {
               child: Icon(icon, color: color, size: 22),
             ),
             const SizedBox(width: 16),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(value,
-                    style: TextStyle(
-                        color: color,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold)),
-                Text(label,
-                    style: const TextStyle(
-                        color: Colors.white54, fontSize: 12)),
-              ],
-            ),
-          ],
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(value,
+                  style: TextStyle(
+                      color: color, fontSize: 28, fontWeight: FontWeight.bold)),
+              Text(label,
+                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            ]),
+          ]),
         ),
-      ),
-    );
-  }
+      );
 }
 
 class _QuickAction extends StatelessWidget {
@@ -711,95 +631,69 @@ class _QuickAction extends StatelessWidget {
   final VoidCallback onTap;
 
   const _QuickAction({
-    required this.icon,
-    required this.label,
-    required this.description,
-    required this.color,
-    required this.onTap,
+    required this.icon, required this.label,
+    required this.description, required this.color, required this.onTap,
   });
 
   @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        width: 220,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              color.withValues(alpha: 0.18),
-              color.withValues(alpha: 0.06),
-            ],
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          width: 220,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
           ),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Icon(icon, color: color, size: 28),
             const SizedBox(height: 12),
             Text(label,
                 style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14)),
+                    color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
             const SizedBox(height: 4),
             Text(description,
                 style: const TextStyle(color: Colors.white38, fontSize: 12)),
-          ],
+          ]),
         ),
-      ),
-    );
-  }
+      );
 }
 
 class _WorkflowGuide extends StatelessWidget {
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: const Color(0xFF111827),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.map_rounded, color: Color(0xFF14FFEC), size: 18),
-              SizedBox(width: 10),
-              Text('Setup Workflow',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15)),
-            ],
-          ),
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: const Color(0xFF111827),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Row(children: [
+            Icon(Icons.map_rounded, color: Color(0xFF14FFEC), size: 18),
+            SizedBox(width: 10),
+            Text('Setup Workflow',
+                style: TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15)),
+          ]),
           const SizedBox(height: 20),
-          _step('1', 'Resort Cities', 'Create each destination city (e.g. Mombasa, Diani Beach).',
+          _step('1', 'Resort Cities',
+              'Create each destination city (e.g. Mombasa, Nairobi).',
               const Color(0xFF0D7377)),
-          _step('2', 'Channels', 'Add categories to each city (e.g. Accommodation, Dining, Events).',
+          _step('2', 'Categories',
+              'Create global categories (Accommodation, Dining, Wellness…). These are shared across all cities.',
               const Color(0xFF2196F3)),
-          _step('3', 'Places', 'List specific businesses and locations inside each channel.',
+          _step('3', 'Places',
+              'Add each place via the 11-step wizard. At step 9, link it to all categories it belongs to — this is how one place appears in multiple channels.',
               const Color(0xFF9C27B0)),
-        ],
-      ),
-    );
-  }
+        ]),
+      );
 
-  Widget _step(String num, String title, String body, Color color) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+  Widget _step(String num, String title, String body, Color color) => Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Container(
             width: 28, height: 28,
             decoration: BoxDecoration(
@@ -808,37 +702,30 @@ class _WorkflowGuide extends StatelessWidget {
               border: Border.all(color: color.withValues(alpha: 0.5)),
             ),
             child: Center(
-              child: Text(num,
-                  style: TextStyle(
-                      color: color,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13)),
-            ),
+                child: Text(num,
+                    style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13))),
           ),
           const SizedBox(width: 14),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13)),
-                const SizedBox(height: 2),
-                Text(body,
-                    style: const TextStyle(
-                        color: Colors.white38, fontSize: 12, height: 1.5)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title,
+                style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
+            const SizedBox(height: 2),
+            Text(body,
+                style: const TextStyle(
+                    color: Colors.white38, fontSize: 12, height: 1.5)),
+          ])),
+        ]),
+      );
 }
 
-// ───────────────────────────── DATA CLASSES ──────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Data class
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _NavItem {
   final IconData icon;

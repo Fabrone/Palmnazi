@@ -4,16 +4,20 @@ import 'package:flutter/services.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // admin_shared_widgets.dart
 // Public micro-widgets shared across all admin screens.
-// Import with: import 'admin_shared_widgets.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Confirm dialog ────────────────────────────────────────────────────────────
+//
+// [confirmLabel] defaults to 'Delete' but can be overridden, e.g. 'Remove' or
+// 'Deactivate', so the button copy matches the action being confirmed.
 
 Future<bool> adminConfirm(
   BuildContext context,
   String title,
-  String body,
-) async {
+  String body, {
+  String confirmLabel = 'Delete',
+  Color confirmColor = Colors.redAccent,
+}) async {
   final result = await showDialog<bool>(
     context: context,
     builder: (_) => AlertDialog(
@@ -31,8 +35,8 @@ Future<bool> adminConfirm(
         ),
         TextButton(
           onPressed: () => Navigator.pop(context, true),
-          child: const Text('Delete',
-              style: TextStyle(color: Colors.redAccent)),
+          child: Text(confirmLabel,
+              style: TextStyle(color: confirmColor)),
         ),
       ],
     ),
@@ -184,6 +188,7 @@ class AdminDialog extends StatelessWidget {
   final bool saving;
   final VoidCallback onSave;
   final Widget child;
+  final String saveLabel;
 
   const AdminDialog({
     super.key,
@@ -193,6 +198,7 @@ class AdminDialog extends StatelessWidget {
     required this.saving,
     required this.onSave,
     required this.child,
+    this.saveLabel = 'Save',
   });
 
   @override
@@ -202,7 +208,7 @@ class AdminDialog extends StatelessWidget {
       shape:
           RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
+        constraints: const BoxConstraints(maxWidth: 540, maxHeight: 700),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -213,8 +219,9 @@ class AdminDialog extends StatelessWidget {
                 color: color.withValues(alpha: 0.08),
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(20)),
-                border:
-                    Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
+                border: Border(
+                    bottom: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.06))),
               ),
               child: Row(children: [
                 Container(
@@ -276,10 +283,10 @@ class AdminDialog extends StatelessWidget {
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white))
-                        : const Text('Save',
-                            style: TextStyle(fontWeight: FontWeight.w600)),
+                                strokeWidth: 2, color: Colors.white))
+                        : Text(saveLabel,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600)),
                   ),
                 ],
               ),
@@ -399,11 +406,7 @@ class AdminColorPicker extends StatelessWidget {
                       width: isSelected ? 2.5 : 0,
                     ),
                     boxShadow: isSelected
-                        ? [
-                            BoxShadow(
-                                color: c.withValues(alpha: 0.5),
-                                blurRadius: 8)
-                          ]
+                        ? [BoxShadow(color: c.withValues(alpha: 0.5), blurRadius: 8)]
                         : null,
                   ),
                 ),
@@ -435,6 +438,10 @@ class AdminColorPicker extends StatelessWidget {
 }
 
 // ── Form field ────────────────────────────────────────────────────────────────
+//
+// [onChanged] — optional callback fired on every keystroke. Used by screens
+// that need to react to text changes (e.g. auto-generating a slug while the
+// admin types a category name) without requiring a separate listener setup.
 
 class AdminField extends StatelessWidget {
   final String label;
@@ -448,6 +455,7 @@ class AdminField extends StatelessWidget {
   final TextInputType? keyboardType;
   final List<TextInputFormatter>? inputFormatters;
   final String? Function(String?)? validator;
+  final ValueChanged<String>? onChanged;
 
   const AdminField({
     super.key,
@@ -462,6 +470,7 @@ class AdminField extends StatelessWidget {
     this.keyboardType,
     this.inputFormatters,
     this.validator,
+    this.onChanged,
   });
 
   @override
@@ -488,6 +497,7 @@ class AdminField extends StatelessWidget {
             maxLines: maxLines,
             keyboardType: keyboardType,
             inputFormatters: inputFormatters,
+            onChanged: onChanged,
             style: const TextStyle(color: Colors.white, fontSize: 14),
             decoration: InputDecoration(
               hintText: hint,
@@ -522,13 +532,11 @@ class AdminField extends StatelessWidget {
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide:
-                    const BorderSide(color: Colors.redAccent),
+                borderSide: const BorderSide(color: Colors.redAccent),
               ),
               focusedErrorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide:
-                    const BorderSide(color: Colors.redAccent),
+                borderSide: const BorderSide(color: Colors.redAccent),
               ),
               contentPadding: const EdgeInsets.symmetric(
                   horizontal: 14, vertical: 12),
@@ -536,6 +544,47 @@ class AdminField extends StatelessWidget {
             validator: validator,
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Status badge ──────────────────────────────────────────────────────────────
+//
+// Renders a pill badge for place/item status strings.
+// ACTIVE → green, PENDING → blue, SUSPENDED → orange, ARCHIVED → grey.
+
+class AdminStatusBadge extends StatelessWidget {
+  final String status;
+  const AdminStatusBadge({super.key, required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color;
+    switch (status.toUpperCase()) {
+      case 'ACTIVE':
+        color = Colors.greenAccent;
+        break;
+      case 'SUSPENDED':
+        color = Colors.orangeAccent;
+        break;
+      case 'ARCHIVED':
+        color = Colors.grey;
+        break;
+      default: // PENDING
+        color = Colors.blueAccent;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        status,
+        style: TextStyle(
+            color: color, fontSize: 10, fontWeight: FontWeight.w600),
       ),
     );
   }
