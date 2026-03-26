@@ -71,11 +71,29 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
     super.didUpdateWidget(old);
     // Re-sync if parent dashboard changes context
     final cityChanged = widget.filterCity?.id != old.filterCity?.id;
-    final catChanged = widget.filterCategory?.id != old.filterCategory?.id;
+    final catChanged  = widget.filterCategory?.id != old.filterCategory?.id;
     if (cityChanged || catChanged) {
-      _cityFilter = widget.filterCity;
-      _categoryFilter = widget.filterCategory;
-      _fetchPlaces();
+      // Resolve the incoming prop against our already-fetched lists so the
+      // DropdownButton always gets an object that exists in its items list.
+      // If lists aren't loaded yet, _loadAll() will reconcile on completion.
+      final incomingCityId = widget.filterCity?.id;
+      final incomingCatId  = widget.filterCategory?.id;
+      setState(() {
+        _cityFilter = incomingCityId == null
+            ? null
+            : _cities.where((c) => c.id == incomingCityId).firstOrNull
+                ?? widget.filterCity; // fallback: keep prop until list loads
+        _categoryFilter = incomingCatId == null
+            ? null
+            : _categories.where((c) => c.id == incomingCatId).firstOrNull
+                ?? widget.filterCategory;
+      });
+      // If lists are empty the full load will reconcile; otherwise just re-fetch places.
+      if (_cities.isEmpty) {
+        _loadAll();
+      } else {
+        _fetchPlaces();
+      }
     }
   }
 
@@ -94,10 +112,29 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
         ),
       ]);
       if (mounted) {
+        final freshCities     = results[0] as List<CityModel>;
+        final freshCategories = results[1] as List<CategoryModel>;
         setState(() {
-          _cities = results[0] as List<CityModel>;
-          _categories = results[1] as List<CategoryModel>;
-          _places = results[2] as List<PlaceModel>;
+          _cities     = freshCities;
+          _categories = freshCategories;
+          _places     = results[2] as List<PlaceModel>;
+          // ── Reconcile filter objects by id ───────────────────────────────
+          // The filter value passed from the dashboard may be a different
+          // object instance than what is now in _cities / _categories.
+          // DropdownButton asserts exactly one item.value == value (by ==),
+          // so we must re-resolve both filters against the freshly fetched
+          // lists. CityModel / CategoryModel equality is identity unless ==
+          // is overridden, so we match by id string instead.
+          if (_cityFilter != null) {
+            _cityFilter = freshCities
+                .where((c) => c.id == _cityFilter!.id)
+                .firstOrNull;
+          }
+          if (_categoryFilter != null) {
+            _categoryFilter = freshCategories
+                .where((c) => c.id == _categoryFilter!.id)
+                .firstOrNull;
+          }
           _loading = false;
         });
       }
@@ -522,18 +559,26 @@ class _FilterDropdown<T> extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) {
+    // DropdownButton asserts: if value != null, exactly one item must match it.
+    // Guard: if the value object is not present in the items list (can happen
+    // during the brief window between navigation and _loadAll completing), treat
+    // it as null so the hint is shown instead of throwing.
+    final allValues = items.map((i) => i.value).toSet();
+    final safeValue = (value != null && allValues.contains(value)) ? value : null;
+
+    return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         decoration: BoxDecoration(
           color: const Color(0xFF111827),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-              color: value != null
+              color: safeValue != null
                   ? const Color(0xFF9C27B0).withValues(alpha: 0.4)
                   : Colors.white12),
         ),
         child: DropdownButton<T>(
-          value: value,
+          value: safeValue,
           isExpanded: true,
           dropdownColor: const Color(0xFF1F2937),
           style: const TextStyle(color: Colors.white70, fontSize: 13),
@@ -553,6 +598,7 @@ class _FilterDropdown<T> extends StatelessWidget {
           ],
         ),
       );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

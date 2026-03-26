@@ -144,7 +144,7 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
 
     final confirmed = await _showConfirmDialog(
       title: 'Delete "${city.name}"?',
-      body: 'This will permanently remove the city and all its channels and places. This action cannot be undone.',
+      body: 'This will permanently remove the city and all its places. This action cannot be undone.',
       confirmLabel: 'Delete',
       isDestructive: true,
     );
@@ -433,7 +433,7 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
           return GridView.builder(
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: cols,
-              childAspectRatio: cols == 1 ? 2.2 : 1.15,
+              childAspectRatio: cols == 1 ? 2.4 : 1.4,
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
             ),
@@ -443,7 +443,7 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
               onEdit: () => _openForm(city: _filtered[i]),
               onDelete: () => _delete(_filtered[i]),
               onToggleActive: () => _toggleActive(_filtered[i]),
-              onManageChannels: () =>
+              onViewPlaces: () =>
                   widget.onCitySelected(_filtered[i]),
             ),
           );
@@ -539,14 +539,14 @@ class _CityCard extends StatefulWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onToggleActive;
-  final VoidCallback onManageChannels;
+  final VoidCallback onViewPlaces;
 
   const _CityCard({
     required this.city,
     required this.onEdit,
     required this.onDelete,
     required this.onToggleActive,
-    required this.onManageChannels,
+    required this.onViewPlaces,
   });
 
   @override
@@ -650,7 +650,7 @@ class _CityCardState extends State<_CityCard> {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10)),
                   onSelected: (v) {
-                    if (v == 'channels') widget.onManageChannels();
+                    if (v == 'channels') widget.onViewPlaces();
                     if (v == 'edit') widget.onEdit();
                     if (v == 'toggle') widget.onToggleActive();
                     if (v == 'delete') widget.onDelete();
@@ -659,7 +659,7 @@ class _CityCardState extends State<_CityCard> {
                     const PopupMenuItem(
                         value: 'channels',
                         child: _PopItem(
-                            Icons.layers_rounded, 'Manage Channels')),
+                            Icons.place_rounded, 'View Places')),
                     const PopupMenuItem(
                         value: 'edit',
                         child: _PopItem(Icons.edit_rounded, 'Edit City')),
@@ -728,7 +728,7 @@ class _CityCardState extends State<_CityCard> {
                 ],
               ]),
 
-              const Spacer(),
+              const SizedBox(height: 10),
 
               // ── Action buttons ────────────────────────────────────────────
               Row(children: [
@@ -750,9 +750,9 @@ class _CityCardState extends State<_CityCard> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: widget.onManageChannels,
-                    icon: const Icon(Icons.layers_rounded, size: 13),
-                    label: const Text('Channels',
+                    onPressed: widget.onViewPlaces,
+                    icon: const Icon(Icons.place_rounded, size: 13),
+                    label: const Text('Places',
                         style: TextStyle(fontSize: 12)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _accentColor.withValues(alpha: 0.85),
