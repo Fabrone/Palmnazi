@@ -885,7 +885,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
       'slug':        _slug.text.trim(),
       'latitude':    lat,
       'longitude':   lng,
-      'coverImage':  _coverImage.text.trim(),
+      if (_coverImage.text.trim().isNotEmpty) 'coverImage': _coverImage.text.trim(),
       'description': _description.text.trim(),
       'isActive':    _isActive,
     };
@@ -902,9 +902,19 @@ class _CityFormDialogState extends State<_CityFormDialog> {
           _saving = false;
           // Map backend field errors for inline display
           if (e.errors != null) {
-            _fieldErrors = e.errors!.map((k, v) {
-              final msgs = v is List ? v : [v.toString()];
-              return MapEntry(k, msgs.first.toString());
+            _fieldErrors = {};
+            e.errors!.forEach((k, v) {
+              // Skip the top-level _errors key the backend always includes
+              if (k == '_errors') return;
+              List<dynamic> msgs;
+              if (v is List) {
+                msgs = v;
+              } else if (v is Map && v['_errors'] is List) {
+                msgs = v['_errors'] as List;
+              } else {
+                msgs = [v.toString()];
+              }
+              if (msgs.isNotEmpty) _fieldErrors[k] = msgs.first.toString();
             });
           }
           if (_fieldErrors.isEmpty) {
