@@ -25,12 +25,19 @@ final Logger _screenLog = Logger(
 
 class AdminResortCitiesScreen extends StatefulWidget {
   final AdminApiService apiService;
+  /// Called when the user taps "Places" on a city card → navigates to
+  /// the Places tab pre-filtered by this city.
   final ValueChanged<CityModel> onCitySelected;
+  /// Called when the user taps "Categories" on a city card → navigates to
+  /// the Places tab pre-filtered by this city so the user can then pick
+  /// a category from the filter row to browse places by category.
+  final ValueChanged<CityModel> onCityForCategoriesSelected;
 
   const AdminResortCitiesScreen({
     super.key,
     required this.apiService,
     required this.onCitySelected,
+    required this.onCityForCategoriesSelected,
   });
 
   @override
@@ -443,8 +450,9 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
               onEdit: () => _openForm(city: _filtered[i]),
               onDelete: () => _delete(_filtered[i]),
               onToggleActive: () => _toggleActive(_filtered[i]),
-              onViewPlaces: () =>
-                  widget.onCitySelected(_filtered[i]),
+              onViewPlaces: () => widget.onCitySelected(_filtered[i]),
+              onViewCategories: () =>
+                  widget.onCityForCategoriesSelected(_filtered[i]),
             ),
           );
         }),
@@ -540,6 +548,7 @@ class _CityCard extends StatefulWidget {
   final VoidCallback onDelete;
   final VoidCallback onToggleActive;
   final VoidCallback onViewPlaces;
+  final VoidCallback onViewCategories;
 
   const _CityCard({
     required this.city,
@@ -547,6 +556,7 @@ class _CityCard extends StatefulWidget {
     required this.onDelete,
     required this.onToggleActive,
     required this.onViewPlaces,
+    required this.onViewCategories,
   });
 
   @override
@@ -650,16 +660,19 @@ class _CityCardState extends State<_CityCard> {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10)),
                   onSelected: (v) {
-                    if (v == 'channels') widget.onViewPlaces();
+                    if (v == 'places') widget.onViewPlaces();
+                    if (v == 'categories') widget.onViewCategories();
                     if (v == 'edit') widget.onEdit();
                     if (v == 'toggle') widget.onToggleActive();
                     if (v == 'delete') widget.onDelete();
                   },
                   itemBuilder: (_) => [
                     const PopupMenuItem(
-                        value: 'channels',
-                        child: _PopItem(
-                            Icons.place_rounded, 'View Places')),
+                        value: 'places',
+                        child: _PopItem(Icons.place_rounded, 'View Places')),
+                    const PopupMenuItem(
+                        value: 'categories',
+                        child: _PopItem(Icons.category_rounded, 'View by Category')),
                     const PopupMenuItem(
                         value: 'edit',
                         child: _PopItem(Icons.edit_rounded, 'Edit City')),
@@ -730,17 +743,20 @@ class _CityCardState extends State<_CityCard> {
 
               const SizedBox(height: 10),
 
-              // ── Action buttons ────────────────────────────────────────────
+              // ── Action buttons ─────────────────────────────────────────────
+              // Edit is available in the ⋮ menu above; these two buttons give
+              // direct-access shortcuts to the two most common drill-down views.
               Row(children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: widget.onEdit,
-                    icon: const Icon(Icons.edit_rounded, size: 13),
-                    label: const Text('Edit',
+                    onPressed: widget.onViewCategories,
+                    icon: const Icon(Icons.category_rounded, size: 13),
+                    label: const Text('Categories',
                         style: TextStyle(fontSize: 12)),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white54,
-                      side: const BorderSide(color: Colors.white24),
+                      foregroundColor: const Color(0xFF2196F3),
+                      side: BorderSide(
+                          color: const Color(0xFF2196F3).withValues(alpha: 0.45)),
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8)),

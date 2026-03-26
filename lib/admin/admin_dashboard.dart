@@ -78,10 +78,11 @@ class _AdminDashboardState extends State<AdminDashboard>
   void _onNavTap(int index) {
     setState(() {
       _selectedIndex = index;
-      // Only reset filters when explicitly leaving Places
       if (index != 3) {
+        // Clear both filters when leaving Places via the nav bar/sidebar so
+        // returning later starts with the full unfiltered list.
         _filterCategory = null;
-        // Keep _filterCity so it can be re-used when returning to Places
+        _filterCity = null;
       }
     });
   }
@@ -159,7 +160,11 @@ class _AdminDashboardState extends State<AdminDashboard>
       case 0: return 'System overview & quick actions';
       case 1: return 'Add, edit and remove resort destinations';
       case 2: return 'Manage global categories and subcategories';
-      case 3: return 'Manage listings and places';
+      case 3:
+        if (_filterCity != null && _filterCategory == null) {
+          return 'Showing places in ${_filterCity!.name} · use the category filter to narrow down';
+        }
+        return 'Manage listings and places';
       default: return '';
     }
   }
@@ -175,9 +180,18 @@ class _AdminDashboardState extends State<AdminDashboard>
       case 1:
         return AdminResortCitiesScreen(
           apiService: _apiService,
-          // Tapping a city → jump to Places tab pre-filtered by that city
+          // "Places" button → Places tab pre-filtered by city only
           onCitySelected: (city) => setState(() {
             _filterCity = city;
+            _filterCategory = null;
+            _selectedIndex = 3;
+          }),
+          // "Categories" button → Places tab pre-filtered by city;
+          // the user picks a category from the filter row to drill down further.
+          // We also clear any stale category filter so the dropdown starts fresh.
+          onCityForCategoriesSelected: (city) => setState(() {
+            _filterCity = city;
+            _filterCategory = null;
             _selectedIndex = 3;
           }),
         );
