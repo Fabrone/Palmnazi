@@ -13,12 +13,23 @@ import 'package:palmnazi/models/place_model.dart';
 //   • Optional city and category filter (passed down from dashboard context)
 //   • Status tab filter: All / Active / Pending / Suspended / Archived
 //   • Search by name or location
-//   • Launch the 11-step AdminPlaceWizardScreen to create or edit a place
+//   • Launch the AdminPlaceWizardScreen to create or edit a place
 //   • Delete a place (with confirmation)
 //
-// This screen owns the city and category lists so the wizard has them when
-// launched. Both lists are fetched on init alongside the places list.
+// RESPONSIVE STRATEGY
+// ───────────────────
+// • Header row stacks vertically on narrow screens (< 480 dp).
+// • _FilterRow stacks dropdowns vertically on narrow screens.
+// • Status tabs are in a horizontally-scrollable ListView — never overflow.
+// • _PlaceCard uses LayoutBuilder for its own width + NO Spacer() inside
+//   GridView cells (Spacer in a Column inside a fixed-aspect grid cell is the
+//   root cause of the bottom-overflow errors). Content fills naturally; the
+//   grid aspect ratio is generous enough that nothing clips.
+// • Single-column layout on narrow screens uses ListView (height = content).
 // ─────────────────────────────────────────────────────────────────────────────
+
+const double _kNarrow = 480;
+const double _kMedium = 900;
 
 class AdminPlacesScreen extends StatefulWidget {
   final AdminApiService apiService;
@@ -55,8 +66,20 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
   CityModel? _cityFilter;
   CategoryModel? _categoryFilter;
 
-  static const _statusTabs = [null, 'ACTIVE', 'PENDING', 'SUSPENDED', 'ARCHIVED'];
-  static const _statusLabels = ['All', 'Active', 'Pending', 'Suspended', 'Archived'];
+  static const _statusTabs = [
+    null,
+    'ACTIVE',
+    'PENDING',
+    'SUSPENDED',
+    'ARCHIVED'
+  ];
+  static const _statusLabels = [
+    'All',
+    'Active',
+    'Pending',
+    'Suspended',
+    'Archived'
+  ];
 
   @override
   void initState() {
@@ -69,26 +92,21 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
   @override
   void didUpdateWidget(AdminPlacesScreen old) {
     super.didUpdateWidget(old);
-    // Re-sync if parent dashboard changes context
     final cityChanged = widget.filterCity?.id != old.filterCity?.id;
-    final catChanged  = widget.filterCategory?.id != old.filterCategory?.id;
+    final catChanged = widget.filterCategory?.id != old.filterCategory?.id;
     if (cityChanged || catChanged) {
-      // Resolve the incoming prop against our already-fetched lists so the
-      // DropdownButton always gets an object that exists in its items list.
-      // If lists aren't loaded yet, _loadAll() will reconcile on completion.
       final incomingCityId = widget.filterCity?.id;
-      final incomingCatId  = widget.filterCategory?.id;
+      final incomingCatId = widget.filterCategory?.id;
       setState(() {
         _cityFilter = incomingCityId == null
             ? null
-            : _cities.where((c) => c.id == incomingCityId).firstOrNull
-                ?? widget.filterCity; // fallback: keep prop until list loads
+            : _cities.where((c) => c.id == incomingCityId).firstOrNull ??
+                widget.filterCity;
         _categoryFilter = incomingCatId == null
             ? null
-            : _categories.where((c) => c.id == incomingCatId).firstOrNull
-                ?? widget.filterCategory;
+            : _categories.where((c) => c.id == incomingCatId).firstOrNull ??
+                widget.filterCategory;
       });
-      // If lists are empty the full load will reconcile; otherwise just re-fetch places.
       if (_cities.isEmpty) {
         _loadAll();
       } else {
@@ -98,7 +116,10 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
   }
 
   Future<void> _loadAll() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final results = await Future.wait([
         widget.apiService.getCities(),
@@ -112,19 +133,13 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
         ),
       ]);
       if (mounted) {
-        final freshCities     = results[0] as List<CityModel>;
+        final freshCities = results[0] as List<CityModel>;
         final freshCategories = results[1] as List<CategoryModel>;
         setState(() {
-          _cities     = freshCities;
+          _cities = freshCities;
           _categories = freshCategories;
-          _places     = results[2] as List<PlaceModel>;
-          // ── Reconcile filter objects by id ───────────────────────────────
-          // The filter value passed from the dashboard may be a different
-          // object instance than what is now in _cities / _categories.
-          // DropdownButton asserts exactly one item.value == value (by ==),
-          // so we must re-resolve both filters against the freshly fetched
-          // lists. CityModel / CategoryModel equality is identity unless ==
-          // is overridden, so we match by id string instead.
+          _places = results[2] as List<PlaceModel>;
+          // Reconcile filter objects by id so DropdownButton doesn't throw
           if (_cityFilter != null) {
             _cityFilter = freshCities
                 .where((c) => c.id == _cityFilter!.id)
@@ -139,12 +154,20 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
     }
   }
 
   Future<void> _fetchPlaces() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final list = await widget.apiService.getPlaces(
         cityId: _cityFilter?.id,
@@ -181,14 +204,11 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
   }
 
   void _openWizard({PlaceModel? existing}) async {
-    // Ensure we have cities and categories loaded before launching
     if (_cities.isEmpty || _categories.isEmpty) {
       _snack('Loading data…', isError: false);
       await _loadAll();
     }
-
     if (!mounted) return;
-
     final refreshed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         fullscreenDialog: true,
@@ -200,7 +220,6 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
         ),
       ),
     );
-    // true = submitted & activated, false = saved & exited draft
     if (refreshed != null) _fetchPlaces();
   }
 
@@ -232,37 +251,39 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final screenW = mq.size.width;
+    final isNarrow = screenW < _kNarrow;
+    final hPad = isNarrow ? 12.0 : 24.0;
+    final vPad = isNarrow ? 16.0 : 24.0;
+
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header ──────────────────────────────────────────────────
-          Row(children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Places',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold)),
-                  Text(
-                    _buildSubtitle(),
-                    style: const TextStyle(color: Colors.white38, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-            AdminAddButton(
-              label: 'Add Place',
-              onTap: () => _openWizard(),
-            ),
-          ]),
-          const SizedBox(height: 16),
+          // ── Header ───────────────────────────────────────────────────
+          isNarrow
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildTitleBlock(),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: AdminAddButton(
+                          label: 'Add Place', onTap: () => _openWizard()),
+                    ),
+                  ],
+                )
+              : Row(children: [
+                  Expanded(child: _buildTitleBlock()),
+                  AdminAddButton(
+                      label: 'Add Place', onTap: () => _openWizard()),
+                ]),
+          const SizedBox(height: 14),
 
-          // ── Active filter chips ──────────────────────────────────────
+          // ── Active filter chips ───────────────────────────────────────
           if (_cityFilter != null || _categoryFilter != null)
             _ActiveFilterBar(
               cityFilter: _cityFilter,
@@ -279,12 +300,13 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
               },
             ),
 
-          // ── Filter dropdowns ─────────────────────────────────────────
+          // ── Filter dropdowns — responsive ─────────────────────────────
           _FilterRow(
             cities: _cities,
             categories: _categories,
             selectedCity: _cityFilter,
             selectedCategory: _categoryFilter,
+            isNarrow: isNarrow,
             onCityChanged: (city) {
               setState(() => _cityFilter = city);
               widget.onCityFilterChanged(city);
@@ -296,15 +318,18 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
               _fetchPlaces();
             },
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
           // ── Search ───────────────────────────────────────────────────
           TextField(
             onChanged: (v) => setState(() => _search = v),
             style: const TextStyle(color: Colors.white, fontSize: 14),
             decoration: InputDecoration(
-              hintText: 'Search by name, city, or address…',
-              hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+              hintText: isNarrow
+                  ? 'Search places…'
+                  : 'Search by name, city, or address…',
+              hintStyle:
+                  const TextStyle(color: Colors.white24, fontSize: 13),
               prefixIcon: const Icon(Icons.search_rounded,
                   color: Colors.white38, size: 18),
               suffixIcon: _search.isNotEmpty
@@ -324,19 +349,20 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
                   borderSide: const BorderSide(color: Colors.white12)),
               focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFF9C27B0))),
+                  borderSide:
+                      const BorderSide(color: Color(0xFF9C27B0))),
               contentPadding: const EdgeInsets.symmetric(vertical: 0),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
-          // ── Status tabs ──────────────────────────────────────────────
+          // ── Status tabs — horizontally scrollable, never overflows ────
           SizedBox(
             height: 36,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: _statusTabs.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              separatorBuilder: (_, __) => const SizedBox(width: 6),
               itemBuilder: (_, i) => _StatusTab(
                 label: _statusLabels[i],
                 selected: _statusFilter == _statusTabs[i],
@@ -347,12 +373,31 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
 
           // ── Body ─────────────────────────────────────────────────────
           Expanded(child: _buildBody()),
         ],
       ),
+    );
+  }
+
+  Widget _buildTitleBlock() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Places',
+          style: TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold),
+        ),
+        Text(
+          _buildSubtitle(),
+          style: const TextStyle(color: Colors.white38, fontSize: 12),
+        ),
+      ],
     );
   }
 
@@ -366,7 +411,9 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
 
   Widget _buildBody() {
     if (_loading) return const AdminLoader();
-    if (_error != null) return AdminErrorView(error: _error!, onRetry: _loadAll);
+    if (_error != null) {
+      return AdminErrorView(error: _error!, onRetry: _loadAll);
+    }
 
     final filtered = _filtered;
     if (filtered.isEmpty) {
@@ -374,7 +421,7 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
         icon: Icons.place_rounded,
         title: _places.isEmpty ? 'No places yet' : 'No matches',
         body: _places.isEmpty
-            ? 'Create your first place using the 11-step wizard.\nFill in basic info, location, media, and link it to categories.'
+            ? 'Create your first place using the wizard.\nFill in basic info, location, media, and link it to categories.'
             : 'Try a different search or filter.',
         actionLabel: _places.isEmpty ? 'Add First Place' : null,
         onAction: _places.isEmpty ? () => _openWizard() : null,
@@ -384,14 +431,37 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
     return RefreshIndicator(
       onRefresh: _fetchPlaces,
       color: const Color(0xFF9C27B0),
-      child: LayoutBuilder(builder: (_, c) {
-        final cols = c.maxWidth > 1000 ? 3 : (c.maxWidth > 620 ? 2 : 1);
+      child: LayoutBuilder(builder: (_, constraints) {
+        final w = constraints.maxWidth;
+        final cols = w >= _kMedium ? 3 : (w >= _kNarrow ? 2 : 1);
+
+        // Single-column: use ListView so card height follows content —
+        // avoids every aspect-ratio-related overflow in one step.
+        if (cols == 1) {
+          return ListView.separated(
+            physics: const AlwaysScrollableScrollPhysics(),
+            itemCount: filtered.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemBuilder: (_, i) => _PlaceCard(
+              place: filtered[i],
+              onEdit: () => _openWizard(existing: filtered[i]),
+              onDelete: () => _delete(filtered[i]),
+            ),
+          );
+        }
+
+        // Multi-column grid — aspect ratio tuned to fit card content.
+        // A generous ratio avoids the bottom-overflow caused by Spacer
+        // competing with a too-short cell height.
+        final aspectRatio = cols == 3 ? 1.05 : 1.25;
+
         return GridView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: cols,
-            childAspectRatio: cols == 1 ? 3.0 : 1.55,
-            crossAxisSpacing: 14,
-            mainAxisSpacing: 14,
+            childAspectRatio: aspectRatio,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
           ),
           itemCount: filtered.length,
           itemBuilder: (_, i) => _PlaceCard(
@@ -406,7 +476,7 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _ActiveFilterBar — shows removable chips for current city/category filters
+// _ActiveFilterBar — removable chips for current city/category filters
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ActiveFilterBar extends StatelessWidget {
@@ -425,7 +495,7 @@ class _ActiveFilterBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Wrap(
         spacing: 8,
         runSpacing: 6,
@@ -456,7 +526,10 @@ class _RemovableChip extends StatelessWidget {
   final Color color;
   final VoidCallback onRemove;
   const _RemovableChip(
-      {required this.icon, required this.label, required this.color, required this.onRemove});
+      {required this.icon,
+      required this.label,
+      required this.color,
+      required this.onRemove});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -469,11 +542,16 @@ class _RemovableChip extends StatelessWidget {
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(icon, size: 12, color: color),
           const SizedBox(width: 5),
-          Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+          Text(label,
+              style: TextStyle(
+                  color: color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600)),
           const SizedBox(width: 4),
           GestureDetector(
             onTap: onRemove,
-            child: Icon(Icons.close_rounded, size: 14, color: color.withValues(alpha: 0.7)),
+            child: Icon(Icons.close_rounded,
+                size: 14, color: color.withValues(alpha: 0.7)),
           ),
         ]),
       );
@@ -481,6 +559,8 @@ class _RemovableChip extends StatelessWidget {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // _FilterRow — city and category dropdowns
+//
+// RESPONSIVE: on narrow screens the two dropdowns stack vertically.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _FilterRow extends StatelessWidget {
@@ -488,6 +568,7 @@ class _FilterRow extends StatelessWidget {
   final List<CategoryModel> categories;
   final CityModel? selectedCity;
   final CategoryModel? selectedCategory;
+  final bool isNarrow;
   final ValueChanged<CityModel?> onCityChanged;
   final ValueChanged<CategoryModel?> onCategoryChanged;
 
@@ -496,49 +577,64 @@ class _FilterRow extends StatelessWidget {
     required this.categories,
     required this.selectedCity,
     required this.selectedCategory,
+    required this.isNarrow,
     required this.onCityChanged,
     required this.onCategoryChanged,
   });
 
   @override
   Widget build(BuildContext context) {
+    final cityDropdown = _FilterDropdown<CityModel>(
+      hint: 'All cities',
+      icon: Icons.location_city_rounded,
+      value: selectedCity,
+      items: cities
+          .map((c) => DropdownMenuItem<CityModel>(
+                value: c,
+                child: Text(c.name),
+              ))
+          .toList(),
+      onChanged: onCityChanged,
+    );
+
+    final categoryDropdown = _FilterDropdown<CategoryModel>(
+      hint: 'All categories',
+      icon: Icons.category_rounded,
+      value: selectedCategory,
+      items: categories
+          .where((c) => c.isRoot)
+          .map((c) => DropdownMenuItem<CategoryModel>(
+                value: c,
+                child: Row(children: [
+                  if (c.icon != null) ...[
+                    Text(c.icon!, style: const TextStyle(fontSize: 14)),
+                    const SizedBox(width: 6),
+                  ],
+                  Flexible(
+                      child: Text(c.name,
+                          overflow: TextOverflow.ellipsis)),
+                ]),
+              ))
+          .toList(),
+      onChanged: onCategoryChanged,
+    );
+
+    if (isNarrow) {
+      // Stack vertically on small screens — no side-by-side overflow
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          cityDropdown,
+          const SizedBox(height: 8),
+          categoryDropdown,
+        ],
+      );
+    }
+
     return Row(children: [
-      Expanded(
-        child: _FilterDropdown<CityModel>(
-          hint: 'All cities',
-          icon: Icons.location_city_rounded,
-          value: selectedCity,
-          items: cities
-              .map((c) => DropdownMenuItem<CityModel>(
-                    value: c,
-                    child: Text(c.name),
-                  ))
-              .toList(),
-          onChanged: onCityChanged,
-        ),
-      ),
+      Expanded(child: cityDropdown),
       const SizedBox(width: 10),
-      Expanded(
-        child: _FilterDropdown<CategoryModel>(
-          hint: 'All categories',
-          icon: Icons.category_rounded,
-          value: selectedCategory,
-          items: categories
-              .where((c) => c.isRoot)
-              .map((c) => DropdownMenuItem<CategoryModel>(
-                    value: c,
-                    child: Row(children: [
-                      if (c.icon != null) ...[
-                        Text(c.icon!, style: const TextStyle(fontSize: 14)),
-                        const SizedBox(width: 6),
-                      ],
-                      Flexible(child: Text(c.name, overflow: TextOverflow.ellipsis)),
-                    ]),
-                  ))
-              .toList(),
-          onChanged: onCategoryChanged,
-        ),
-      ),
+      Expanded(child: categoryDropdown),
     ]);
   }
 }
@@ -560,44 +656,47 @@ class _FilterDropdown<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // DropdownButton asserts: if value != null, exactly one item must match it.
-    // Guard: if the value object is not present in the items list (can happen
-    // during the brief window between navigation and _loadAll completing), treat
-    // it as null so the hint is shown instead of throwing.
+    // Guard: if value isn't in the items list (brief window during navigation),
+    // treat it as null so DropdownButton doesn't throw.
     final allValues = items.map((i) => i.value).toSet();
-    final safeValue = (value != null && allValues.contains(value)) ? value : null;
+    final safeValue =
+        (value != null && allValues.contains(value)) ? value : null;
 
     return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        decoration: BoxDecoration(
-          color: const Color(0xFF111827),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-              color: safeValue != null
-                  ? const Color(0xFF9C27B0).withValues(alpha: 0.4)
-                  : Colors.white12),
-        ),
-        child: DropdownButton<T>(
-          value: safeValue,
-          isExpanded: true,
-          dropdownColor: const Color(0xFF1F2937),
-          style: const TextStyle(color: Colors.white70, fontSize: 13),
-          underline: const SizedBox.shrink(),
-          hint: Row(children: [
-            Icon(icon, size: 13, color: Colors.white38),
-            const SizedBox(width: 6),
-            Text(hint, style: const TextStyle(color: Colors.white24, fontSize: 13)),
-          ]),
-          onChanged: onChanged,
-          items: [
-            DropdownMenuItem<T>(
-              value: null,
-              child: Text(hint, style: const TextStyle(color: Colors.white54)),
-            ),
-            ...items,
-          ],
-        ),
-      );
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+            color: safeValue != null
+                ? const Color(0xFF9C27B0).withValues(alpha: 0.4)
+                : Colors.white12),
+      ),
+      child: DropdownButton<T>(
+        value: safeValue,
+        isExpanded: true,
+        dropdownColor: const Color(0xFF1F2937),
+        style:
+            const TextStyle(color: Colors.white70, fontSize: 13),
+        underline: const SizedBox.shrink(),
+        hint: Row(children: [
+          Icon(icon, size: 13, color: Colors.white38),
+          const SizedBox(width: 6),
+          Text(hint,
+              style: const TextStyle(
+                  color: Colors.white24, fontSize: 13)),
+        ]),
+        onChanged: onChanged,
+        items: [
+          DropdownMenuItem<T>(
+            value: null,
+            child: Text(hint,
+                style: const TextStyle(color: Colors.white54)),
+          ),
+          ...items,
+        ],
+      ),
+    );
   }
 }
 
@@ -609,7 +708,10 @@ class _StatusTab extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _StatusTab({required this.label, required this.selected, required this.onTap});
+  const _StatusTab(
+      {required this.label,
+      required this.selected,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -618,19 +720,25 @@ class _StatusTab extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? accent.withValues(alpha: 0.15) : Colors.transparent,
+          color: selected
+              ? accent.withValues(alpha: 0.15)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-              color: selected ? accent.withValues(alpha: 0.5) : Colors.white12),
+              color: selected
+                  ? accent.withValues(alpha: 0.5)
+                  : Colors.white12),
         ),
         child: Text(
           label,
           style: TextStyle(
             fontSize: 12,
             color: selected ? accent : Colors.white38,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+            fontWeight:
+                selected ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
       ),
@@ -640,6 +748,17 @@ class _StatusTab extends StatelessWidget {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // _PlaceCard
+//
+// RESPONSIVE NOTES
+// ────────────────
+// • Uses LayoutBuilder to know its rendered width and scale content.
+// • NO Spacer() — Spacer in a Column inside a fixed-aspect GridView cell
+//   fights the cell height and causes the bottom-overflow errors.
+//   Content is tightly packed with SizedBox gaps instead.
+// • Description is capped at 2 lines with ellipsis.
+// • Category pills are in a Wrap — they reflow instead of overflowing.
+// • The bottom row (progress bar + edit button) uses Expanded + fixed
+//   widths so it never overflows horizontally.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _PlaceCard extends StatefulWidget {
@@ -680,193 +799,293 @@ class _PlaceCardState extends State<_PlaceCard> {
             width: _hovering ? 1.5 : 1,
           ),
           boxShadow: _hovering
-              ? [BoxShadow(color: accent.withValues(alpha: 0.15), blurRadius: 16)]
+              ? [
+                  BoxShadow(
+                      color: accent.withValues(alpha: 0.15),
+                      blurRadius: 16)
+                ]
               : [],
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Top row: cover image thumb + status + menu ─────────
-              Row(children: [
-                // Thumbnail
-                Container(
-                  width: 44, height: 44,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.white12),
-                    image: p.coverImage != null
-                        ? DecorationImage(
-                            image: NetworkImage(p.coverImage!),
-                            fit: BoxFit.cover,
-                            onError: (_, __) {},
-                          )
-                        : null,
-                  ),
-                  child: p.coverImage == null
-                      ? const Icon(Icons.image_rounded,
-                          color: Colors.white24, size: 22)
-                      : null,
-                ),
-                const SizedBox(width: 10),
-                Expanded(child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(p.name,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14)),
-                    if (p.cityName.isNotEmpty)
-                      Text(p.cityName,
-                          style: const TextStyle(
-                              color: Colors.white38, fontSize: 11)),
-                  ],
-                )),
-                const SizedBox(width: 6),
-                AdminStatusBadge(status: p.status),
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert_rounded,
-                      color: Colors.white38, size: 16),
-                  color: const Color(0xFF1F2937),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                  onSelected: (v) {
-                    if (v == 'edit') widget.onEdit();
-                    if (v == 'delete') widget.onDelete();
-                  },
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(
-                        value: 'edit',
-                        child: AdminPopItem(Icons.edit_rounded, 'Edit / Continue')),
-                    const PopupMenuItem(
-                        value: 'delete',
-                        child: AdminPopItem(Icons.delete_rounded, 'Delete',
-                            color: Colors.redAccent)),
-                  ],
-                ),
-              ]),
+        // LayoutBuilder so we scale relative to actual rendered width
+        child: LayoutBuilder(builder: (context, cardConstraints) {
+          final cardW = cardConstraints.maxWidth;
+          final scale = (cardW / 280.0).clamp(0.80, 1.2);
 
-              const SizedBox(height: 10),
-
-              // ── Description snippet ──────────────────────────────────
-              if (p.shortDescription != null && p.shortDescription!.isNotEmpty)
-                Text(
-                  p.shortDescription!,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      color: Colors.white38, fontSize: 11, height: 1.5),
-                ),
-
-              const Spacer(),
-
-              // ── Category pills ───────────────────────────────────────
-              if (p.categoryLinks.isNotEmpty)
-                Wrap(
-                  spacing: 5,
-                  runSpacing: 4,
-                  children: p.categoryLinks.take(3).map((link) => Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: accent.withValues(alpha: 0.2)),
-                    ),
-                    child: Text(
-                      link.parentName != null
-                          ? '${link.parentName} › ${link.categoryName}'
-                          : link.categoryName,
-                      style: const TextStyle(
-                          color: Colors.white38, fontSize: 9),
-                    ),
-                  )).toList(),
-                ),
-
-              const SizedBox(height: 10),
-
-              // ── Bottom row: completion bar + edit button ─────────────
-              Row(children: [
-                Expanded(
-                  child: Column(
+          return SingleChildScrollView(
+            // NeverScrollable: prevents scroll inside grid cell while
+            // still allowing content to lay out at its natural height,
+            // which prevents overflow when aspect ratio is generous enough.
+            physics: const NeverScrollableScrollPhysics(),
+            child: Padding(
+              padding: EdgeInsets.all((14 * scale).clamp(10, 16).toDouble()),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Top row: thumbnail + name + status + menu ────────
+                  Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(children: [
-                        Text('${p.completionPercent}% complete',
-                            style: const TextStyle(
-                                color: Colors.white38, fontSize: 10)),
-                        if (p.isDraft) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 5, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: Colors.blueAccent.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(3),
+                      // Thumbnail
+                      Container(
+                        width: (42 * scale).clamp(32, 48).toDouble(),
+                        height: (42 * scale).clamp(32, 48).toDouble(),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.white12),
+                          image: p.coverImage != null
+                              ? DecorationImage(
+                                  image: NetworkImage(p.coverImage!),
+                                  fit: BoxFit.cover,
+                                  onError: (_, __) {},
+                                )
+                              : null,
+                        ),
+                        child: p.coverImage == null
+                            ? Icon(Icons.image_rounded,
+                                color: Colors.white24,
+                                size: (20 * scale)
+                                    .clamp(16, 22)
+                                    .toDouble())
+                            : null,
+                      ),
+                      SizedBox(width: (8 * scale).clamp(6, 10).toDouble()),
+
+                      // Name + city — Expanded prevents overflow
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              p.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: (13 * scale)
+                                      .clamp(11, 15)
+                                      .toDouble()),
                             ),
-                            child: const Text('DRAFT',
+                            if (p.cityName.isNotEmpty)
+                              Text(
+                                p.cityName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                    color: Colors.blueAccent,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.bold)),
-                          ),
-                        ],
-                      ]),
-                      const SizedBox(height: 4),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(3),
-                        child: LinearProgressIndicator(
-                          value: p.completionPercent / 100,
-                          backgroundColor: Colors.white12,
-                          color: p.isActive
-                              ? Colors.greenAccent
-                              : p.isDraft
-                                  ? Colors.blueAccent
-                                  : accent,
-                          minHeight: 3,
+                                    color: Colors.white38,
+                                    fontSize: (10 * scale)
+                                        .clamp(9, 12)
+                                        .toDouble()),
+                              ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(width: 4),
+                      // Status badge — compact
+                      AdminStatusBadge(status: p.status),
+                      // Menu
+                      SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert_rounded,
+                              color: Colors.white38, size: 15),
+                          iconSize: 15,
+                          padding: EdgeInsets.zero,
+                          color: const Color(0xFF1F2937),
+                          shape: RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.circular(10)),
+                          onSelected: (v) {
+                            if (v == 'edit') widget.onEdit();
+                            if (v == 'delete') widget.onDelete();
+                          },
+                          itemBuilder: (_) => [
+                            const PopupMenuItem(
+                                value: 'edit',
+                                child: AdminPopItem(
+                                    Icons.edit_rounded,
+                                    'Edit / Continue')),
+                            const PopupMenuItem(
+                                value: 'delete',
+                                child: AdminPopItem(
+                                    Icons.delete_rounded, 'Delete',
+                                    color: Colors.redAccent)),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 10),
-                GestureDetector(
-                  onTap: widget.onEdit,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                          color: accent.withValues(alpha: 0.3)),
+
+                  SizedBox(height: (8 * scale).clamp(6, 10).toDouble()),
+
+                  // ── Description snippet ──────────────────────────────
+                  if (p.shortDescription != null &&
+                      p.shortDescription!.isNotEmpty)
+                    Text(
+                      p.shortDescription!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: Colors.white38,
+                          fontSize: (10 * scale)
+                              .clamp(9, 12)
+                              .toDouble(),
+                          height: 1.4),
                     ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(
-                        p.isDraft
-                            ? Icons.arrow_forward_rounded
-                            : Icons.edit_rounded,
-                        size: 12,
-                        color: accent,
+
+                  SizedBox(height: (6 * scale).clamp(4, 8).toDouble()),
+
+                  // ── Category pills — Wrap, no overflow ───────────────
+                  if (p.categoryLinks.isNotEmpty)
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 3,
+                      children: p.categoryLinks
+                          .take(3)
+                          .map((link) => Container(
+                                padding:
+                                    const EdgeInsets.symmetric(
+                                        horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color:
+                                      accent.withValues(alpha: 0.08),
+                                  borderRadius:
+                                      BorderRadius.circular(4),
+                                  border: Border.all(
+                                      color: accent
+                                          .withValues(alpha: 0.2)),
+                                ),
+                                child: Text(
+                                  link.parentName != null
+                                      ? '${link.parentName} › ${link.categoryName}'
+                                      : link.categoryName,
+                                  style: TextStyle(
+                                      color: Colors.white38,
+                                      fontSize: (9 * scale)
+                                          .clamp(8, 10)
+                                          .toDouble()),
+                                ),
+                              ))
+                          .toList(),
+                    ),
+
+                  SizedBox(height: (8 * scale).clamp(6, 10).toDouble()),
+
+                  // ── Bottom: completion bar + edit button ─────────────
+                  // NO Spacer() here — use fixed spacing above instead.
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // Progress bar + % label
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              Text(
+                                '${p.completionPercent}% complete',
+                                style: TextStyle(
+                                    color: Colors.white38,
+                                    fontSize: (9 * scale)
+                                        .clamp(8, 11)
+                                        .toDouble()),
+                              ),
+                              if (p.isDraft) ...[
+                                const SizedBox(width: 5),
+                                Container(
+                                  padding:
+                                      const EdgeInsets.symmetric(
+                                          horizontal: 4, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blueAccent
+                                        .withValues(alpha: 0.15),
+                                    borderRadius:
+                                        BorderRadius.circular(3),
+                                  ),
+                                  child: const Text('DRAFT',
+                                      style: TextStyle(
+                                          color: Colors.blueAccent,
+                                          fontSize: 9,
+                                          fontWeight:
+                                              FontWeight.bold)),
+                                ),
+                              ],
+                            ]),
+                            const SizedBox(height: 4),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(3),
+                              child: LinearProgressIndicator(
+                                value: p.completionPercent / 100,
+                                backgroundColor: Colors.white12,
+                                color: p.isActive
+                                    ? Colors.greenAccent
+                                    : p.isDraft
+                                        ? Colors.blueAccent
+                                        : accent,
+                                minHeight: 3,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        p.isDraft ? 'Continue' : 'Edit',
-                        style: TextStyle(
-                            color: accent,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600),
+                      SizedBox(
+                          width:
+                              (8 * scale).clamp(6, 10).toDouble()),
+
+                      // Edit/Continue button — intrinsic width, never pushed
+                      GestureDetector(
+                        onTap: widget.onEdit,
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal:
+                                  (10 * scale).clamp(7, 12).toDouble(),
+                              vertical:
+                                  (5 * scale).clamp(4, 7).toDouble()),
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color: accent.withValues(alpha: 0.3)),
+                          ),
+                          child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  p.isDraft
+                                      ? Icons.arrow_forward_rounded
+                                      : Icons.edit_rounded,
+                                  size:
+                                      (11 * scale).clamp(10, 13).toDouble(),
+                                  color: accent,
+                                ),
+                                SizedBox(
+                                    width: (3 * scale)
+                                        .clamp(2, 5)
+                                        .toDouble()),
+                                Text(
+                                  p.isDraft ? 'Continue' : 'Edit',
+                                  style: TextStyle(
+                                      color: accent,
+                                      fontSize: (10 * scale)
+                                          .clamp(9, 12)
+                                          .toDouble(),
+                                      fontWeight: FontWeight.w600),
+                                ),
+                              ]),
+                        ),
                       ),
-                    ]),
+                    ],
                   ),
-                ),
-              ]),
-            ],
-          ),
-        ),
+                ],
+              ),
+            ),
+          );
+        }),
       ),
     );
   }

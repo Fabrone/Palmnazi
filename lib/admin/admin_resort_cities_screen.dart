@@ -21,16 +21,33 @@ final Logger _screenLog = Logger(
 // Full CRUD management for resort cities using the live API.
 // Data model: CityModel (matches backend JSON exactly).
 // All field names in the form match the POST /api/cities request body.
+//
+// RESPONSIVE STRATEGY
+// ───────────────────
+// • All sizing decisions derive from MediaQuery.of(context).size so the layout
+//   responds to rotations and window resizes without hard-coded pixel breakpoints.
+// • Three layout tiers driven by available width (not hardcoded px comparisons):
+//     narrow  < 480 dp  → 1 column, card aspect ratio auto (shrinkWrap-like)
+//     medium  < 900 dp  → 2 columns
+//     wide   >= 900 dp  → 3 columns
+// • The toolbar wraps via Wrap so filter chips never overflow on narrow screens.
+// • _CityCard uses LayoutBuilder to scale its own internal content.
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Breakpoints — expressed as named constants so they are easy to tweak.
+const double _kNarrow = 480;
+const double _kMedium = 900;
 
 class AdminResortCitiesScreen extends StatefulWidget {
   final AdminApiService apiService;
+
   /// Called when the user taps "Places" on a city card → navigates to
   /// the Places tab pre-filtered by this city.
   final ValueChanged<CityModel> onCitySelected;
-  /// Called when the user taps "Categories" on a city card → navigates to
-  /// the Places tab pre-filtered by this city so the user can then pick
-  /// a category from the filter row to browse places by category.
+
+  /// Called when the user taps "View by Category" in the ⋮ menu → navigates
+  /// to the Places tab pre-filtered by this city so the user can then pick
+  /// a category from the filter row.
   final ValueChanged<CityModel> onCityForCategoriesSelected;
 
   const AdminResortCitiesScreen({
@@ -47,7 +64,6 @@ class AdminResortCitiesScreen extends StatefulWidget {
 
 class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
     with SingleTickerProviderStateMixin {
-
   List<CityModel> _cities = [];
   List<CityModel> _filtered = [];
   bool _loading = true;
@@ -82,7 +98,10 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
 
   Future<void> _fetch() async {
     _screenLog.i('Loading resort cities…');
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
     try {
       final filters = <String, String>{};
@@ -134,7 +153,8 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
               c.slug.toLowerCase().contains(q))
           .toList();
     }
-    _screenLog.d('Search "$query" → ${_filtered.length}/${_cities.length} cities');
+    _screenLog
+        .d('Search "$query" → ${_filtered.length}/${_cities.length} cities');
     if (mounted) setState(() {});
   }
 
@@ -151,7 +171,8 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
 
     final confirmed = await _showConfirmDialog(
       title: 'Delete "${city.name}"?',
-      body: 'This will permanently remove the city and all its places. This action cannot be undone.',
+      body:
+          'This will permanently remove the city and all its places. This action cannot be undone.',
       confirmLabel: 'Delete',
       isDestructive: true,
     );
@@ -175,7 +196,8 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
   }
 
   Future<void> _toggleActive(CityModel city) async {
-    _screenLog.i('Toggling isActive for "${city.name}" → ${!city.isActive}');
+    _screenLog
+        .i('Toggling isActive for "${city.name}" → ${!city.isActive}');
     try {
       final updated = await widget.apiService
           .updateCity(city.id, {'isActive': !city.isActive});
@@ -191,7 +213,9 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
   }
 
   void _openForm({CityModel? city}) {
-    _screenLog.i(city == null ? 'Opening ADD city form' : 'Opening EDIT form for ${city.name}');
+    _screenLog.i(city == null
+        ? 'Opening ADD city form'
+        : 'Opening EDIT form for ${city.name}');
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -200,8 +224,7 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
         onSave: (payload) async {
           try {
             if (city == null) {
-              final created =
-                  await widget.apiService.createCity(payload);
+              final created = await widget.apiService.createCity(payload);
               _snack('Created "${created.name}"!', isError: false);
             } else {
               final updated =
@@ -224,126 +247,160 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Use MediaQuery for responsive padding — tighter on narrow screens.
+    final mq = MediaQuery.of(context);
+    final screenW = mq.size.width;
+    final hPad = screenW < _kNarrow ? 12.0 : 24.0;
+    final vPad = screenW < _kNarrow ? 16.0 : 24.0;
+
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHeader(),
-          const SizedBox(height: 20),
-          _buildToolbar(),
-          const SizedBox(height: 20),
+          _buildHeader(screenW),
+          const SizedBox(height: 16),
+          _buildToolbar(screenW),
+          const SizedBox(height: 16),
           Expanded(child: _buildBody()),
         ],
       ),
     );
   }
 
-  Widget _buildHeader() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
+  Widget _buildHeader(double screenW) {
+    final isNarrow = screenW < _kNarrow;
+    return isNarrow
+        // On narrow screens stack title and button vertically
+        ? Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Resort Cities',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _loading
-                    ? 'Loading…'
-                    : '${_cities.length} ${_cities.length == 1 ? "city" : "cities"} total'
-                        '${_filterActive != null ? " · filtered" : ""}',
-                style: const TextStyle(color: Colors.white38, fontSize: 12),
+              _buildTitleBlock(),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: _buildAddButton(),
               ),
             ],
-          ),
+          )
+        : Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _buildTitleBlock()),
+              const SizedBox(width: 16),
+              _buildAddButton(),
+            ],
+          );
+  }
+
+  Widget _buildTitleBlock() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Resort Cities',
+          style: TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.bold),
         ),
-        const SizedBox(width: 16),
-        ElevatedButton.icon(
-          onPressed: () => _openForm(),
-          icon: const Icon(Icons.add_rounded, size: 18),
-          label: const Text('Add Resort City'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF14FFEC),
-            foregroundColor: Colors.black87,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-          ),
+        const SizedBox(height: 4),
+        Text(
+          _loading
+              ? 'Loading…'
+              : '${_cities.length} ${_cities.length == 1 ? "city" : "cities"} total'
+                  '${_filterActive != null ? " · filtered" : ""}',
+          style: const TextStyle(color: Colors.white38, fontSize: 12),
         ),
       ],
     );
   }
 
-  Widget _buildToolbar() {
-    return Row(
+  Widget _buildAddButton() {
+    return ElevatedButton.icon(
+      onPressed: () => _openForm(),
+      icon: const Icon(Icons.add_rounded, size: 18),
+      label: const Text('Add Resort City'),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF14FFEC),
+        foregroundColor: Colors.black87,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  Widget _buildToolbar(double screenW) {
+    final isNarrow = screenW < _kNarrow;
+
+    // On narrow screens the search field sits above the filter chips (Wrap
+    // handles wrapping naturally for the chips).
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Search
-        Expanded(
-          flex: 3,
-          child: TextField(
-            onChanged: _applySearch,
-            style: const TextStyle(color: Colors.white, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Search by name, country, region or slug…',
-              hintStyle:
-                  const TextStyle(color: Colors.white24, fontSize: 13),
-              prefixIcon: const Icon(Icons.search_rounded,
-                  color: Colors.white38, size: 18),
-              filled: true,
-              fillColor: const Color(0xFF111827),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Colors.white12),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Colors.white12),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFF14FFEC)),
-              ),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        // Search field — always full width
+        TextField(
+          onChanged: _applySearch,
+          style: const TextStyle(color: Colors.white, fontSize: 14),
+          decoration: InputDecoration(
+            hintText: isNarrow
+                ? 'Search cities…'
+                : 'Search by name, country, region or slug…',
+            hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+            prefixIcon: const Icon(Icons.search_rounded,
+                color: Colors.white38, size: 18),
+            filled: true,
+            fillColor: const Color(0xFF111827),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Colors.white12),
             ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Colors.white12),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFF14FFEC)),
+            ),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           ),
         ),
-        const SizedBox(width: 12),
-        // Active filter
-        _FilterChip(
-          label: 'All',
-          selected: _filterActive == null,
-          onTap: () => _applyFilter(null),
-        ),
-        const SizedBox(width: 6),
-        _FilterChip(
-          label: 'Active',
-          selected: _filterActive == true,
-          color: Colors.greenAccent,
-          onTap: () => _applyFilter(true),
-        ),
-        const SizedBox(width: 6),
-        _FilterChip(
-          label: 'Inactive',
-          selected: _filterActive == false,
-          color: Colors.redAccent,
-          onTap: () => _applyFilter(false),
-        ),
-        const SizedBox(width: 12),
-        // Refresh
-        IconButton(
-          tooltip: 'Refresh',
-          icon: const Icon(Icons.refresh_rounded, color: Colors.white38),
-          onPressed: _loading ? null : _fetch,
+        const SizedBox(height: 10),
+        // Filter chips + refresh in a Wrap — never overflows
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _FilterChip(
+              label: 'All',
+              selected: _filterActive == null,
+              onTap: () => _applyFilter(null),
+            ),
+            _FilterChip(
+              label: 'Active',
+              selected: _filterActive == true,
+              color: Colors.greenAccent,
+              onTap: () => _applyFilter(true),
+            ),
+            _FilterChip(
+              label: 'Inactive',
+              selected: _filterActive == false,
+              color: Colors.redAccent,
+              onTap: () => _applyFilter(false),
+            ),
+            IconButton(
+              tooltip: 'Refresh',
+              icon:
+                  const Icon(Icons.refresh_rounded, color: Colors.white38),
+              onPressed: _loading ? null : _fetch,
+              padding: EdgeInsets.zero,
+              constraints:
+                  const BoxConstraints(minWidth: 36, minHeight: 36),
+            ),
+          ],
         ),
       ],
     );
@@ -361,15 +418,19 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
           const Icon(Icons.cloud_off_rounded,
               color: Colors.redAccent, size: 56),
           const SizedBox(height: 16),
-          Text('Failed to load cities',
-              style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600)),
+          const Text(
+            'Failed to load cities',
+            style: TextStyle(
+                color: Colors.white70,
+                fontSize: 18,
+                fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 8),
-          Text(_error!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white38, fontSize: 12)),
+          Text(
+            _error!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white38, fontSize: 12),
+          ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: _fetch,
@@ -435,14 +496,44 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
       child: RefreshIndicator(
         onRefresh: _fetch,
         color: const Color(0xFF14FFEC),
-        child: LayoutBuilder(builder: (_, c) {
-          final cols = c.maxWidth > 1000 ? 3 : (c.maxWidth > 600 ? 2 : 1);
+        child: LayoutBuilder(builder: (_, constraints) {
+          final w = constraints.maxWidth;
+          // Responsive column count driven by actual available width
+          final cols = w >= _kMedium ? 3 : (w >= _kNarrow ? 2 : 1);
+
+          // For single-column layout on very narrow screens use a ListView
+          // so the card height is determined by its own content (no fixed
+          // aspect ratio that would clip content).
+          if (cols == 1) {
+            return ListView.separated(
+              physics: const AlwaysScrollableScrollPhysics(),
+              itemCount: _filtered.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemBuilder: (_, i) => _CityCard(
+                city: _filtered[i],
+                onEdit: () => _openForm(city: _filtered[i]),
+                onDelete: () => _delete(_filtered[i]),
+                onToggleActive: () => _toggleActive(_filtered[i]),
+                onViewPlaces: () => widget.onCitySelected(_filtered[i]),
+                onViewCategories: () =>
+                    widget.onCityForCategoriesSelected(_filtered[i]),
+              ),
+            );
+          }
+
+          // Multi-column: use GridView with a comfortable aspect ratio.
+          // childAspectRatio is tuned per column count so content is never
+          // clipped — use a generous ratio; cards will clip only if content
+          // somehow exceeds it which is prevented by the card's own layout.
+          final aspectRatio = cols == 3 ? 1.15 : 1.35;
+
           return GridView.builder(
+            physics: const AlwaysScrollableScrollPhysics(),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: cols,
-              childAspectRatio: cols == 1 ? 2.4 : 1.4,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
+              childAspectRatio: aspectRatio,
+              crossAxisSpacing: 14,
+              mainAxisSpacing: 14,
             ),
             itemCount: _filtered.length,
             itemBuilder: (_, i) => _CityCard(
@@ -468,7 +559,9 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Row(children: [
         Icon(
-          isError ? Icons.error_outline_rounded : Icons.check_circle_rounded,
+          isError
+              ? Icons.error_outline_rounded
+              : Icons.check_circle_rounded,
           color: Colors.white,
           size: 18,
         ),
@@ -478,8 +571,7 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
       backgroundColor:
           isError ? Colors.red.shade700 : const Color(0xFF0D7377),
       behavior: SnackBarBehavior.floating,
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ));
   }
 
@@ -500,7 +592,8 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
                 isDestructive
                     ? Icons.warning_amber_rounded
                     : Icons.help_outline_rounded,
-                color: isDestructive ? Colors.redAccent : Colors.white54,
+                color:
+                    isDestructive ? Colors.redAccent : Colors.white54,
                 size: 22,
               ),
               const SizedBox(width: 10),
@@ -539,7 +632,21 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _CityCard  — displays a single CityModel with all backend fields
+// _CityCard
+//
+// Displays a single CityModel.
+//
+// RESPONSIVE NOTES
+// ────────────────
+// • Uses LayoutBuilder internally so it knows its own rendered width.
+// • All text sizes, spacing, icon sizes, and padding scale with the card
+//   width using a simple _scale() helper — no hardcoded pixel values for
+//   anything that could cause overflow.
+// • The "Categories" action button has been REMOVED per spec.
+//   It remains accessible via the ⋮ popup menu ("View by Category").
+// • Stats use Wrap instead of a fixed Row so they reflow on narrow cards.
+// • The action row at the bottom only contains the "Places" button now
+//   (full width), preventing the two-button row that overflowed.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _CityCard extends StatefulWidget {
@@ -548,7 +655,7 @@ class _CityCard extends StatefulWidget {
   final VoidCallback onDelete;
   final VoidCallback onToggleActive;
   final VoidCallback onViewPlaces;
-  final VoidCallback onViewCategories;
+  final VoidCallback onViewCategories; // kept for ⋮ menu
 
   const _CityCard({
     required this.city,
@@ -588,200 +695,253 @@ class _CityCardState extends State<_CityCard> {
             width: _hovering ? 1.5 : 1,
           ),
           boxShadow: _hovering
-              ? [BoxShadow(
-                  color: _accentColor.withValues(alpha: 0.2),
-                  blurRadius: 20)]
+              ? [
+                  BoxShadow(
+                      color: _accentColor.withValues(alpha: 0.2),
+                      blurRadius: 20)
+                ]
               : [],
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Top row: icon + name + menu ─────────────────────────────
-              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                // Cover image thumbnail
-                Container(
-                  width: 48, height: 48,
-                  decoration: BoxDecoration(
-                    color: _accentColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                        color: _accentColor.withValues(alpha: 0.3)),
-                  ),
-                  child: c.coverImage.isNotEmpty
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(11),
-                          child: Image.network(
-                            c.coverImage,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Icon(
-                              Icons.location_city_rounded,
-                              color: _accentColor,
-                              size: 24,
-                            ),
+        // LayoutBuilder lets the card size itself based on available width.
+        child: LayoutBuilder(
+          builder: (context, cardConstraints) {
+            final cardW = cardConstraints.maxWidth;
+            // Scale factor: 1.0 at 300 dp, scales linearly down to 0.78 at 140 dp.
+            final scale = (cardW / 300.0).clamp(0.78, 1.2);
+
+            return SingleChildScrollView(
+              // SingleChildScrollView prevents overflow inside GridView cells
+              // when content is taller than the cell on edge cases.
+              physics: const NeverScrollableScrollPhysics(),
+              child: Padding(
+                padding: EdgeInsets.all(16 * scale),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Top row: thumbnail + name + status badge + menu ──
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Cover image thumbnail
+                        Container(
+                          width: 44 * scale,
+                          height: 44 * scale,
+                          decoration: BoxDecoration(
+                            color: _accentColor.withValues(alpha: 0.15),
+                            borderRadius:
+                                BorderRadius.circular(10 * scale),
+                            border: Border.all(
+                                color: _accentColor.withValues(alpha: 0.3)),
                           ),
-                        )
-                      : Icon(Icons.location_city_rounded,
-                          color: _accentColor, size: 24),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(c.name,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 17)),
-                      const SizedBox(height: 2),
-                      Row(children: [
-                        Icon(Icons.public_rounded,
-                            size: 11, color: Colors.white38),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${c.country}${c.region.isNotEmpty ? " · ${c.region}" : ""}',
-                          style: const TextStyle(
-                              color: Colors.white38, fontSize: 11),
+                          child: c.coverImage.isNotEmpty
+                              ? ClipRRect(
+                                  borderRadius:
+                                      BorderRadius.circular(9 * scale),
+                                  child: Image.network(
+                                    c.coverImage,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Icon(
+                                      Icons.location_city_rounded,
+                                      color: _accentColor,
+                                      size: 22 * scale,
+                                    ),
+                                  ),
+                                )
+                              : Icon(Icons.location_city_rounded,
+                                  color: _accentColor, size: 22 * scale),
                         ),
-                      ]),
-                    ],
-                  ),
-                ),
-                // Active badge
-                _ActiveBadge(isActive: c.isActive),
-                const SizedBox(width: 4),
-                // Context menu
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert,
-                      color: Colors.white38, size: 18),
-                  color: const Color(0xFF1F2937),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                  onSelected: (v) {
-                    if (v == 'places') widget.onViewPlaces();
-                    if (v == 'categories') widget.onViewCategories();
-                    if (v == 'edit') widget.onEdit();
-                    if (v == 'toggle') widget.onToggleActive();
-                    if (v == 'delete') widget.onDelete();
-                  },
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(
-                        value: 'places',
-                        child: _PopItem(Icons.place_rounded, 'View Places')),
-                    const PopupMenuItem(
-                        value: 'categories',
-                        child: _PopItem(Icons.category_rounded, 'View by Category')),
-                    const PopupMenuItem(
-                        value: 'edit',
-                        child: _PopItem(Icons.edit_rounded, 'Edit City')),
-                    PopupMenuItem(
-                        value: 'toggle',
-                        child: _PopItem(
-                          c.isActive
-                              ? Icons.visibility_off_rounded
-                              : Icons.visibility_rounded,
-                          c.isActive ? 'Set Inactive' : 'Set Active',
-                        )),
-                    const PopupMenuItem(
-                        value: 'delete',
-                        child: _PopItem(Icons.delete_rounded, 'Delete',
-                            color: Colors.red)),
+                        SizedBox(width: 10 * scale),
+                        // Name + country/region — Expanded prevents overflow
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                c.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: (15 * scale)
+                                        .clamp(11, 17)
+                                        .toDouble()),
+                              ),
+                              const SizedBox(height: 2),
+                              Row(children: [
+                                Icon(Icons.public_rounded,
+                                    size: 10 * scale,
+                                    color: Colors.white38),
+                                SizedBox(width: 3 * scale),
+                                Flexible(
+                                  child: Text(
+                                    '${c.country}${c.region.isNotEmpty ? " · ${c.region}" : ""}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                        color: Colors.white38,
+                                        fontSize: (10 * scale)
+                                            .clamp(9, 12)
+                                            .toDouble()),
+                                  ),
+                                ),
+                              ]),
+                            ],
+                          ),
+                        ),
+                        // Active badge
+                        _ActiveBadge(isActive: c.isActive, scale: scale),
+                        const SizedBox(width: 2),
+                        // Context menu — kept compact
+                        SizedBox(
+                          width: 30,
+                          height: 30,
+                          child: PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert,
+                                color: Colors.white38, size: 16),
+                            iconSize: 16,
+                            padding: EdgeInsets.zero,
+                            color: const Color(0xFF1F2937),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                            onSelected: (v) {
+                              if (v == 'places') widget.onViewPlaces();
+                              if (v == 'categories') {
+                                widget.onViewCategories();
+                              }
+                              if (v == 'edit') widget.onEdit();
+                              if (v == 'toggle') widget.onToggleActive();
+                              if (v == 'delete') widget.onDelete();
+                            },
+                            itemBuilder: (_) => [
+                              const PopupMenuItem(
+                                  value: 'places',
+                                  child: _PopItem(
+                                      Icons.place_rounded, 'View Places')),
+                              const PopupMenuItem(
+                                  value: 'categories',
+                                  child: _PopItem(Icons.category_rounded,
+                                      'View by Category')),
+                              const PopupMenuItem(
+                                  value: 'edit',
+                                  child: _PopItem(
+                                      Icons.edit_rounded, 'Edit City')),
+                              PopupMenuItem(
+                                  value: 'toggle',
+                                  child: _PopItem(
+                                    c.isActive
+                                        ? Icons.visibility_off_rounded
+                                        : Icons.visibility_rounded,
+                                    c.isActive ? 'Set Inactive' : 'Set Active',
+                                  )),
+                              const PopupMenuItem(
+                                  value: 'delete',
+                                  child: _PopItem(
+                                      Icons.delete_rounded, 'Delete',
+                                      color: Colors.red)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    SizedBox(height: 10 * scale),
+
+                    // ── Description ──────────────────────────────────────
+                    Text(
+                      c.description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: (11 * scale).clamp(10, 13).toDouble(),
+                          height: 1.4),
+                    ),
+
+                    SizedBox(height: 8 * scale),
+
+                    // ── Slug + coordinates — Wrap prevents overflow ───────
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        _MetaChip(
+                          icon: Icons.tag_rounded,
+                          label: c.slug.isNotEmpty ? c.slug : '—',
+                          scale: scale,
+                        ),
+                        _MetaChip(
+                          icon: Icons.explore_rounded,
+                          label:
+                              '${c.latitude.toStringAsFixed(3)}, ${c.longitude.toStringAsFixed(3)}',
+                          scale: scale,
+                        ),
+                      ],
+                    ),
+
+                    SizedBox(height: 8 * scale),
+
+                    // ── Stats — Wrap so pills reflow on narrow cards ──────
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        _StatPill(
+                          icon: Icons.place_rounded,
+                          value: '${c.totalPlaces}',
+                          label: 'Places',
+                          scale: scale,
+                        ),
+                        _StatPill(
+                          icon: Icons.event_rounded,
+                          value: '${c.totalEvents}',
+                          label: 'Events',
+                          scale: scale,
+                        ),
+                        if (c.categoryCounts != null &&
+                            c.categoryCounts!.isNotEmpty)
+                          _StatPill(
+                            icon: Icons.layers_rounded,
+                            value: '${c.categoryCounts!.length}',
+                            label: 'Cats',
+                            scale: scale,
+                          ),
+                      ],
+                    ),
+
+                    SizedBox(height: 10 * scale),
+
+                    // ── Single action button: Places ──────────────────────
+                    // The "Categories" button has been removed from the card.
+                    // It remains accessible via the ⋮ popup menu above.
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: widget.onViewPlaces,
+                        icon: Icon(Icons.place_rounded,
+                            size: (13 * scale).clamp(11, 15).toDouble()),
+                        label: Text(
+                          'View Places',
+                          style: TextStyle(
+                              fontSize:
+                                  (12 * scale).clamp(10, 13).toDouble()),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              _accentColor.withValues(alpha: 0.85),
+                          foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(
+                              vertical: (8 * scale).clamp(6, 10).toDouble()),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
-              ]),
-
-              const SizedBox(height: 14),
-
-              // ── Description ──────────────────────────────────────────────
-              Text(
-                c.description,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    color: Colors.white54, fontSize: 12, height: 1.5),
               ),
-
-              const SizedBox(height: 12),
-
-              // ── Slug + coordinates ───────────────────────────────────────
-              Wrap(spacing: 8, runSpacing: 6, children: [
-                _MetaChip(
-                  icon: Icons.tag_rounded,
-                  label: c.slug.isNotEmpty ? c.slug : '—',
-                ),
-                _MetaChip(
-                  icon: Icons.explore_rounded,
-                  label:
-                      '${c.latitude.toStringAsFixed(4)}, ${c.longitude.toStringAsFixed(4)}',
-                ),
-              ]),
-
-              const SizedBox(height: 12),
-
-              // ── Stats row ────────────────────────────────────────────────
-              Row(children: [
-                _StatPill(
-                    icon: Icons.place_rounded,
-                    value: '${c.totalPlaces}',
-                    label: 'Places'),
-                const SizedBox(width: 10),
-                _StatPill(
-                    icon: Icons.event_rounded,
-                    value: '${c.totalEvents}',
-                    label: 'Events'),
-                if (c.categoryCounts != null &&
-                    c.categoryCounts!.isNotEmpty) ...[
-                  const SizedBox(width: 10),
-                  _StatPill(
-                      icon: Icons.layers_rounded,
-                      value: '${c.categoryCounts!.length}',
-                      label: 'Categories'),
-                ],
-              ]),
-
-              const SizedBox(height: 10),
-
-              // ── Action buttons ─────────────────────────────────────────────
-              // Edit is available in the ⋮ menu above; these two buttons give
-              // direct-access shortcuts to the two most common drill-down views.
-              Row(children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: widget.onViewCategories,
-                    icon: const Icon(Icons.category_rounded, size: 13),
-                    label: const Text('Categories',
-                        style: TextStyle(fontSize: 12)),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF2196F3),
-                      side: BorderSide(
-                          color: const Color(0xFF2196F3).withValues(alpha: 0.45)),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: widget.onViewPlaces,
-                    icon: const Icon(Icons.place_rounded, size: 13),
-                    label: const Text('Places',
-                        style: TextStyle(fontSize: 12)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _accentColor.withValues(alpha: 0.85),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                    ),
-                  ),
-                ),
-              ]),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
@@ -828,24 +988,25 @@ class _CityFormDialogState extends State<_CityFormDialog> {
   void initState() {
     super.initState();
     final e = widget.existing;
-    _name        = TextEditingController(text: e?.name ?? '');
-    _country     = TextEditingController(text: e?.country ?? 'Kenya');
-    _region      = TextEditingController(text: e?.region ?? '');
-    _slug        = TextEditingController(text: e?.slug ?? '');
-    _latitude    = TextEditingController(
-        text: e != null ? e.latitude.toString() : '');
-    _longitude   = TextEditingController(
-        text: e != null ? e.longitude.toString() : '');
-    _coverImage  = TextEditingController(text: e?.coverImage ?? '');
+    _name = TextEditingController(text: e?.name ?? '');
+    _country = TextEditingController(text: e?.country ?? 'Kenya');
+    _region = TextEditingController(text: e?.region ?? '');
+    _slug = TextEditingController(text: e?.slug ?? '');
+    _latitude =
+        TextEditingController(text: e != null ? e.latitude.toString() : '');
+    _longitude =
+        TextEditingController(text: e != null ? e.longitude.toString() : '');
+    _coverImage = TextEditingController(text: e?.coverImage ?? '');
     _description = TextEditingController(text: e?.description ?? '');
-    _isActive    = e?.isActive ?? true;
+    _isActive = e?.isActive ?? true;
 
     // Auto-generate slug from name while name is being typed (create only)
     if (e == null) {
       _name.addListener(_autoSlug);
     }
 
-    _screenLog.d('CityFormDialog opened — mode=${e == null ? "CREATE" : "EDIT(${e.id})"}');
+    _screenLog.d(
+        'CityFormDialog opened — mode=${e == null ? "CREATE" : "EDIT(${e.id})"}');
   }
 
   void _autoSlug() {
@@ -864,8 +1025,14 @@ class _CityFormDialogState extends State<_CityFormDialog> {
   void dispose() {
     _name.removeListener(_autoSlug);
     for (final c in [
-      _name, _country, _region, _slug, _latitude, _longitude,
-      _coverImage, _description,
+      _name,
+      _country,
+      _region,
+      _slug,
+      _latitude,
+      _longitude,
+      _coverImage,
+      _description,
     ]) {
       c.dispose();
     }
@@ -875,7 +1042,6 @@ class _CityFormDialogState extends State<_CityFormDialog> {
   // ── Save ──────────────────────────────────────────────────────────────
 
   Future<void> _save() async {
-    // Clear previous API errors, then re-validate local rules
     setState(() => _fieldErrors = {});
     if (!_formKey.currentState!.validate()) {
       _screenLog.d('Form validation failed (local rules)');
@@ -886,7 +1052,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
     final lng = double.tryParse(_longitude.text.trim());
     if (lat == null || lng == null) {
       setState(() {
-        if (lat == null) _fieldErrors['latitude']  = 'Must be a valid number';
+        if (lat == null) _fieldErrors['latitude'] = 'Must be a valid number';
         if (lng == null) _fieldErrors['longitude'] = 'Must be a valid number';
       });
       return;
@@ -895,15 +1061,16 @@ class _CityFormDialogState extends State<_CityFormDialog> {
     setState(() => _saving = true);
 
     final payload = <String, dynamic>{
-      'name':        _name.text.trim(),
-      'country':     _country.text.trim(),
-      'region':      _region.text.trim(),
-      'slug':        _slug.text.trim(),
-      'latitude':    lat,
-      'longitude':   lng,
-      if (_coverImage.text.trim().isNotEmpty) 'coverImage': _coverImage.text.trim(),
+      'name': _name.text.trim(),
+      'country': _country.text.trim(),
+      'region': _region.text.trim(),
+      'slug': _slug.text.trim(),
+      'latitude': lat,
+      'longitude': lng,
+      if (_coverImage.text.trim().isNotEmpty)
+        'coverImage': _coverImage.text.trim(),
       'description': _description.text.trim(),
-      'isActive':    _isActive,
+      'isActive': _isActive,
     };
 
     _screenLog.d('Submitting city payload: $payload');
@@ -916,11 +1083,9 @@ class _CityFormDialogState extends State<_CityFormDialog> {
       if (mounted) {
         setState(() {
           _saving = false;
-          // Map backend field errors for inline display
           if (e.errors != null) {
             _fieldErrors = {};
             e.errors!.forEach((k, v) {
-              // Skip the top-level _errors key the backend always includes
               if (k == '_errors') return;
               List<dynamic> msgs;
               if (v is List) {
@@ -934,7 +1099,6 @@ class _CityFormDialogState extends State<_CityFormDialog> {
             });
           }
           if (_fieldErrors.isEmpty) {
-            // Show in snackbar if no field-level detail
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text(e.message),
               backgroundColor: Colors.red.shade700,
@@ -961,18 +1125,20 @@ class _CityFormDialogState extends State<_CityFormDialog> {
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.existing != null;
+    final mq = MediaQuery.of(context);
+    // Dialog width is capped and adapts to narrow screens
+    final dialogMaxW = (mq.size.width * 0.92).clamp(280.0, 620.0);
 
     return Dialog(
       backgroundColor: const Color(0xFF111827),
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxWidth: 620,
-          maxHeight: MediaQuery.of(context).size.height * 0.90,
+          maxWidth: dialogMaxW,
+          maxHeight: mq.size.height * 0.90,
         ),
         child: Padding(
-          padding: const EdgeInsets.all(28),
+          padding: EdgeInsets.all(mq.size.width < _kNarrow ? 18 : 28),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -981,7 +1147,8 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0D7377).withValues(alpha: 0.15),
+                    color:
+                        const Color(0xFF0D7377).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
@@ -1023,20 +1190,14 @@ class _CityFormDialogState extends State<_CityFormDialog> {
               const Divider(color: Colors.white12),
               const SizedBox(height: 12),
 
-              // ── Form body (scrollable) ──────────────────────────────────
+              // ── Form body (scrollable) ─────────────────────────────────
               Flexible(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight:
-                        MediaQuery.of(context).size.height * 0.60,
-                  ),
-                  child: SingleChildScrollView(
+                child: SingleChildScrollView(
                   child: Form(
                     key: _formKey,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // ── Basic info ────────────────────────────────────
                         _sectionHeader('Basic Information'),
 
                         _FormField(
@@ -1045,76 +1206,110 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                           controller: _name,
                           required: true,
                           apiError: _fieldErrors['name'],
-                          validator: (v) => (v == null || v.trim().isEmpty)
-                              ? 'City name is required'
-                              : null,
+                          validator: (v) =>
+                              (v == null || v.trim().isEmpty)
+                                  ? 'City name is required'
+                                  : null,
                         ),
 
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: _FormField(
+                        // Country + Region — stack on narrow screens
+                        LayoutBuilder(builder: (_, c) {
+                          if (c.maxWidth < 340) {
+                            return Column(children: [
+                              _FormField(
                                 label: 'Country',
                                 hint: 'e.g. Kenya',
                                 controller: _country,
                                 required: true,
                                 apiError: _fieldErrors['country'],
-                                validator: (v) => (v == null || v.trim().isEmpty)
-                                    ? 'Required'
-                                    : null,
+                                validator: (v) =>
+                                    (v == null || v.trim().isEmpty)
+                                        ? 'Required'
+                                        : null,
                               ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: _FormField(
+                              _FormField(
                                 label: 'Region / County',
                                 hint: 'e.g. Coast',
                                 controller: _region,
                                 required: true,
                                 apiError: _fieldErrors['region'],
-                                validator: (v) => (v == null || v.trim().isEmpty)
-                                    ? 'Required'
-                                    : null,
+                                validator: (v) =>
+                                    (v == null || v.trim().isEmpty)
+                                        ? 'Required'
+                                        : null,
                               ),
-                            ),
-                          ],
-                        ),
+                            ]);
+                          }
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: _FormField(
+                                  label: 'Country',
+                                  hint: 'e.g. Kenya',
+                                  controller: _country,
+                                  required: true,
+                                  apiError: _fieldErrors['country'],
+                                  validator: (v) =>
+                                      (v == null || v.trim().isEmpty)
+                                          ? 'Required'
+                                          : null,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: _FormField(
+                                  label: 'Region / County',
+                                  hint: 'e.g. Coast',
+                                  controller: _region,
+                                  required: true,
+                                  apiError: _fieldErrors['region'],
+                                  validator: (v) =>
+                                      (v == null || v.trim().isEmpty)
+                                          ? 'Required'
+                                          : null,
+                                ),
+                              ),
+                            ],
+                          );
+                        }),
 
                         _FormField(
                           label: 'Slug',
                           hint: 'e.g. nairobi  (auto-generated from name)',
                           helperText:
-                              'URL-safe identifier used in deep links — lowercase, hyphens only.',
+                              'URL-safe identifier — lowercase, hyphens only.',
                           controller: _slug,
                           required: true,
                           apiError: _fieldErrors['slug'],
                           prefixIcon: Icons.tag_rounded,
                           validator: (v) {
-                            if (v == null || v.trim().isEmpty) return 'Slug is required';
+                            if (v == null || v.trim().isEmpty) {
+                              return 'Slug is required';
+                            }
                             if (!RegExp(r'^[a-z0-9-]+$').hasMatch(v.trim())) {
-                              return 'Only lowercase letters, digits and hyphens allowed';
+                              return 'Only lowercase letters, digits and hyphens';
                             }
                             return null;
                           },
                         ),
 
-                        // ── Description ───────────────────────────────────
                         _sectionHeader('Description'),
 
                         _FormField(
                           label: 'Description',
-                          hint: 'A short description of the city shown to users',
+                          hint:
+                              'A short description of the city shown to users',
                           controller: _description,
                           maxLines: 3,
                           required: true,
                           apiError: _fieldErrors['description'],
-                          validator: (v) => (v == null || v.trim().isEmpty)
-                              ? 'Description is required'
-                              : null,
+                          validator: (v) =>
+                              (v == null || v.trim().isEmpty)
+                                  ? 'Description is required'
+                                  : null,
                         ),
 
-                        // ── Media ─────────────────────────────────────────
                         _sectionHeader('Media'),
 
                         _FormField(
@@ -1136,14 +1331,13 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                           },
                         ),
 
-                        // ── Location ──────────────────────────────────────
                         _sectionHeader('Location Coordinates'),
 
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: _FormField(
+                        // Lat + Lng — stack on narrow screens
+                        LayoutBuilder(builder: (_, c) {
+                          if (c.maxWidth < 340) {
+                            return Column(children: [
+                              _FormField(
                                 label: 'Latitude',
                                 hint: 'e.g. -1.2921',
                                 controller: _latitude,
@@ -1157,22 +1351,9 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                                   FilteringTextInputFormatter.allow(
                                       RegExp(r'^-?\d*\.?\d*')),
                                 ],
-                                validator: (v) {
-                                  if (v == null || v.trim().isEmpty) {
-                                    return 'Required';
-                                  }
-                                  final d = double.tryParse(v.trim());
-                                  if (d == null) return 'Must be a number';
-                                  if (d < -90 || d > 90) {
-                                    return 'Must be between -90 and 90';
-                                  }
-                                  return null;
-                                },
+                                validator: _latValidator,
                               ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: _FormField(
+                              _FormField(
                                 label: 'Longitude',
                                 hint: 'e.g. 36.8219',
                                 controller: _longitude,
@@ -1186,23 +1367,54 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                                   FilteringTextInputFormatter.allow(
                                       RegExp(r'^-?\d*\.?\d*')),
                                 ],
-                                validator: (v) {
-                                  if (v == null || v.trim().isEmpty) {
-                                    return 'Required';
-                                  }
-                                  final d = double.tryParse(v.trim());
-                                  if (d == null) return 'Must be a number';
-                                  if (d < -180 || d > 180) {
-                                    return 'Must be between -180 and 180';
-                                  }
-                                  return null;
-                                },
+                                validator: _lngValidator,
                               ),
-                            ),
-                          ],
-                        ),
+                            ]);
+                          }
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: _FormField(
+                                  label: 'Latitude',
+                                  hint: 'e.g. -1.2921',
+                                  controller: _latitude,
+                                  required: true,
+                                  apiError: _fieldErrors['latitude'],
+                                  prefixIcon: Icons.location_on_rounded,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                          decimal: true, signed: true),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                        RegExp(r'^-?\d*\.?\d*')),
+                                  ],
+                                  validator: _latValidator,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: _FormField(
+                                  label: 'Longitude',
+                                  hint: 'e.g. 36.8219',
+                                  controller: _longitude,
+                                  required: true,
+                                  apiError: _fieldErrors['longitude'],
+                                  prefixIcon: Icons.location_on_rounded,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                          decimal: true, signed: true),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                        RegExp(r'^-?\d*\.?\d*')),
+                                  ],
+                                  validator: _lngValidator,
+                                ),
+                              ),
+                            ],
+                          );
+                        }),
 
-                        // ── Visibility ────────────────────────────────────
                         _sectionHeader('Visibility'),
 
                         Container(
@@ -1263,8 +1475,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                     ),
                   ),
                 ),
-              ),   // closes ConstrainedBox
-              ),   // closes Flexible
+              ),
 
               const SizedBox(height: 16),
               const Divider(color: Colors.white12),
@@ -1279,8 +1490,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white54,
                       side: const BorderSide(color: Colors.white24),
-                      padding:
-                          const EdgeInsets.symmetric(vertical: 14),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
                     ),
@@ -1295,14 +1505,14 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF0D7377),
                       foregroundColor: Colors.white,
-                      padding:
-                          const EdgeInsets.symmetric(vertical: 14),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
                     ),
                     child: _saving
                         ? const SizedBox(
-                            width: 20, height: 20,
+                            width: 20,
+                            height: 20,
                             child: CircularProgressIndicator(
                                 strokeWidth: 2, color: Colors.white))
                         : Row(
@@ -1333,23 +1543,38 @@ class _CityFormDialogState extends State<_CityFormDialog> {
     );
   }
 
+  String? _latValidator(String? v) {
+    if (v == null || v.trim().isEmpty) return 'Required';
+    final d = double.tryParse(v.trim());
+    if (d == null) return 'Must be a number';
+    if (d < -90 || d > 90) return 'Between -90 and 90';
+    return null;
+  }
+
+  String? _lngValidator(String? v) {
+    if (v == null || v.trim().isEmpty) return 'Required';
+    final d = double.tryParse(v.trim());
+    if (d == null) return 'Must be a number';
+    if (d < -180 || d > 180) return 'Between -180 and 180';
+    return null;
+  }
+
   Widget _sectionHeader(String title) => Padding(
         padding: const EdgeInsets.only(top: 6, bottom: 14),
         child: Row(children: [
-          Expanded(
-            child: Divider(
-                color: Colors.white12, endIndent: 10, thickness: 1)),
+          const Expanded(
+              child: Divider(
+                  color: Colors.white12, endIndent: 10, thickness: 1)),
           Text(title,
               style: const TextStyle(
                   color: Colors.white38,
                   fontSize: 11,
                   letterSpacing: 1,
                   fontWeight: FontWeight.w500)),
-          Expanded(
-            child: Divider(
-                color: Colors.white12, indent: 10, thickness: 1)),
-          ],
-        ),
+          const Expanded(
+              child: Divider(
+                  color: Colors.white12, indent: 10, thickness: 1)),
+        ]),
       );
 }
 
@@ -1363,7 +1588,7 @@ class _FormField extends StatelessWidget {
   final String? helperText;
   final TextEditingController controller;
   final bool required;
-  final String? apiError;   // ← from backend 400 response
+  final String? apiError;
   final int maxLines;
   final IconData? prefixIcon;
   final TextInputType? keyboardType;
@@ -1399,8 +1624,8 @@ class _FormField extends StatelessWidget {
                     fontWeight: FontWeight.w500)),
             if (required)
               const Text(' *',
-                  style: TextStyle(
-                      color: Color(0xFF14FFEC), fontSize: 13)),
+                  style:
+                      TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
           ]),
           const SizedBox(height: 8),
           TextFormField(
@@ -1413,11 +1638,10 @@ class _FormField extends StatelessWidget {
               hintText: hint,
               hintStyle:
                   const TextStyle(color: Colors.white24, fontSize: 13),
-              helperText:
-                  apiError != null ? null : helperText, // show one at a time
+              helperText: apiError != null ? null : helperText,
               helperStyle:
                   const TextStyle(color: Colors.white38, fontSize: 11),
-              errorText: apiError, // API error shown as field error
+              errorText: apiError,
               prefixIcon: prefixIcon != null
                   ? Icon(prefixIcon, size: 16, color: Colors.white38)
                   : null,
@@ -1449,8 +1673,8 @@ class _FormField extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
                 borderSide: const BorderSide(color: Colors.redAccent),
               ),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14, vertical: 12),
             ),
             validator: validator,
           ),
@@ -1460,13 +1684,17 @@ class _FormField extends StatelessWidget {
   }
 }
 
+/// Scale-aware active/inactive badge.
 class _ActiveBadge extends StatelessWidget {
   final bool isActive;
-  const _ActiveBadge({required this.isActive});
+  final double scale;
+  const _ActiveBadge({required this.isActive, this.scale = 1.0});
+
   @override
   Widget build(BuildContext context) => Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        padding: EdgeInsets.symmetric(
+            horizontal: (7 * scale).clamp(5, 9).toDouble(),
+            vertical: (2 * scale).clamp(2, 4).toDouble()),
         decoration: BoxDecoration(
           color: isActive
               ? Colors.green.withValues(alpha: 0.15)
@@ -1480,17 +1708,18 @@ class _ActiveBadge extends StatelessWidget {
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Container(
-            width: 6, height: 6,
+            width: (6 * scale).clamp(4, 7).toDouble(),
+            height: (6 * scale).clamp(4, 7).toDouble(),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: isActive ? Colors.greenAccent : Colors.redAccent,
             ),
           ),
-          const SizedBox(width: 5),
+          SizedBox(width: (4 * scale).clamp(3, 6).toDouble()),
           Text(
             isActive ? 'Active' : 'Inactive',
             style: TextStyle(
-              fontSize: 10,
+              fontSize: (9 * scale).clamp(8, 11).toDouble(),
               fontWeight: FontWeight.w600,
               color: isActive ? Colors.greenAccent : Colors.redAccent,
             ),
@@ -1499,38 +1728,55 @@ class _ActiveBadge extends StatelessWidget {
       );
 }
 
+/// Scale-aware meta chip (slug / coordinates).
 class _MetaChip extends StatelessWidget {
   final IconData icon;
   final String label;
-  const _MetaChip({required this.icon, required this.label});
+  final double scale;
+  const _MetaChip(
+      {required this.icon, required this.label, this.scale = 1.0});
+
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: EdgeInsets.symmetric(
+            horizontal: (7 * scale).clamp(5, 9).toDouble(),
+            vertical: (3 * scale).clamp(2, 5).toDouble()),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(6),
           border: Border.all(color: Colors.white12),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 11, color: Colors.white38),
-          const SizedBox(width: 5),
+          Icon(icon,
+              size: (10 * scale).clamp(9, 12).toDouble(),
+              color: Colors.white38),
+          SizedBox(width: (4 * scale).clamp(3, 6).toDouble()),
           Text(label,
-              style: const TextStyle(
-                  color: Colors.white54, fontSize: 11)),
+              style: TextStyle(
+                  color: Colors.white54,
+                  fontSize:
+                      (10 * scale).clamp(9, 12).toDouble())),
         ]),
       );
 }
 
+/// Scale-aware stat pill.
 class _StatPill extends StatelessWidget {
   final IconData icon;
   final String value;
   final String label;
+  final double scale;
   const _StatPill(
-      {required this.icon, required this.value, required this.label});
+      {required this.icon,
+      required this.value,
+      required this.label,
+      this.scale = 1.0});
+
   @override
   Widget build(BuildContext context) => Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        padding: EdgeInsets.symmetric(
+            horizontal: (8 * scale).clamp(6, 10).toDouble(),
+            vertical: (4 * scale).clamp(3, 6).toDouble()),
         decoration: BoxDecoration(
           color: const Color(0xFF0D7377).withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
@@ -1538,12 +1784,15 @@ class _StatPill extends StatelessWidget {
               color: const Color(0xFF0D7377).withValues(alpha: 0.2)),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 12, color: const Color(0xFF14FFEC)),
-          const SizedBox(width: 5),
+          Icon(icon,
+              size: (11 * scale).clamp(9, 13).toDouble(),
+              color: const Color(0xFF14FFEC)),
+          SizedBox(width: (4 * scale).clamp(3, 6).toDouble()),
           Text(
             '$value $label',
-            style: const TextStyle(
-                color: Colors.white60, fontSize: 11),
+            style: TextStyle(
+                color: Colors.white60,
+                fontSize: (10 * scale).clamp(9, 12).toDouble()),
           ),
         ]),
       );
@@ -1559,6 +1808,7 @@ class _FilterChip extends StatelessWidget {
       required this.selected,
       this.color,
       required this.onTap});
+
   @override
   Widget build(BuildContext context) {
     final c = color ?? const Color(0xFF14FFEC);
@@ -1568,7 +1818,8 @@ class _FilterChip extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
-          color: selected ? c.withValues(alpha: 0.15) : Colors.transparent,
+          color:
+              selected ? c.withValues(alpha: 0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
             color: selected ? c.withValues(alpha: 0.5) : Colors.white12,
@@ -1579,8 +1830,7 @@ class _FilterChip extends StatelessWidget {
           style: TextStyle(
             fontSize: 12,
             color: selected ? c : Colors.white38,
-            fontWeight:
-                selected ? FontWeight.w600 : FontWeight.normal,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
       ),
@@ -1593,6 +1843,7 @@ class _PopItem extends StatelessWidget {
   final String label;
   final Color? color;
   const _PopItem(this.icon, this.label, {this.color});
+
   @override
   Widget build(BuildContext context) => Row(children: [
         Icon(icon, size: 15, color: color ?? Colors.white54),
