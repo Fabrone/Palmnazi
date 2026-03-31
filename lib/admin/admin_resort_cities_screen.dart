@@ -1,3 +1,5 @@
+import 'package:file_picker/file_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:logger/logger.dart';
@@ -984,6 +986,11 @@ class _CityFormDialogState extends State<_CityFormDialog> {
   // API-returned field errors { field: message }
   Map<String, String> _fieldErrors = {};
 
+  // ── Image upload state ─────────────────────────────────────────────────
+  Uint8List? _pickedImageBytes;   // bytes for local preview before/after upload
+  bool _uploadingImage = false;
+  double _uploadProgress = 0.0;
+
   @override
   void initState() {
     super.initState();
@@ -1018,6 +1025,94 @@ class _CityFormDialogState extends State<_CityFormDialog> {
     if (_slug.text != raw) {
       _slug.text = raw;
       _screenLog.d('Auto-slug: $raw');
+    }
+  }
+
+  // ── Image pick + Firebase Storage upload ──────────────────────────────
+
+  Future<void> _pickAndUploadImage() async {
+    // Use file_picker so this works on mobile, web AND desktop.
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true, // ensures bytes are available on all platforms (incl. web)
+    );
+
+    if (result == null || result.files.isEmpty) return;
+
+    final file = result.files.single;
+    final bytes = file.bytes;
+    if (bytes == null) {
+      // Should not happen with withData: true, but guard anyway.
+      _screenLog.w('FilePicker returned null bytes — skipping upload');
+      return;
+    }
+
+    // Determine extension and content type.
+    final ext = (file.extension ?? 'jpg').toLowerCase();
+    final contentType = ext == 'png'
+        ? 'image/png'
+        : ext == 'webp'
+            ? 'image/webp'
+            : ext == 'gif'
+                ? 'image/gif'
+                : 'image/jpeg';
+
+    // Build a collision-safe storage path:
+    // city-covers/{slug or "city"}-{timestamp}.{ext}
+    final slug = _slug.text.trim().isNotEmpty ? _slug.text.trim() : 'city';
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final storagePath = 'city-covers/$slug-$ts.$ext';
+
+    _screenLog.i('Starting image upload → $storagePath');
+
+    setState(() {
+      _pickedImageBytes = bytes;
+      _uploadingImage = true;
+      _uploadProgress = 0.0;
+    });
+
+    try {
+      final ref = FirebaseStorage.instance.ref(storagePath);
+      final uploadTask = ref.putData(
+        bytes,
+        SettableMetadata(contentType: contentType),
+      );
+
+      // Stream upload progress to the UI.
+      uploadTask.snapshotEvents.listen((snapshot) {
+        if (mounted && snapshot.totalBytes > 0) {
+          setState(() {
+            _uploadProgress =
+                snapshot.bytesTransferred / snapshot.totalBytes;
+          });
+        }
+      });
+
+      await uploadTask;
+      final downloadUrl = await ref.getDownloadURL();
+
+      if (mounted) {
+        setState(() {
+          _coverImage.text = downloadUrl;
+          _uploadingImage = false;
+          _uploadProgress = 1.0;
+        });
+        _screenLog.i('City cover uploaded OK → $downloadUrl');
+      }
+    } catch (e, st) {
+      _screenLog.e('City cover upload failed', error: e, stackTrace: st);
+      if (mounted) {
+        setState(() {
+          _uploadingImage = false;
+          _pickedImageBytes = null;
+          _uploadProgress = 0.0;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Image upload failed: $e'),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
     }
   }
 
@@ -1312,23 +1407,17 @@ class _CityFormDialogState extends State<_CityFormDialog> {
 
                         _sectionHeader('Media'),
 
-                        _FormField(
-                          label: 'Cover Image URL',
-                          hint: 'https://example.com/mombasa.jpg',
-                          helperText:
-                              'Full URL to the cover image for this city.',
-                          controller: _coverImage,
-                          apiError: _fieldErrors['coverImage'],
-                          prefixIcon: Icons.image_rounded,
-                          keyboardType: TextInputType.url,
-                          validator: (v) {
-                            if (v != null && v.trim().isNotEmpty) {
-                              if (!v.trim().startsWith('http')) {
-                                return 'Must be a full URL starting with http';
-                              }
-                            }
-                            return null;
-                          },
+                        // ── Cover Image upload section ─────────────────────
+                        _CoverImageUploadSection(
+                          imageBytes: _pickedImageBytes,
+                          existingUrl: _coverImage.text,
+                          uploading: _uploadingImage,
+                          uploadProgress: _uploadProgress,
+                          onPickTap: _saving || _uploadingImage
+                              ? null
+                              : _pickAndUploadImage,
+                          urlController: _coverImage,
+                          urlApiError: _fieldErrors['coverImage'],
                         ),
 
                         _sectionHeader('Location Coordinates'),
@@ -1579,7 +1668,225 @@ class _CityFormDialogState extends State<_CityFormDialog> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Reusable micro-widgets
+// _CoverImageUploadSection
+//
+// Handles the full cover-image flow for the city form:
+//   1. Admin taps "Select & Upload Image" → file_picker opens
+//   2. Bytes upload to Firebase Storage with live progress bar
+//   3. Download URL auto-fills the editable URL field below
+//   4. Image preview renders from bytes (while uploading) or URL (when editing)
+//
+// The URL text field remains editable so admins can paste a URL directly
+// if they prefer, or correct an auto-filled one.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CoverImageUploadSection extends StatelessWidget {
+  final Uint8List? imageBytes;
+  final String existingUrl;
+  final bool uploading;
+  final double uploadProgress;
+  final VoidCallback? onPickTap;
+  final TextEditingController urlController;
+  final String? urlApiError;
+
+  const _CoverImageUploadSection({
+    required this.imageBytes,
+    required this.existingUrl,
+    required this.uploading,
+    required this.uploadProgress,
+    required this.onPickTap,
+    required this.urlController,
+    this.urlApiError,
+  });
+
+  bool get _hasPreview =>
+      imageBytes != null || existingUrl.trim().isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Section label ──────────────────────────────────────────────
+          const Text(
+            'Cover Image',
+            style: TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 8),
+
+          // ── Preview + upload area ──────────────────────────────────────
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF0D1117),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: uploading
+                    ? const Color(0xFF14FFEC).withValues(alpha: 0.4)
+                    : Colors.white12,
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ── Image preview (16 : 9) ─────────────────────────────
+                if (_hasPreview)
+                  AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: _buildPreview(),
+                  ),
+
+                // ── Upload progress bar ────────────────────────────────
+                if (uploading)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: uploadProgress,
+                            minHeight: 5,
+                            backgroundColor: Colors.white12,
+                            valueColor: const AlwaysStoppedAnimation(
+                                Color(0xFF14FFEC)),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Uploading… ${(uploadProgress * 100).toStringAsFixed(0)}%',
+                          style: const TextStyle(
+                              color: Colors.white38, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                // ── Pick / change button ───────────────────────────────
+                if (!uploading)
+                  Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: OutlinedButton.icon(
+                      onPressed: onPickTap,
+                      icon: Icon(
+                        _hasPreview
+                            ? Icons.change_circle_rounded
+                            : Icons.upload_file_rounded,
+                        size: 16,
+                        color: onPickTap != null
+                            ? const Color(0xFF14FFEC)
+                            : Colors.white24,
+                      ),
+                      label: Text(
+                        _hasPreview ? 'Change Image' : 'Select & Upload Image',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: onPickTap != null
+                              ? const Color(0xFF14FFEC)
+                              : Colors.white24,
+                        ),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        side: BorderSide(
+                          color: onPickTap != null
+                              ? const Color(0xFF14FFEC).withValues(alpha: 0.6)
+                              : Colors.white12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ),
+
+                // Tiny spacer while uploading (button hidden)
+                if (uploading) const SizedBox(height: 10),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
+          // ── URL field (autofilled; still editable as fallback) ─────────
+          _FormField(
+            label: 'Cover Image URL',
+            hint: 'Auto-filled after upload — or paste a URL directly',
+            helperText: uploading
+                ? 'Uploading image to Firebase Storage…'
+                : 'Select an image above to upload, or enter a URL manually.',
+            controller: urlController,
+            apiError: urlApiError,
+            prefixIcon: Icons.link_rounded,
+            keyboardType: TextInputType.url,
+            validator: (v) {
+              if (v != null && v.trim().isNotEmpty) {
+                if (!v.trim().startsWith('http')) {
+                  return 'Must be a full URL starting with http';
+                }
+              }
+              return null;
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPreview() {
+    // If we have fresh bytes from a just-picked file, show those directly
+    // (avoids a round-trip and works even mid-upload).
+    if (imageBytes != null) {
+      return Image.memory(
+        imageBytes!,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _brokenPlaceholder(),
+      );
+    }
+
+    // Otherwise render from the URL already stored (edit mode).
+    if (existingUrl.trim().isNotEmpty) {
+      return Image.network(
+        existingUrl.trim(),
+        fit: BoxFit.cover,
+        loadingBuilder: (_, child, progress) => progress == null
+            ? child
+            : Container(
+                color: Colors.white.withValues(alpha: 0.04),
+                child: Center(
+                  child: CircularProgressIndicator(
+                    value: progress.expectedTotalBytes != null
+                        ? progress.cumulativeBytesLoaded /
+                            progress.expectedTotalBytes!
+                        : null,
+                    color: const Color(0xFF14FFEC),
+                    strokeWidth: 2,
+                  ),
+                ),
+              ),
+        errorBuilder: (_, __, ___) => _brokenPlaceholder(),
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+
+  Widget _brokenPlaceholder() => Container(
+        color: Colors.white.withValues(alpha: 0.04),
+        child: const Center(
+          child: Icon(Icons.broken_image_rounded,
+              color: Colors.white24, size: 40),
+        ),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _FormField  (unchanged — kept here for local use in this file)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _FormField extends StatelessWidget {

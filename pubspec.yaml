@@ -16,6 +16,8 @@ dependencies:
   flutter_secure_storage: ^10.0.0
   http: ^1.6.0
   logger: ^2.6.2
+  file_picker: ^10.3.10
+  firebase_storage: ^13.2.0
 
 dev_dependencies:
   flutter_test:

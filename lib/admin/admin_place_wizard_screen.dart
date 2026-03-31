@@ -1,3 +1,7 @@
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
 import 'package:palmnazi/admin/admin_api_service.dart';
@@ -91,6 +95,16 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   final _coverImageCtrl = TextEditingController();
   final List<TextEditingController> _imageUrlCtrls = [TextEditingController()];
 
+  // Step 7 — upload state (cover)
+  Uint8List? _coverImageBytes;
+  bool _uploadingCover = false;
+  double _coverUploadProgress = 0.0;
+
+  // Step 7 — upload state (gallery — parallel to _imageUrlCtrls)
+  final List<Uint8List?> _galleryBytes = [null];
+  final List<bool> _galleryUploading = [false];
+  final List<double> _galleryProgress = [0.0];
+
   // ── Step 8 — Booking
   bool _isBookable = false;
   final _minPriceCtrl = TextEditingController();
@@ -148,6 +162,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     _amenitiesCtrl.dispose(); _cuisineCtrl.dispose(); _seatingCapCtrl.dispose();
     _openingHoursCtrl.dispose(); _minPriceCtrl.dispose(); _maxPriceCtrl.dispose();
     for (final c in _imageUrlCtrls) { c.dispose(); }
+    // _galleryBytes / _galleryUploading / _galleryProgress are plain lists —
+    // no extra dispose needed; they GC with the state.
     super.dispose();
   }
 
@@ -183,6 +199,166 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     if (_isEntertainmentType) return 'Shows';
     if (_isCulturalType) return 'Exhibitions';
     return 'Details';
+  }
+
+  // ── Step 7: cover image upload ────────────────────────────────────────────
+
+  Future<void> _pickAndUploadCoverImage() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    final file = result.files.single;
+    final bytes = file.bytes;
+    if (bytes == null) return;
+
+    final ext = (file.extension ?? 'jpg').toLowerCase();
+    final contentType = _mimeFor(ext);
+    final nameSlug = _nameSlug();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final storagePath = 'place-covers/$nameSlug-$ts.$ext';
+
+    setState(() {
+      _coverImageBytes = bytes;
+      _uploadingCover = true;
+      _coverUploadProgress = 0.0;
+    });
+
+    try {
+      final ref = FirebaseStorage.instance.ref(storagePath);
+      final task = ref.putData(bytes, SettableMetadata(contentType: contentType));
+      task.snapshotEvents.listen((s) {
+        if (mounted && s.totalBytes > 0) {
+          setState(() => _coverUploadProgress = s.bytesTransferred / s.totalBytes);
+        }
+      });
+      await task;
+      final url = await ref.getDownloadURL();
+      if (mounted) {
+        setState(() {
+          _coverImageCtrl.text = url;
+          _uploadingCover = false;
+          _coverUploadProgress = 1.0;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _uploadingCover = false;
+          _coverImageBytes = null;
+          _coverUploadProgress = 0.0;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Cover upload failed: $e'),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  // ── Step 7: gallery image upload (per-slot) ───────────────────────────────
+
+  Future<void> _pickAndUploadGalleryImage(int index) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    final file = result.files.single;
+    final bytes = file.bytes;
+    if (bytes == null) return;
+
+    final ext = (file.extension ?? 'jpg').toLowerCase();
+    final contentType = _mimeFor(ext);
+    final nameSlug = _nameSlug();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    // index+1 so filenames start at 1 to match the gallery ordering
+    final storagePath = 'place-gallery/$nameSlug-${index + 1}-$ts.$ext';
+
+    setState(() {
+      _galleryBytes[index] = bytes;
+      _galleryUploading[index] = true;
+      _galleryProgress[index] = 0.0;
+    });
+
+    try {
+      final ref = FirebaseStorage.instance.ref(storagePath);
+      final task = ref.putData(bytes, SettableMetadata(contentType: contentType));
+      task.snapshotEvents.listen((s) {
+        if (mounted && s.totalBytes > 0) {
+          setState(() => _galleryProgress[index] = s.bytesTransferred / s.totalBytes);
+        }
+      });
+      await task;
+      final url = await ref.getDownloadURL();
+      if (mounted) {
+        setState(() {
+          _imageUrlCtrls[index].text = url;
+          _galleryUploading[index] = false;
+          _galleryProgress[index] = 1.0;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _galleryUploading[index] = false;
+          _galleryBytes[index] = null;
+          _galleryProgress[index] = 0.0;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Gallery image upload failed: $e'),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  // ── Gallery slot management (keeps parallel lists in sync) ────────────────
+
+  void _addGallerySlot() {
+    setState(() {
+      _imageUrlCtrls.add(TextEditingController());
+      _galleryBytes.add(null);
+      _galleryUploading.add(false);
+      _galleryProgress.add(0.0);
+    });
+  }
+
+  void _removeGallerySlot(int index) {
+    _imageUrlCtrls[index].dispose();
+    setState(() {
+      _imageUrlCtrls.removeAt(index);
+      _galleryBytes.removeAt(index);
+      _galleryUploading.removeAt(index);
+      _galleryProgress.removeAt(index);
+    });
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  /// URL-safe slug derived from the place name — used in storage paths.
+  String _nameSlug() {
+    final name = _nameCtrl.text.trim();
+    if (name.isEmpty) return 'place';
+    return name
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9\s]'), '')
+        .trim()
+        .replaceAll(RegExp(r'\s+'), '-');
+  }
+
+  String _mimeFor(String ext) {
+    switch (ext) {
+      case 'png': return 'image/png';
+      case 'webp': return 'image/webp';
+      case 'gif': return 'image/gif';
+      default: return 'image/jpeg';
+    }
   }
 
   // ── Step execution ───────────────────────────────────────────────────────
@@ -880,50 +1056,134 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       );
 
   // ── Step 7 — Media ────────────────────────────────────────────────────────
-  Widget _buildStep7() => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AdminField(ctrl: _coverImageCtrl, label: 'Cover Image URL',
-              hint: 'https://cdn.example.com/cover.jpg',
-              helperText: 'Main image shown on place cards'),
-          const SizedBox(height: 8),
-          const Text('Gallery Images',
-              style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500)),
-          const SizedBox(height: 4),
-          const Text('Enter image URLs — first URL will be the primary image.',
-              style: TextStyle(color: Colors.white38, fontSize: 11)),
-          const SizedBox(height: 10),
-          ..._imageUrlCtrls.asMap().entries.map((e) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(children: [
-                  Expanded(
-                    child: _SimpleField(
-                      ctrl: e.value,
-                      label: e.key == 0 ? 'Image 1 (primary)' : 'Image ${e.key + 1}',
-                      hint: 'https://cdn.example.com/image.jpg',
-                      keyboardType: TextInputType.url,
+  Widget _buildStep7() {
+    final anyUploading = _uploadingCover || _galleryUploading.any((v) => v);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Cover Image ──────────────────────────────────────────────────
+        const Text('Cover Image',
+            style: TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.w500)),
+        const SizedBox(height: 4),
+        const Text(
+            'Main image shown on place cards. Upload a photo or paste a URL.',
+            style: TextStyle(color: Colors.white38, fontSize: 11)),
+        const SizedBox(height: 10),
+
+        // Preview + upload zone
+        _ImageUploadTile(
+          imageBytes: _coverImageBytes,
+          existingUrl: _coverImageCtrl.text,
+          uploading: _uploadingCover,
+          uploadProgress: _coverUploadProgress,
+          label: 'Cover Photo',
+          onPickTap: (_saving || anyUploading) ? null : _pickAndUploadCoverImage,
+        ),
+
+        const SizedBox(height: 8),
+
+        // URL field — autofilled after upload; editable as fallback
+        _SimpleField(
+          ctrl: _coverImageCtrl,
+          label: 'Cover Image URL',
+          hint: 'Auto-filled after upload — or paste a URL directly',
+          keyboardType: TextInputType.url,
+        ),
+
+        const SizedBox(height: 20),
+
+        // ── Gallery Images ───────────────────────────────────────────────
+        const Text('Gallery Images',
+            style: TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.w500)),
+        const SizedBox(height: 4),
+        const Text(
+            'Upload additional photos — the first slot is the primary gallery image.',
+            style: TextStyle(color: Colors.white38, fontSize: 11)),
+        const SizedBox(height: 10),
+
+        // Gallery slots
+        ..._imageUrlCtrls.asMap().entries.map((entry) {
+          final i = entry.key;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      i == 0 ? 'Image 1 — Primary' : 'Image ${i + 1}',
+                      style: const TextStyle(
+                          color: Colors.white54, fontSize: 12),
                     ),
-                  ),
-                  if (_imageUrlCtrls.length > 1) ...[
-                    const SizedBox(width: 8),
-                    IconButton(
-                      onPressed: () => setState(() {
-                        _imageUrlCtrls[e.key].dispose();
-                        _imageUrlCtrls.removeAt(e.key);
-                      }),
-                      icon: const Icon(Icons.remove_circle_rounded,
-                          color: Colors.redAccent, size: 20),
-                    ),
+                    const Spacer(),
+                    // Remove button — only shown when more than one slot
+                    if (_imageUrlCtrls.length > 1)
+                      GestureDetector(
+                        onTap: (_saving || _galleryUploading[i])
+                            ? null
+                            : () => _removeGallerySlot(i),
+                        child: const Icon(Icons.remove_circle_rounded,
+                            color: Colors.redAccent, size: 18),
+                      ),
                   ],
-                ]),
-              )),
-          TextButton.icon(
-            onPressed: () => setState(() => _imageUrlCtrls.add(TextEditingController())),
-            icon: const Icon(Icons.add_photo_alternate_outlined, size: 16, color: Color(0xFF14FFEC)),
-            label: const Text('Add another image', style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+                ),
+                const SizedBox(height: 6),
+
+                _ImageUploadTile(
+                  imageBytes: _galleryBytes[i],
+                  existingUrl: _imageUrlCtrls[i].text,
+                  uploading: _galleryUploading[i],
+                  uploadProgress: _galleryProgress[i],
+                  label: i == 0 ? 'Primary Gallery Photo' : 'Gallery Photo ${i + 1}',
+                  onPickTap: (_saving || anyUploading)
+                      ? null
+                      : () => _pickAndUploadGalleryImage(i),
+                ),
+
+                const SizedBox(height: 6),
+
+                _SimpleField(
+                  ctrl: _imageUrlCtrls[i],
+                  label: 'Image URL',
+                  hint: 'Auto-filled after upload — or paste a URL directly',
+                  keyboardType: TextInputType.url,
+                ),
+              ],
+            ),
+          );
+        }),
+
+        // Add another slot
+        TextButton.icon(
+          onPressed: (_saving || anyUploading) ? null : _addGallerySlot,
+          icon: Icon(
+            Icons.add_photo_alternate_outlined,
+            size: 16,
+            color: (_saving || anyUploading)
+                ? Colors.white24
+                : const Color(0xFF14FFEC),
           ),
-        ],
-      );
+          label: Text(
+            'Add another image',
+            style: TextStyle(
+              fontSize: 13,
+              color: (_saving || anyUploading)
+                  ? Colors.white24
+                  : const Color(0xFF14FFEC),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   // ── Step 8 — Booking ──────────────────────────────────────────────────────
   Widget _buildStep8() => Column(
@@ -1540,5 +1800,166 @@ class _SummaryPill extends StatelessWidget {
           const SizedBox(width: 5),
           Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11)),
         ]),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _ImageUploadTile
+//
+// Reusable upload tile used by both the cover image and each gallery slot in
+// Step 7. Renders a 16:9 image preview (from bytes or URL), an upload progress
+// bar while uploading, and a pick/change button when idle.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ImageUploadTile extends StatelessWidget {
+  final Uint8List? imageBytes;
+  final String existingUrl;
+  final bool uploading;
+  final double uploadProgress;
+  final String label;
+  final VoidCallback? onPickTap;
+
+  const _ImageUploadTile({
+    required this.imageBytes,
+    required this.existingUrl,
+    required this.uploading,
+    required this.uploadProgress,
+    required this.label,
+    required this.onPickTap,
+  });
+
+  bool get _hasPreview =>
+      imageBytes != null || existingUrl.trim().isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1117),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: uploading
+              ? const Color(0xFF14FFEC).withValues(alpha: 0.4)
+              : Colors.white12,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── 16:9 preview ──────────────────────────────────────────────
+          if (_hasPreview)
+            AspectRatio(
+              aspectRatio: 16 / 9,
+              child: _buildPreview(),
+            ),
+
+          // ── Upload progress ───────────────────────────────────────────
+          if (uploading)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: uploadProgress,
+                      minHeight: 5,
+                      backgroundColor: Colors.white12,
+                      valueColor: const AlwaysStoppedAnimation(Color(0xFF14FFEC)),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    'Uploading… ${(uploadProgress * 100).toStringAsFixed(0)}%',
+                    style: const TextStyle(color: Colors.white38, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+
+          // ── Pick / change button ──────────────────────────────────────
+          if (!uploading)
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: OutlinedButton.icon(
+                onPressed: onPickTap,
+                icon: Icon(
+                  _hasPreview
+                      ? Icons.change_circle_rounded
+                      : Icons.upload_file_rounded,
+                  size: 15,
+                  color: onPickTap != null
+                      ? const Color(0xFF14FFEC)
+                      : Colors.white24,
+                ),
+                label: Text(
+                  _hasPreview ? 'Change $label' : 'Upload $label',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: onPickTap != null
+                        ? const Color(0xFF14FFEC)
+                        : Colors.white24,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 9),
+                  side: BorderSide(
+                    color: onPickTap != null
+                        ? const Color(0xFF14FFEC).withValues(alpha: 0.5)
+                        : Colors.white12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(7)),
+                ),
+              ),
+            ),
+
+          if (uploading) const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPreview() {
+    if (imageBytes != null) {
+      return Image.memory(
+        imageBytes!,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _placeholder(),
+      );
+    }
+    if (existingUrl.trim().isNotEmpty) {
+      return Image.network(
+        existingUrl.trim(),
+        fit: BoxFit.cover,
+        loadingBuilder: (_, child, progress) => progress == null
+            ? child
+            : Container(
+                color: Colors.white.withValues(alpha: 0.03),
+                child: Center(
+                  child: CircularProgressIndicator(
+                    value: progress.expectedTotalBytes != null
+                        ? progress.cumulativeBytesLoaded /
+                            progress.expectedTotalBytes!
+                        : null,
+                    color: const Color(0xFF14FFEC),
+                    strokeWidth: 2,
+                  ),
+                ),
+              ),
+        errorBuilder: (_, __, ___) => _placeholder(),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _placeholder() => Container(
+        color: Colors.white.withValues(alpha: 0.03),
+        child: const Center(
+          child: Icon(Icons.broken_image_rounded,
+              color: Colors.white24, size: 36),
+        ),
       );
 }
