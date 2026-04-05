@@ -1,0 +1,16 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // City cover images — admin upload only path
+    match /city-covers/{fileName} {
+      allow read: if true;          // Public read (needed for image display in app)
+      allow write: if true;         // Open write for admin uploads
+    }
+
+    // Lock everything else down
+    match /{allOtherPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

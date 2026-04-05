@@ -991,6 +991,21 @@ class _CityFormDialogState extends State<_CityFormDialog> {
   bool _uploadingImage = false;
   double _uploadProgress = 0.0;
 
+  // Pre-captured FirebaseStorage instance.
+  //
+  // WHY: On Flutter Web, DDC (Dart Dev Compiler) compiles every `async`
+  // function body — including the synchronous lines before the first `await`
+  // — into an `_asyncStartSync` JS trampoline. That means ANY access to
+  // `FirebaseStorage.instance` inside an `async` function runs inside the JS
+  // async machinery, where firebase_core_web's `app()` method cannot resolve
+  // the Dart-side Firebase registry. The result is:
+  //   "type 'FirebaseException' is not a subtype of type 'JavaScriptObject'"
+  //
+  // `initState()` is a plain synchronous Dart lifecycle call — it is never
+  // wrapped in any JS async trampoline — so capturing the instance here is the
+  // only location that is guaranteed to work on Flutter Web.
+  FirebaseStorage? _storage;
+
   @override
   void initState() {
     super.initState();
@@ -1012,6 +1027,19 @@ class _CityFormDialogState extends State<_CityFormDialog> {
       _name.addListener(_autoSlug);
     }
 
+    // Capture FirebaseStorage.instance synchronously here — NOT inside any
+    // async function — so it resolves within the plain Dart execution context.
+    // See the _storage field declaration above for the full explanation.
+    try {
+      _storage = FirebaseStorage.instance;
+      _screenLog.d('FirebaseStorage instance pre-cached successfully');
+    } catch (storageErr, storageSt) {
+      _screenLog.e(
+          'Failed to pre-cache FirebaseStorage instance — image upload will be unavailable',
+          error: storageErr,
+          stackTrace: storageSt);
+    }
+
     _screenLog.d(
         'CityFormDialog opened — mode=${e == null ? "CREATE" : "EDIT(${e.id})"}');
   }
@@ -1031,6 +1059,34 @@ class _CityFormDialogState extends State<_CityFormDialog> {
   // ── Image pick + Firebase Storage upload ──────────────────────────────
 
   Future<void> _pickAndUploadImage() async {
+    // Use the pre-cached FirebaseStorage instance captured in initState().
+    //
+    // CRITICAL — do NOT call FirebaseStorage.instance here or anywhere inside
+    // an async function on Flutter Web. DDC (Dart Dev Compiler) compiles the
+    // entire async function body — including lines before the first `await` —
+    // into an `_asyncStartSync` JS trampoline. Inside that trampoline,
+    // firebase_core_web cannot resolve the Dart-side Firebase app registry and
+    // throws:
+    //   "type 'FirebaseException' is not a subtype of type 'JavaScriptObject'"
+    //
+    // The instance must be captured in initState() (a plain synchronous Dart
+    // lifecycle call, never wrapped in JS async machinery). See _storage field.
+    final storage = _storage;
+    if (storage == null) {
+      _screenLog.e(
+          'FirebaseStorage was not initialised — cannot upload image. '
+          'Ensure Firebase.initializeApp() completes before opening this dialog.');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text(
+              'Firebase Storage is unavailable. Check Firebase initialisation.'),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      return;
+    }
+
     // Use file_picker so this works on mobile, web AND desktop.
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
@@ -1072,7 +1128,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
     });
 
     try {
-      final ref = FirebaseStorage.instance.ref(storagePath);
+      final ref = storage.ref(storagePath);
       final uploadTask = ref.putData(
         bytes,
         SettableMetadata(contentType: contentType),

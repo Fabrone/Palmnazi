@@ -204,6 +204,15 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   // ── Step 7: cover image upload ────────────────────────────────────────────
 
   Future<void> _pickAndUploadCoverImage() async {
+    // ── FIX: Resolve FirebaseStorage.instance BEFORE the file-picker await.
+    //
+    // On Flutter Web, FilePicker resolves through an HTML file-input JS callback.
+    // Accessing FirebaseStorage.instance (→ Firebase.app() → firebase_core_web)
+    // inside that JS continuation throws:
+    //   "type 'FirebaseException' is not a subtype of type 'JavaScriptObject'"
+    // Capturing synchronously here keeps the call on the Dart side.
+    final FirebaseStorage storage = FirebaseStorage.instance;
+
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
       withData: true,
@@ -227,7 +236,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     });
 
     try {
-      final ref = FirebaseStorage.instance.ref(storagePath);
+      final ref = storage.ref(storagePath);
       final task = ref.putData(bytes, SettableMetadata(contentType: contentType));
       task.snapshotEvents.listen((s) {
         if (mounted && s.totalBytes > 0) {
@@ -262,6 +271,10 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   // ── Step 7: gallery image upload (per-slot) ───────────────────────────────
 
   Future<void> _pickAndUploadGalleryImage(int index) async {
+    // ── FIX: Same as cover upload — capture FirebaseStorage.instance BEFORE
+    // the FilePicker await to avoid the flutter-web JS interop TypeError.
+    final FirebaseStorage storage = FirebaseStorage.instance;
+
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
       withData: true,
@@ -286,7 +299,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     });
 
     try {
-      final ref = FirebaseStorage.instance.ref(storagePath);
+      final ref = storage.ref(storagePath);
       final task = ref.putData(bytes, SettableMetadata(contentType: contentType));
       task.snapshotEvents.listen((s) {
         if (mounted && s.totalBytes > 0) {
