@@ -2,15 +2,37 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // City cover images — admin upload only path
+    // ── City cover images ────────────────────────────────────────────────────
+    // Code:  admin_resort_cities_screen.dart → _pickAndUploadImage()
+    // Path:  city-covers/{slug}-{timestamp}.{ext}
     match /city-covers/{fileName} {
-      allow read: if true;          // Public read (needed for image display in app)
-      allow write: if true;         // Open write for admin uploads
+      allow read: if true;
+      allow write: if true;
     }
 
-    // Lock everything else down
+    // ── Place cover images ───────────────────────────────────────────────────
+    // Code:  admin_place_wizard_screen.dart → _pickAndUploadCoverImage()
+    // Path:  place-covers/{slug}-{timestamp}.{ext}
+    match /place-covers/{fileName} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // ── Place gallery images ─────────────────────────────────────────────────
+    // Code:  admin_place_wizard_screen.dart → _pickAndUploadGalleryImage()
+    // Path:  place-gallery/{slug}-{index}-{timestamp}.{ext}
+    match /place-gallery/{fileName} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // ── Lock everything else down ────────────────────────────────────────────
+    // Any path not explicitly listed above is fully blocked.
+    // When adding a new upload type to the app, add a matching rule block here
+    // BEFORE deploying — uploads will fail silently without it.
     match /{allOtherPaths=**} {
       allow read, write: if false;
     }
+
   }
 }

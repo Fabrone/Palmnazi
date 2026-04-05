@@ -105,6 +105,22 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   final List<bool> _galleryUploading = [false];
   final List<double> _galleryProgress = [0.0];
 
+  // Pre-captured FirebaseStorage instance.
+  //
+  // WHY: On Flutter Web, DDC (Dart Dev Compiler) compiles every `async`
+  // function body — including synchronous lines before the first `await` —
+  // into an `_asyncStartSync` JS trampoline. Any access to
+  // `FirebaseStorage.instance` inside an async function therefore runs inside
+  // the JS async machinery, where firebase_core_web's `app()` method cannot
+  // resolve the Dart-side Firebase registry, producing:
+  //   "type 'FirebaseException' is not a subtype of type 'JavaScriptObject'"
+  //
+  // `initState()` is a plain synchronous Dart lifecycle call — never wrapped
+  // in any JS async trampoline — so capturing the instance here is the only
+  // location guaranteed to work on Flutter Web. The same pattern is used by
+  // the city-cover upload in admin_resort_cities_screen.dart.
+  FirebaseStorage? _storage;
+
   // ── Step 8 — Booking
   bool _isBookable = false;
   final _minPriceCtrl = TextEditingController();
@@ -124,6 +140,15 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     super.initState();
     if (widget.existingPlace != null) {
       _preloadFromExisting(widget.existingPlace!);
+    }
+
+    // Capture FirebaseStorage.instance synchronously here — NOT inside any
+    // async function — so it resolves within the plain Dart execution context.
+    // See the _storage field declaration above for the full explanation.
+    try {
+      _storage = FirebaseStorage.instance;
+    } catch (storageErr, storageSt) {
+      debugPrint('Failed to pre-cache FirebaseStorage: $storageErr\n$storageSt');
     }
   }
 
@@ -204,14 +229,25 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   // ── Step 7: cover image upload ────────────────────────────────────────────
 
   Future<void> _pickAndUploadCoverImage() async {
-    // ── FIX: Resolve FirebaseStorage.instance BEFORE the file-picker await.
+    // Use the pre-cached FirebaseStorage instance captured in initState().
     //
-    // On Flutter Web, FilePicker resolves through an HTML file-input JS callback.
-    // Accessing FirebaseStorage.instance (→ Firebase.app() → firebase_core_web)
-    // inside that JS continuation throws:
-    //   "type 'FirebaseException' is not a subtype of type 'JavaScriptObject'"
-    // Capturing synchronously here keeps the call on the Dart side.
-    final FirebaseStorage storage = FirebaseStorage.instance;
+    // CRITICAL — do NOT call FirebaseStorage.instance inside an async function
+    // on Flutter Web. DDC compiles the entire async body (even lines before the
+    // first `await`) into an `_asyncStartSync` JS trampoline where
+    // firebase_core_web cannot resolve the Dart-side Firebase registry.
+    // See the _storage field declaration for the full explanation.
+    final storage = _storage;
+    if (storage == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text(
+              'Firebase Storage is unavailable. Check Firebase initialisation.'),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      return;
+    }
 
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
@@ -271,9 +307,20 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   // ── Step 7: gallery image upload (per-slot) ───────────────────────────────
 
   Future<void> _pickAndUploadGalleryImage(int index) async {
-    // ── FIX: Same as cover upload — capture FirebaseStorage.instance BEFORE
-    // the FilePicker await to avoid the flutter-web JS interop TypeError.
-    final FirebaseStorage storage = FirebaseStorage.instance;
+    // Use the pre-cached FirebaseStorage instance captured in initState().
+    // See _pickAndUploadCoverImage and the _storage field for the explanation.
+    final storage = _storage;
+    if (storage == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text(
+              'Firebase Storage is unavailable. Check Firebase initialisation.'),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      return;
+    }
 
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
@@ -424,6 +471,39 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     } finally {
       if (mounted && _step <= 9) setState(() => _saving = false);
     }
+  }
+
+  // ── Free navigation (no save) ───────────────────────────────────────────────
+  //
+  // Advances the wizard one step without calling any API. The user's form data
+  // stays in the controllers and can be saved on any future step or on return.
+  //
+  // Blocked only on:
+  //   • Step 0 with no draft — the place record must exist before steps 1-10
+  //     have anything to PATCH against, so the draft step must be completed.
+  //   • Step 10 (Submit) — there is no next step to navigate to.
+  void _skipToNextStep() {
+    if (_saving) return;
+    if (_step == 0 && _place == null) return; // must create draft first
+    if (_step >= 10) return;
+    setState(() {
+      _step++;
+      _stepError = null;
+    });
+  }
+
+  // Jump directly to any already-accessible step (used by progress-bar taps).
+  // Steps beyond the furthest unlocked step are blocked to avoid confusion.
+  void _jumpToStep(int target) {
+    if (_saving) return;
+    // Step 0 is always accessible.
+    // Steps 1–10 require a place to exist (or the target is step 0 itself).
+    if (target > 0 && _place == null) return;
+    if (target < 0 || target > 10) return;
+    setState(() {
+      _step = target;
+      _stepError = null;
+    });
   }
 
   Future<void> _saveStep1() async {
@@ -614,8 +694,12 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       ),
       body: Column(
         children: [
-          // Progress bar
-          _StepProgressBar(currentStep: _step, totalSteps: 11),
+          // Progress bar — tapping a segment jumps to that step (no save).
+          _StepProgressBar(
+            currentStep: _step,
+            totalSteps: 11,
+            onStepTap: _jumpToStep,
+          ),
 
           // Content
           Expanded(
@@ -663,6 +747,11 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
             saving: _saving,
             hasPlace: _place != null,
             onBack: _step > 0 ? () => setState(() { _step--; _stepError = null; }) : null,
+            // Skip: free forward navigation without saving.
+            // Unavailable on step 0 (draft not yet created) and the last step.
+            onSkip: (_step == 0 && _place == null) || _step == 10
+                ? null
+                : _skipToNextStep,
             onContinue: _saveCurrentStep,
             onSaveExit: _place != null
                 ? () => Navigator.of(context).pop(false)
@@ -1472,44 +1561,92 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
 class _StepProgressBar extends StatelessWidget {
   final int currentStep;
   final int totalSteps;
-  const _StepProgressBar({required this.currentStep, required this.totalSteps});
+  /// Called when the user taps a step segment. Null = tapping is disabled.
+  final void Function(int step)? onStepTap;
+
+  const _StepProgressBar({
+    required this.currentStep,
+    required this.totalSteps,
+    this.onStepTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final labels = ['Draft', 'Info', 'Location', 'Contact', 'Attrs', 'Data',
-        'Media', 'Booking', 'Categories', 'Validate', 'Submit'];
+    const labels = [
+      'Draft', 'Info', 'Location', 'Contact', 'Attrs', 'Data',
+      'Media', 'Booking', 'Categories', 'Validate', 'Submit'
+    ];
+
     return Container(
       color: const Color(0xFF111827),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: Column(children: [
+        // ── Segmented progress bar — tappable ────────────────────────────
         Row(
           children: List.generate(totalSteps, (i) {
             final isDone = i < currentStep;
             final isCurrent = i == currentStep;
-            return Expanded(child: Row(children: [
-              Expanded(
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  height: 3,
-                  decoration: BoxDecoration(
-                    color: isDone || isCurrent
-                        ? const Color(0xFF14FFEC)
-                        : Colors.white12,
-                    borderRadius: BorderRadius.circular(2),
+            final isAccessible = isDone || isCurrent;
+
+            // Each segment is a GestureDetector wrapping the colour bar.
+            // Only done/current segments respond to taps so the user can
+            // only jump to steps they have already been on (or the current one).
+            return Expanded(
+              child: Row(children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: (onStepTap != null && isAccessible)
+                        ? () => onStepTap!(i)
+                        : null,
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      // Extra vertical padding makes the tap target taller
+                      // without increasing the visual bar height.
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 280),
+                        height: isCurrent ? 4 : 3,
+                        decoration: BoxDecoration(
+                          color: isDone
+                              ? const Color(0xFF14FFEC).withValues(alpha: 0.55)
+                              : isCurrent
+                                  ? const Color(0xFF14FFEC)
+                                  : Colors.white12,
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              if (i < totalSteps - 1) const SizedBox(width: 2),
-            ]));
+                if (i < totalSteps - 1) const SizedBox(width: 2),
+              ]),
+            );
           }),
         ),
-        const SizedBox(height: 8),
+
+        const SizedBox(height: 4),
+
+        // ── Step label row ───────────────────────────────────────────────
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text('Step ${currentStep + 1} of $totalSteps',
-              style: const TextStyle(color: Colors.white38, fontSize: 11)),
-          Text(labels[currentStep],
+          Text(
+            'Step ${currentStep + 1} of $totalSteps',
+            style: const TextStyle(color: Colors.white38, fontSize: 11),
+          ),
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.touch_app_rounded,
+                size: 10, color: Colors.white24),
+            const SizedBox(width: 4),
+            const Text('Tap a segment to jump',
+                style: TextStyle(color: Colors.white24, fontSize: 10)),
+            const SizedBox(width: 8),
+            Text(
+              labels[currentStep],
               style: const TextStyle(
-                  color: Color(0xFF14FFEC), fontSize: 11, fontWeight: FontWeight.w600)),
+                  color: Color(0xFF14FFEC),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600),
+            ),
+          ]),
         ]),
       ]),
     );
@@ -1560,60 +1697,157 @@ class _WizardBottomBar extends StatelessWidget {
   final bool saving;
   final bool hasPlace;
   final VoidCallback? onBack;
+  /// Navigate forward without saving. Null when not applicable (step 0 without
+  /// a draft, or the final Submit step).
+  final VoidCallback? onSkip;
   final VoidCallback onContinue;
   final VoidCallback? onSaveExit;
 
   const _WizardBottomBar({
-    required this.step, required this.totalSteps, required this.saving,
-    required this.hasPlace, this.onBack, required this.onContinue, this.onSaveExit,
+    required this.step,
+    required this.totalSteps,
+    required this.saving,
+    required this.hasPlace,
+    this.onBack,
+    this.onSkip,
+    required this.onContinue,
+    this.onSaveExit,
   });
 
   @override
   Widget build(BuildContext context) {
     final isLast = step == totalSteps - 1;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      decoration: BoxDecoration(
-        color: const Color(0xFF111827),
-        border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.07))),
-      ),
-      child: Row(children: [
+
+    // ── Left-side actions: Back + Save & Exit ─────────────────────────────
+    final leftActions = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
         if (onBack != null)
           OutlinedButton.icon(
             onPressed: saving ? null : onBack,
-            icon: const Icon(Icons.arrow_back_rounded, size: 16),
+            icon: const Icon(Icons.arrow_back_rounded, size: 15),
             label: const Text('Back'),
             style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white54,
-                side: const BorderSide(color: Colors.white24),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
+              foregroundColor: Colors.white54,
+              side: const BorderSide(color: Colors.white24),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(9)),
+            ),
           ),
         if (onSaveExit != null) ...[
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           TextButton(
             onPressed: saving ? null : onSaveExit,
-            child: const Text('Save & Exit', style: TextStyle(color: Colors.white38)),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white38,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+            ),
+            child: const Text('Save & Exit', style: TextStyle(fontSize: 13)),
           ),
         ],
-        const Spacer(),
+      ],
+    );
+
+    // ── Right-side actions: Next (skip) + Save & Continue ─────────────────
+    final rightActions = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // "Next →" — free forward navigation without saving.
+        // Shown as a ghost outlined button so it reads as clearly secondary
+        // to "Save & Continue". Tooltip clarifies it doesn't save.
+        if (onSkip != null) ...[
+          Tooltip(
+            message: 'Move to next step without saving',
+            child: OutlinedButton.icon(
+              onPressed: saving ? null : onSkip,
+              icon: const Icon(Icons.arrow_forward_rounded, size: 15),
+              label: const Text('Next'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white38,
+                side: BorderSide(
+                  color: saving ? Colors.white12 : Colors.white24,
+                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(9)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
+
+        // "Save & Continue" — saves current step then advances.
         ElevatedButton.icon(
           onPressed: saving ? null : onContinue,
           icon: saving
-              ? const SizedBox(width: 14, height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : Icon(isLast ? Icons.rocket_launch_rounded : Icons.arrow_forward_rounded,
-                  size: 16),
-          label: Text(saving
-              ? 'Saving…'
-              : isLast ? 'Submit & Activate' : 'Save & Continue'),
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
+              : Icon(
+                  isLast
+                      ? Icons.rocket_launch_rounded
+                      : Icons.save_rounded,
+                  size: 15),
+          label: Text(
+            saving
+                ? 'Saving…'
+                : isLast
+                    ? 'Submit & Activate'
+                    : 'Save & Continue',
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          ),
           style: ElevatedButton.styleFrom(
-            backgroundColor: isLast ? Colors.greenAccent.shade700 : const Color(0xFF14FFEC),
+            backgroundColor:
+                isLast ? Colors.greenAccent.shade700 : const Color(0xFF14FFEC),
             foregroundColor: Colors.black,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(9)),
           ),
         ),
-      ]),
+      ],
+    );
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        border: Border(
+            top: BorderSide(color: Colors.white.withValues(alpha: 0.07))),
+      ),
+      // Use LayoutBuilder so the bar adapts gracefully on narrow screens —
+      // if there isn't enough width for a single row, stack the two groups.
+      child: LayoutBuilder(builder: (context, constraints) {
+        // Estimate minimum width needed for both groups side-by-side.
+        // Back(~80) + SaveExit(~85) + gap + Next(~80) + SaveContinue(~145) ≈ 420
+        final canFitSingleRow = constraints.maxWidth >= 420;
+
+        if (canFitSingleRow) {
+          return Row(children: [
+            leftActions,
+            const Spacer(),
+            rightActions,
+          ]);
+        }
+
+        // Narrow: stack left actions on top, right actions below right-aligned.
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(children: [leftActions]),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [rightActions],
+            ),
+          ],
+        );
+      }),
     );
   }
 }
