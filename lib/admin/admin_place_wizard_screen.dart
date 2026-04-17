@@ -135,6 +135,19 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   // ── Step 10 — Validation result
   PlaceValidationResult? _validationResult;
 
+  // ── Step-completion tracking ─────────────────────────────────────────────
+  //
+  // Tracks which steps (0-indexed) have been explicitly saved to the backend
+  // during this session, OR inferred as complete from the existing place data
+  // when editing.  Used by _StepProgressBar and _IncompleteStepsStrip to show
+  // the user which sections still need attention.
+  final Set<int> _completedSteps = {};
+
+  // True while an automatic background validation is in progress (triggered
+  // when the user jumps directly to step 9 via the progress bar).  Kept
+  // separate from _saving so the main Save & Continue button stays active.
+  bool _validating = false;
+
   @override
   void initState() {
     super.initState();
@@ -157,6 +170,37 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     _step = 1; // Skip to step 2 for editing
     _nameCtrl.text = p.name;
     _selectedCityId = p.cityId;
+    // ── Restore primary category slug ────────────────────────────────────────
+    //
+    // BUG FIX: Do NOT use categoryLinks.first.categorySlug here.
+    //
+    // categoryLinks is populated by Step 9 and may contain subcategory slugs
+    // (e.g. "luxury-resorts") or be empty entirely if the list API returned a
+    // thin model.  Either case makes _isAccommodationType / _isDiningType return
+    // false, so _saveStep5 silently skips the PATCH — attributes are never
+    // persisted — while still marking step 4 as complete.
+    //
+    // The backend stores the value from the Step 1 `primaryCategory` field in
+    // the `taxonomy` array.  That is always the root-category slug (e.g.
+    // "accommodation", "dining") and is the canonical source.
+    //
+    // Resolution order:
+    //   1. taxonomy.first  — set by the backend from Step 1's primaryCategory
+    //   2. Root-level category link (parentName == null) — fallback
+    //   3. First categoryLink slug — last resort
+    if (p.taxonomy.isNotEmpty) {
+      _primaryCategorySlug = p.taxonomy.first;
+      debugPrint('[Wizard/preload] _primaryCategorySlug from taxonomy: $_primaryCategorySlug');
+    } else {
+      final rootLink = p.categoryLinks
+          .where((l) => l.parentName == null)
+          .cast<PlaceCategoryLink?>()
+          .firstOrNull;
+      _primaryCategorySlug = rootLink?.categorySlug
+          ?? (p.categoryLinks.isNotEmpty ? p.categoryLinks.first.categorySlug : null);
+      debugPrint('[Wizard/preload] _primaryCategorySlug from categoryLinks: $_primaryCategorySlug '
+          '(taxonomy was empty — check that backend populates taxonomy on draft creation)');
+    }
     _shortDescCtrl.text = p.shortDescription ?? '';
     _descCtrl.text = p.description ?? '';
     _areaCtrl.text = p.area ?? '';
@@ -172,9 +216,151 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     _maxPriceCtrl.text = p.pricing?.max?.toString() ?? '';
     _priceUnit = p.pricing?.unit ?? 'night';
     _currency = p.pricing?.currency ?? 'KES';
+    _cancellationPolicy =
+        p.bookingSettings?.cancellationPolicy ?? 'flexible';
     for (final link in p.categoryLinks) {
       _selectedCategoryIds.add(link.categoryId);
     }
+
+    // ── Restore attributes into their step-5 controllers ─────────────────
+    //
+    // The attributes JSONB blob is saved to the backend in Step 5 but was
+    // never loaded back into the text controllers on edit, making the section
+    // appear empty even after an initial save.  We read the exact same keys
+    // that _saveStep5 writes so round-tripping is lossless.
+    final attrs = p.attributes;
+    if (attrs.isNotEmpty) {
+      debugPrint('[Wizard/preload] Restoring ${attrs.length} attribute(s): ${attrs.keys.toList()}');
+      _checkInCtrl.text  = (attrs['checkInTime']  as String?) ?? '';
+      _checkOutCtrl.text = (attrs['checkOutTime'] as String?) ?? '';
+      final star = attrs['starRating'];
+      if (star != null) _starRatingCtrl.text = star.toString();
+
+      final amenities = attrs['generalAmenities'];
+      if (amenities is List && amenities.isNotEmpty) {
+        _amenitiesCtrl.text = amenities.join(', ');
+      }
+      final cuisine = attrs['cuisine'];
+      if (cuisine is List && cuisine.isNotEmpty) {
+        _cuisineCtrl.text = cuisine.join(', ');
+      }
+      final seating = attrs['seatingCapacity'];
+      if (seating != null) _seatingCapCtrl.text = seating.toString();
+      _openingHoursCtrl.text = (attrs['openingHoursNote'] as String?) ?? '';
+    }
+
+    // Infer which steps are already complete from the existing place data
+    _inferCompletionFromExisting(p);
+  }
+
+  // ── Step-completion inference ────────────────────────────────────────────
+  //
+  // Determines which wizard steps already have data saved in the backend so
+  // the progress bar and incomplete-steps strip reflect reality immediately
+  // when the user opens an existing place for editing.
+  void _inferCompletionFromExisting(PlaceModel p) {
+    // Step 0 — Draft: always complete if the place exists
+    _completedSteps.add(0);
+
+    // Step 1 — Basic Info
+    if ((p.description?.isNotEmpty ?? false) ||
+        (p.shortDescription?.isNotEmpty ?? false)) {
+      _completedSteps.add(1);
+    }
+
+    // Step 2 — Location
+    if ((p.address?.isNotEmpty ?? false) ||
+        p.latitude != null ||
+        p.longitude != null) {
+      _completedSteps.add(2);
+    }
+
+    // Step 3 — Contact
+    final c = p.contact;
+    if (c != null &&
+        ((c.phone?.isNotEmpty ?? false) ||
+         (c.email?.isNotEmpty ?? false) ||
+         (c.website?.isNotEmpty ?? false))) {
+      _completedSteps.add(3);
+    }
+
+    // Step 4 — Attributes
+    final attrs = p.attributes;
+    if (attrs.isNotEmpty) {
+      _completedSteps.add(4);
+    }
+
+    // Step 5 — Nested data: mark complete (optional/skippable for all types)
+    _completedSteps.add(5);
+
+    // Step 6 — Media
+    if ((p.coverImage?.isNotEmpty ?? false) || p.images.isNotEmpty) {
+      _completedSteps.add(6);
+    }
+
+    // Step 7 — Booking: always has a persisted value (isBookable defaults false)
+    _completedSteps.add(7);
+
+    // Step 8 — Categories
+    if (p.categoryLinks.isNotEmpty) {
+      _completedSteps.add(8);
+    }
+
+    // Step 9 — Validate / Step 10 — Submit
+    if (p.status == 'ACTIVE') {
+      _completedSteps.add(9);
+      _completedSteps.add(10);
+    }
+
+    debugPrint('[Wizard/infer] Completed steps for existing place: $_completedSteps');
+  }
+
+  // ── Maps validation "missing" field names → wizard step indices ──────────
+  //
+  // Used to highlight which progress-bar segments are invalid after the
+  // backend validation endpoint returns missing field names.
+  static const Map<String, int> _fieldToStep = {
+    'description':         1,
+    'shortDescription':    1,
+    'address':             2,
+    'location':            2,
+    'coordinates':         2,
+    'latitude':            2,
+    'longitude':           2,
+    'contact':             3,
+    'phone':               3,
+    'email':               3,
+    'attributes':          4,
+    'cover':               6,
+    'image':               6,
+    'media':               6,
+    'categor':             8,
+  };
+
+  /// Steps that the backend says are incomplete (from the latest validation).
+  Set<int> get _invalidSteps {
+    if (_validationResult == null || _validationResult!.isValid) return {};
+    final result = <int>{};
+    for (final field in _validationResult!.missing) {
+      final lower = field.toLowerCase();
+      _fieldToStep.forEach((key, step) {
+        if (lower.contains(key)) result.add(step);
+      });
+    }
+    return result;
+  }
+
+  /// Steps 1-8 that are not yet saved (shown in the incomplete strip).
+  List<int> get _incompleteStepIndices {
+    if (_place == null) return [];
+    final invalid = _invalidSteps;
+    final result = <int>[];
+    for (var i = 1; i <= 8; i++) {
+      if (!_completedSteps.contains(i) || invalid.contains(i)) {
+        result.add(i);
+      }
+    }
+    return result;
   }
 
   @override
@@ -427,6 +613,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     if (_saving) return;
     setState(() { _saving = true; _stepError = null; });
 
+    debugPrint('🔄 [Wizard] _saveCurrentStep  step=$_step (${_stepLabel(_step)})');
+
     try {
       switch (_step) {
         case 0:
@@ -460,17 +648,47 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           await _runValidation();
           break;
         case 10:
+          // _submitPlace handles its own _saving reset on both success and
+          // failure — success pops the page (mounted→false), failure clears
+          // _saving in its own catch block before returning normally.
           await _submitPlace();
-          return;
+          return; // skip the step++ and the finally-reset below
       }
-      if (mounted && _step < 10) setState(() => _step++);
+
+      debugPrint('✅ [Wizard] Step $_step saved — advancing to ${_step + 1}');
+      if (mounted && _step < 10) setState(() { _completedSteps.add(_step); _step++; });
+
     } on AdminApiException catch (e) {
+      debugPrint('❌ [Wizard] AdminApiException on step $_step: ${e.message}  (${e.statusCode})');
       if (mounted) setState(() { _stepError = e.message; _saving = false; });
-    } catch (e) {
+      return; // prevent finally from double-clearing
+
+    } catch (e, st) {
+      debugPrint('💥 [Wizard] Unexpected error on step $_step: $e\n$st');
       if (mounted) setState(() { _stepError = e.toString(); _saving = false; });
+      return; // prevent finally from double-clearing
+
     } finally {
-      if (mounted && _step <= 9) setState(() => _saving = false);
+      // ── CRITICAL FIX ─────────────────────────────────────────────────────
+      // The old guard was `_step <= 9`, but by the time finally runs, `_step`
+      // has already been incremented to 10 (after the step-9 validation
+      // succeeds).  That made the condition false and _saving was NEVER reset,
+      // locking the spinner forever after the validate step.
+      //
+      // We now reset unconditionally whenever the widget is still mounted.
+      // For the submit step (10) we `return` before reaching finally, so this
+      // branch only executes for steps 0–9 in the happy path.
+      if (mounted) setState(() => _saving = false);
     }
+  }
+
+  /// Human-readable label for debug output — mirrors the progress-bar labels.
+  static String _stepLabel(int step) {
+    const labels = [
+      'Draft', 'BasicInfo', 'Location', 'Contact', 'Attributes',
+      'NestedData', 'Media', 'Booking', 'Categories', 'Validate', 'Submit'
+    ];
+    return step >= 0 && step < labels.length ? labels[step] : 'Unknown';
   }
 
   // ── Free navigation (no save) ───────────────────────────────────────────────
@@ -504,44 +722,75 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       _step = target;
       _stepError = null;
     });
+    // When the user jumps directly to the Validate step and we have no result
+    // yet, auto-trigger a background validation so the step doesn't show a
+    // blank/spinning state.
+    if (target == 9 && _validationResult == null) {
+      _autoValidate();
+    }
+  }
+
+  // ── Auto-validation (background, separate from the main save flow) ────────
+  //
+  // Triggered when the user navigates to step 9 via the progress bar without
+  // going through Save & Continue.  Uses a dedicated _validating flag so the
+  // main save button is never blocked.
+  Future<void> _autoValidate() async {
+    if (_place == null || _validating || _saving) return;
+    debugPrint('🔍 [Wizard/AutoValidate] Triggering background validation for placeId=${_place!.id}');
+    setState(() { _validating = true; _stepError = null; });
+    try {
+      final result = await widget.apiService.validatePlace(_place!.id);
+      debugPrint('   ↳ isValid=${result.isValid}  missing=${result.missing}');
+      if (mounted) setState(() { _validationResult = result; _validating = false; });
+    } catch (e, st) {
+      debugPrint('❌ [Wizard/AutoValidate] Failed: $e\n$st');
+      if (mounted) setState(() { _validating = false; });
+    }
   }
 
   Future<void> _saveStep1() async {
+    debugPrint('📝 [Wizard/Step1] Creating draft — name="${_nameCtrl.text.trim()}"  cityId=$_selectedCityId  primaryCategory=$_primaryCategorySlug');
     if (_nameCtrl.text.trim().isEmpty) throw AdminApiException(message: 'Name is required');
     if (_selectedCityId == null) throw AdminApiException(message: 'Select a resort city');
     if (_primaryCategorySlug == null) throw AdminApiException(message: 'Select a primary category');
-
     _place = await widget.apiService.createPlaceDraft(
       name: _nameCtrl.text.trim(),
       cityId: _selectedCityId!,
       primaryCategory: _primaryCategorySlug!,
     );
+    debugPrint('✅ [Wizard/Step1] Draft created — placeId=${_place?.id}  status=${_place?.status}');
   }
 
   Future<void> _saveStep2() async {
-    if (_place == null) return;
+    if (_place == null) { debugPrint('⚠️ [Wizard/Step2] Skipped — _place is null'); return; }
+    debugPrint('📝 [Wizard/Step2] Saving basic info — placeId=${_place!.id}');
     if (_descCtrl.text.trim().isEmpty) throw AdminApiException(message: 'Description is required');
     _place = await widget.apiService.updatePlaceBasicInfo(_place!.id, {
       'shortDescription': _shortDescCtrl.text.trim(),
       'description': _descCtrl.text.trim(),
       if (_areaCtrl.text.trim().isNotEmpty) 'area': _areaCtrl.text.trim(),
     });
+    debugPrint('✅ [Wizard/Step2] Basic info saved — placeId=${_place?.id}');
   }
 
   Future<void> _saveStep3() async {
-    if (_place == null) return;
+    if (_place == null) { debugPrint('⚠️ [Wizard/Step3] Skipped — _place is null'); return; }
     final lat = double.tryParse(_latCtrl.text.trim());
     final lng = double.tryParse(_lngCtrl.text.trim());
+    debugPrint('📝 [Wizard/Step3] Saving location — placeId=${_place!.id}  address="${_addressCtrl.text.trim()}"  lat=$lat  lng=$lng');
     _place = await widget.apiService.updatePlaceLocation(_place!.id, {
       if (_addressCtrl.text.trim().isNotEmpty) 'address': _addressCtrl.text.trim(),
       if (lat != null) 'latitude': lat,
       if (lng != null) 'longitude': lng,
       if (_areaCtrl.text.trim().isNotEmpty) 'area': _areaCtrl.text.trim(),
     });
+    debugPrint('✅ [Wizard/Step3] Location saved — placeId=${_place?.id}');
   }
 
   Future<void> _saveStep4() async {
-    if (_place == null) return;
+    if (_place == null) { debugPrint('⚠️ [Wizard/Step4] Skipped — _place is null'); return; }
+    debugPrint('📝 [Wizard/Step4] Saving contact — placeId=${_place!.id}  phone="${_phoneCtrl.text.trim()}"  email="${_emailCtrl.text.trim()}"');
     _place = await widget.apiService.updatePlaceContact(_place!.id, {
       'contact': {
         if (_phoneCtrl.text.trim().isNotEmpty) 'phone': _phoneCtrl.text.trim(),
@@ -549,10 +798,11 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         if (_websiteCtrl.text.trim().isNotEmpty) 'website': _websiteCtrl.text.trim(),
       },
     });
+    debugPrint('✅ [Wizard/Step4] Contact saved — placeId=${_place?.id}');
   }
 
   Future<void> _saveStep5() async {
-    if (_place == null) return;
+    if (_place == null) { debugPrint('⚠️ [Wizard/Step5] Skipped — _place is null'); return; }
     final attributes = <String, dynamic>{};
     if (_isAccommodationType) {
       if (_checkInCtrl.text.isNotEmpty) attributes['checkInTime'] = _checkInCtrl.text.trim();
@@ -569,31 +819,68 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         attributes['seatingCapacity'] = int.tryParse(_seatingCapCtrl.text) ?? 0;
       }
       if (_openingHoursCtrl.text.isNotEmpty) attributes['openingHoursNote'] = _openingHoursCtrl.text.trim();
+    } else {
+      // ── Generic fallback ─────────────────────────────────────────────────
+      //
+      // BUG FIX: _buildStep5 renders _amenitiesCtrl in the generic fallback
+      // ("Key Features / Amenities") but the original code only read
+      // _amenitiesCtrl inside the _isAccommodationType branch.  Any text the
+      // admin entered was discarded and no PATCH was sent, so the backend
+      // always reported attributes={} for non-accommodation/dining places.
+      //
+      // Collect it here under "generalAmenities" — the same key used by the
+      // accommodation branch — so the _preloadFromExisting round-trip is lossless.
+      final amenities = _amenitiesCtrl.text.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+      if (amenities.isNotEmpty) attributes['generalAmenities'] = amenities;
+      if (attributes.isEmpty) {
+        debugPrint(
+          '⚠️ [Wizard/Step5] No attributes collected for primaryCategorySlug="$_primaryCategorySlug". '
+          'If this place should have attributes, verify that taxonomy is populated by the backend '
+          'so _primaryCategorySlug is correctly restored on re-edit.',
+        );
+      }
     }
     if (attributes.isNotEmpty) {
+      debugPrint('📝 [Wizard/Step5] Saving attributes — placeId=${_place!.id}  keys=${attributes.keys.toList()}');
       _place = await widget.apiService.updatePlaceAttributes(_place!.id, attributes);
+      debugPrint('✅ [Wizard/Step5] Attributes saved — placeId=${_place?.id}');
+    } else {
+      debugPrint('⏭️ [Wizard/Step5] No attributes to save for category "$_primaryCategorySlug" — skipping PATCH');
     }
   }
 
   Future<void> _saveStep6() async {
-    if (_place == null) return;
+    if (_place == null) { debugPrint('⚠️ [Wizard/Step6] Skipped — _place is null'); return; }
+    debugPrint('📝 [Wizard/Step6] Saving nested data — placeId=${_place!.id}  type: accommodation=$_isAccommodationType  dining=$_isDiningType  entertainment=$_isEntertainmentType');
     if (_isAccommodationType && _rooms.isNotEmpty) {
+      debugPrint('   ↳ POSTing ${_rooms.length} room(s)');
       await widget.apiService.createRooms(_place!.id, _rooms);
+      debugPrint('✅ [Wizard/Step6] Rooms saved');
     } else if (_isDiningType) {
       if (_menuSections.isNotEmpty) {
+        debugPrint('   ↳ POSTing ${_menuSections.length} menu section(s)');
         await widget.apiService.createMenuSections(_place!.id, _menuSections);
+        debugPrint('✅ [Wizard/Step6] Menu sections saved');
       }
       if (_menuItems.isNotEmpty) {
+        debugPrint('   ↳ POSTing ${_menuItems.length} menu item(s)');
         await widget.apiService.createMenuItems(_place!.id, _menuItems);
+        debugPrint('✅ [Wizard/Step6] Menu items saved');
+      }
+      if (_menuSections.isEmpty && _menuItems.isEmpty) {
+        debugPrint('⏭️ [Wizard/Step6] No menu data to save — skipping');
       }
     } else if (_isEntertainmentType && _shows.isNotEmpty) {
+      debugPrint('   ↳ POSTing ${_shows.length} show(s)');
       await widget.apiService.createShows(_place!.id, _shows);
+      debugPrint('✅ [Wizard/Step6] Shows saved');
+    } else {
+      debugPrint('⏭️ [Wizard/Step6] No nested data to save for this category — skipping');
     }
-    // Cultural exhibitions skipped for basic wizard — can be added after
   }
 
   Future<void> _saveStep7() async {
-    if (_place == null) return;
+    if (_place == null) { debugPrint('⚠️ [Wizard/Step7] Skipped — _place is null'); return; }
     final imageList = _imageUrlCtrls
         .asMap()
         .entries
@@ -604,17 +891,19 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
               order: e.key + 1,
             ).toJson())
         .toList();
+    final cover = _coverImageCtrl.text.trim().isNotEmpty ? _coverImageCtrl.text.trim() : null;
+    debugPrint('📝 [Wizard/Step7] Saving media — placeId=${_place!.id}  cover=${cover != null ? "set" : "null"}  galleryImages=${imageList.length}');
     _place = await widget.apiService.updatePlaceMedia(
       _place!.id,
-      coverImage: _coverImageCtrl.text.trim().isNotEmpty
-          ? _coverImageCtrl.text.trim()
-          : null,
+      coverImage: cover,
       images: imageList,
     );
+    debugPrint('✅ [Wizard/Step7] Media saved — placeId=${_place?.id}  coverImage=${_place?.coverImage != null ? "set" : "null"}');
   }
 
   Future<void> _saveStep8() async {
-    if (_place == null) return;
+    if (_place == null) { debugPrint('⚠️ [Wizard/Step8] Skipped — _place is null'); return; }
+    debugPrint('📝 [Wizard/Step8] Saving booking — placeId=${_place!.id}  isBookable=$_isBookable  currency=$_currency  unit=$_priceUnit');
     _place = await widget.apiService.updatePlaceBooking(_place!.id, {
       'isBookable': _isBookable,
       if (_isBookable) 'pricing': {
@@ -629,31 +918,57 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         'cancellationPolicy': _cancellationPolicy,
       },
     });
+    debugPrint('✅ [Wizard/Step8] Booking saved — placeId=${_place?.id}  isBookable=${_place?.isBookable}');
   }
 
   Future<void> _saveStep9() async {
-    if (_place == null) return;
+    if (_place == null) { debugPrint('⚠️ [Wizard/Step9] Skipped — _place is null'); return; }
+    debugPrint('📝 [Wizard/Step9] Linking categories — placeId=${_place!.id}  selected=${_selectedCategoryIds.length}  ids=$_selectedCategoryIds');
     if (_selectedCategoryIds.isNotEmpty) {
       _place = await widget.apiService.linkPlaceCategories(
           _place!.id, _selectedCategoryIds.toList());
+      debugPrint('✅ [Wizard/Step9] Categories linked — placeId=${_place?.id}  categoryLinks=${_place?.categoryLinks.length}');
+    } else {
+      debugPrint('⏭️ [Wizard/Step9] No categories selected — skipping PUT');
     }
   }
 
   Future<void> _runValidation() async {
-    if (_place == null) return;
+    if (_place == null) { debugPrint('⚠️ [Wizard/Validate] Skipped — _place is null'); return; }
+    debugPrint('🔍 [Wizard/Validate] Running GET validation — placeId=${_place!.id}');
+
     final result = await widget.apiService.validatePlace(_place!.id);
-    if (mounted) setState(() { _validationResult = result; _step = 9; });
+
+    debugPrint('   ↳ isValid=${result.isValid}  missing=${result.missing.length} field(s)');
+    if (result.missing.isNotEmpty) {
+      debugPrint('   ↳ Missing: ${result.missing.join(", ")}');
+    }
+
+    // FIX: do NOT set _step inside this method. _step is already 9 and
+    // _saveCurrentStep will increment it after we return. Setting it to 9
+    // here was a no-op at best; at worst it confused state traces.
+    if (mounted) setState(() => _validationResult = result);
+
     if (!result.isValid) {
+      debugPrint('❌ [Wizard/Validate] Place is NOT valid — blocking advance to Submit step');
       throw AdminApiException(message: 'Missing required fields — see below');
     }
+    debugPrint('✅ [Wizard/Validate] Validation passed — proceeding to Submit step');
   }
 
   Future<void> _submitPlace() async {
-    if (_place == null) return;
-    setState(() => _saving = true);
+    if (_place == null) { debugPrint('⚠️ [Wizard/Submit] Skipped — _place is null'); return; }
+
+    // NOTE: _saveCurrentStep already set _saving=true before calling us.
+    // We do NOT set it again here (was a redundant double-setState).
+    debugPrint('🚀 [Wizard/Submit] Submitting place — placeId=${_place!.id}  name="${_place!.name}"');
+
     try {
       final submitted = await widget.apiService.submitPlace(_place!.id);
+      debugPrint('✅ [Wizard/Submit] Place submitted successfully — placeId=${submitted.id}  status=${submitted.status}');
       if (mounted) {
+        // Dismiss the spinner before we pop so the user sees the snackbar.
+        setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('"${submitted.name}" is now ACTIVE'),
           backgroundColor: Colors.green.shade700,
@@ -662,7 +977,11 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         Navigator.of(context).pop(true);
       }
     } on AdminApiException catch (e) {
+      debugPrint('❌ [Wizard/Submit] AdminApiException — ${e.statusCode}: ${e.message}');
       if (mounted) setState(() { _stepError = e.message; _saving = false; });
+    } catch (e, st) {
+      debugPrint('💥 [Wizard/Submit] Unexpected error — $e\n$st');
+      if (mounted) setState(() { _stepError = 'Submission failed: $e'; _saving = false; });
     }
   }
 
@@ -698,8 +1017,19 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           _StepProgressBar(
             currentStep: _step,
             totalSteps: 11,
+            completedSteps: _completedSteps,
+            invalidSteps: _invalidSteps,
             onStepTap: _jumpToStep,
           ),
+
+          // Incomplete steps strip — only visible when editing an existing
+          // place and at least one data step (1-8) is still missing/invalid.
+          if (_place != null && _incompleteStepIndices.isNotEmpty)
+            _IncompleteStepsStrip(
+              incompleteIndices: _incompleteStepIndices,
+              invalidIndices: _invalidSteps,
+              onJump: _jumpToStep,
+            ),
 
           // Content
           Expanded(
@@ -1447,15 +1777,89 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   }
 
   // ── Step 10 — Validate ───────────────────────────────────────────────────
+  //
+  // Three states:
+  //   1. _validating == true      → spinner with "Checking…" label
+  //   2. _validationResult == null (and not validating) → prompt to run check
+  //   3. result available         → full results with re-run + jump-to-step actions
   Widget _buildStep10() {
-    if (_validationResult == null) {
-      return const Center(
-          child: CircularProgressIndicator(color: Color(0xFF14FFEC)));
+    // ── 1. Background validation in progress ─────────────────────────────
+    if (_validating) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 40, height: 40,
+              child: CircularProgressIndicator(
+                  strokeWidth: 3, color: Color(0xFF14FFEC)),
+            ),
+            const SizedBox(height: 16),
+            const Text('Checking required fields…',
+                style: TextStyle(color: Colors.white54, fontSize: 13)),
+          ],
+        ),
+      );
     }
+
+    // ── 2. No result yet — show a "Run Validation" prompt ────────────────
+    if (_validationResult == null) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF111827),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Column(children: [
+              const Icon(Icons.fact_check_rounded,
+                  color: Color(0xFF14FFEC), size: 44),
+              const SizedBox(height: 14),
+              const Text('Ready to validate?',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              const Text(
+                'This checks that all required fields are filled in before you submit the place.',
+                style: TextStyle(
+                    color: Colors.white54, fontSize: 13, height: 1.5),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: (_saving || _validating) ? null : _autoValidate,
+                  icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                  label: const Text('Run Validation',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 14)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF14FFEC),
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+            ]),
+          ),
+        ],
+      );
+    }
+
+    // ── 3. Results available ─────────────────────────────────────────────
     final result = _validationResult!;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // ── Status banner ────────────────────────────────────────────────
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -1481,30 +1885,112 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
               child: Text(
                 result.isValid
                     ? 'All required fields are complete. Ready to submit!'
-                    : 'Some required fields are missing. Go back and complete them.',
+                    : 'Some required fields are missing. Tap a field below to jump to that step.',
                 style: TextStyle(
-                    color: result.isValid ? Colors.greenAccent : Colors.orangeAccent,
-                    fontSize: 13, fontWeight: FontWeight.w500),
+                    color: result.isValid
+                        ? Colors.greenAccent
+                        : Colors.orangeAccent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500),
               ),
             ),
           ]),
         ),
+
+        // ── Missing fields — each row is a tappable jump link ────────────
         if (result.missing.isNotEmpty) ...[
           const SizedBox(height: 16),
-          const Text('Missing fields:',
-              style: TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 1)),
+          const Text('MISSING FIELDS',
+              style: TextStyle(
+                  color: Colors.white38,
+                  fontSize: 10,
+                  letterSpacing: 1.2,
+                  fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
-          ...result.missing.map((m) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
+          ...result.missing.map((m) {
+            // Resolve a jump target for this field name (may be null)
+            int? target;
+            final lower = m.toLowerCase();
+            _fieldToStep.forEach((key, step) {
+              if (lower.contains(key)) target ??= step;
+            });
+            return GestureDetector(
+              onTap: target != null ? () => _jumpToStep(target!) : null,
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: Colors.orangeAccent.withValues(alpha: 0.2)),
+                ),
                 child: Row(children: [
                   const Icon(Icons.remove_circle_outline_rounded,
-                      color: Colors.orangeAccent, size: 14),
-                  const SizedBox(width: 8),
-                  Text(m,
-                      style: const TextStyle(color: Colors.white60, fontSize: 13)),
+                      color: Colors.orangeAccent, size: 15),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(m,
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 13)),
+                  ),
+                  if (target != null) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.orangeAccent.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Text(
+                          'Step ${target! + 1}',
+                          style: const TextStyle(
+                              color: Colors.orangeAccent,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(width: 3),
+                        const Icon(Icons.arrow_forward_rounded,
+                            size: 10, color: Colors.orangeAccent),
+                      ]),
+                    ),
+                  ],
                 ]),
-              )),
+              ),
+            );
+          }),
         ],
+
+        // ── Re-run button ─────────────────────────────────────────────────
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: (_saving || _validating)
+                ? null
+                : () {
+                    setState(() => _validationResult = null);
+                    _autoValidate();
+                  },
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            label: const Text('Re-run Validation',
+                style: TextStyle(fontSize: 13)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF14FFEC),
+              side: BorderSide(
+                color: (_saving || _validating)
+                    ? Colors.white12
+                    : const Color(0xFF14FFEC).withValues(alpha: 0.4),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 11),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(9)),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -1561,12 +2047,16 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
 class _StepProgressBar extends StatelessWidget {
   final int currentStep;
   final int totalSteps;
+  final Set<int> completedSteps;
+  final Set<int> invalidSteps;
   /// Called when the user taps a step segment. Null = tapping is disabled.
   final void Function(int step)? onStepTap;
 
   const _StepProgressBar({
     required this.currentStep,
     required this.totalSteps,
+    required this.completedSteps,
+    required this.invalidSteps,
     this.onStepTap,
   });
 
@@ -1581,41 +2071,76 @@ class _StepProgressBar extends StatelessWidget {
       color: const Color(0xFF111827),
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: Column(children: [
-        // ── Segmented progress bar — tappable ────────────────────────────
+        // ── Segmented progress bar with dot indicators ────────────────────
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: List.generate(totalSteps, (i) {
-            final isDone = i < currentStep;
-            final isCurrent = i == currentStep;
-            final isAccessible = isDone || isCurrent;
+            final isCurrent  = i == currentStep;
+            final isSaved    = completedSteps.contains(i);
+            final isInvalid  = invalidSteps.contains(i);
+            // A step is accessible if it is saved, invalid (has been visited),
+            // or is the current step.
+            final isAccessible = isSaved || isInvalid || isCurrent;
 
-            // Each segment is a GestureDetector wrapping the colour bar.
-            // Only done/current segments respond to taps so the user can
-            // only jump to steps they have already been on (or the current one).
+            // Bar colour priority: current > invalid > saved > untouched
+            final Color barColor;
+            if (isCurrent) {
+              barColor = const Color(0xFF14FFEC);
+            } else if (isInvalid) {
+              barColor = Colors.orangeAccent.withValues(alpha: 0.8);
+            } else if (isSaved) {
+              barColor = const Color(0xFF14FFEC).withValues(alpha: 0.45);
+            } else {
+              barColor = Colors.white12;
+            }
+
+            // Dot indicator below the bar
+            Widget dot;
+            if (isCurrent) {
+              dot = const SizedBox(width: 4, height: 4);
+            } else if (isInvalid) {
+              dot = Container(
+                width: 5, height: 5,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.orangeAccent.withValues(alpha: 0.9),
+                ),
+              );
+            } else if (isSaved) {
+              dot = Container(
+                width: 5, height: 5,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF14FFEC).withValues(alpha: 0.6),
+                ),
+              );
+            } else {
+              dot = const SizedBox(width: 5, height: 5);
+            }
+
             return Expanded(
-              child: Row(children: [
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Expanded(
                   child: GestureDetector(
                     onTap: (onStepTap != null && isAccessible)
                         ? () => onStepTap!(i)
                         : null,
                     behavior: HitTestBehavior.opaque,
-                    child: Padding(
-                      // Extra vertical padding makes the tap target taller
-                      // without increasing the visual bar height.
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 280),
-                        height: isCurrent ? 4 : 3,
-                        decoration: BoxDecoration(
-                          color: isDone
-                              ? const Color(0xFF14FFEC).withValues(alpha: 0.55)
-                              : isCurrent
-                                  ? const Color(0xFF14FFEC)
-                                  : Colors.white12,
-                          borderRadius: BorderRadius.circular(3),
+                    child: Column(children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 280),
+                          height: isCurrent ? 4 : 3,
+                          decoration: BoxDecoration(
+                            color: barColor,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
                         ),
                       ),
-                    ),
+                      // Dot sits directly below the bar
+                      Center(child: dot),
+                    ]),
                   ),
                 ),
                 if (i < totalSteps - 1) const SizedBox(width: 2),
@@ -1648,7 +2173,138 @@ class _StepProgressBar extends StatelessWidget {
             ),
           ]),
         ]),
+
+        // ── Legend ───────────────────────────────────────────────────────
+        if (completedSteps.isNotEmpty || invalidSteps.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (completedSteps.isNotEmpty) ...[
+                  Container(width: 6, height: 6, decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFF14FFEC).withValues(alpha: 0.6),
+                  )),
+                  const SizedBox(width: 4),
+                  const Text('Saved', style: TextStyle(color: Colors.white24, fontSize: 9)),
+                  const SizedBox(width: 12),
+                ],
+                if (invalidSteps.isNotEmpty) ...[
+                  Container(width: 6, height: 6, decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.orangeAccent.withValues(alpha: 0.9),
+                  )),
+                  const SizedBox(width: 4),
+                  const Text('Needs attention', style: TextStyle(color: Colors.white24, fontSize: 9)),
+                ],
+              ],
+            ),
+          ),
       ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _IncompleteStepsStrip
+//
+// A compact, horizontally-scrollable strip of chips shown below the progress
+// bar whenever the editing user has steps that are not yet saved or have been
+// flagged as invalid by the backend validation.
+//
+// Each chip is tappable and jumps directly to the relevant step.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _IncompleteStepsStrip extends StatelessWidget {
+  final List<int> incompleteIndices;
+  final Set<int> invalidIndices;
+  final void Function(int step) onJump;
+
+  const _IncompleteStepsStrip({
+    required this.incompleteIndices,
+    required this.invalidIndices,
+    required this.onJump,
+  });
+
+  static const _stepNames = [
+    'Draft', 'Basic Info', 'Location', 'Contact', 'Attributes',
+    'Nested Data', 'Media', 'Booking', 'Categories', 'Validate', 'Submit',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFF0D1117),
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+      child: Row(
+        children: [
+          // Label
+          const Icon(Icons.warning_amber_rounded,
+              size: 13, color: Colors.orangeAccent),
+          const SizedBox(width: 6),
+          const Text(
+            'Incomplete:',
+            style: TextStyle(
+                color: Colors.orangeAccent,
+                fontSize: 11,
+                fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(width: 8),
+          // Scrollable chips
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: incompleteIndices.map((stepIdx) {
+                  final isInvalid = invalidIndices.contains(stepIdx);
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: GestureDetector(
+                      onTap: () => onJump(stepIdx),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: isInvalid
+                              ? Colors.orangeAccent.withValues(alpha: 0.12)
+                              : Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isInvalid
+                                ? Colors.orangeAccent.withValues(alpha: 0.45)
+                                : Colors.white24,
+                          ),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Text(
+                            _stepNames[stepIdx],
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isInvalid
+                                  ? Colors.orangeAccent
+                                  : Colors.white54,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            size: 9,
+                            color:
+                                isInvalid ? Colors.orangeAccent : Colors.white38,
+                          ),
+                        ]),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

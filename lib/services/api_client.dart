@@ -424,10 +424,18 @@ class ApiClient {
   }
 
   /// Use for: DELETE /api/cities/:id and any other protected deletes.
-  static Future<http.Response> authDelete(String endpoint) async {
+  /// An optional [body] may be supplied for endpoints that require a JSON
+  /// payload on DELETE (e.g. bulk-unlink operations). When omitted the
+  /// request is sent with no body, preserving backward-compatibility with
+  /// all existing call-sites.
+  static Future<http.Response> authDelete(
+    String endpoint, {
+    Map<String, dynamic>? body,
+  }) async {
     _apiLog.d('🗑️  ApiClient.authDelete ──► ${ApiEndpoints.url(endpoint)}');
+    if (body != null) _apiLog.d('   body: $body');
 
-    var response = await _doAuthDelete(endpoint);
+    var response = await _doAuthDelete(endpoint, body: body);
 
     if (response.statusCode == 401) {
       _apiLog.w(
@@ -439,7 +447,7 @@ class ApiClient {
       if (refreshed) {
         _apiLog.i(
             '🔄 ApiClient.authDelete: Refresh succeeded — retrying $endpoint');
-        response = await _doAuthDelete(endpoint);
+        response = await _doAuthDelete(endpoint, body: body);
 
         if (response.statusCode == 401) {
           _apiLog.e(
@@ -706,10 +714,19 @@ class ApiClient {
 
   /// Internal authenticated DELETE — no retry logic.
   /// Called by [authDelete] which owns the 401-recovery logic.
-  static Future<http.Response> _doAuthDelete(String endpoint) async {
+  static Future<http.Response> _doAuthDelete(
+    String endpoint, {
+    Map<String, dynamic>? body,
+  }) async {
     final uri     = Uri.parse(ApiEndpoints.url(endpoint));
     final headers = await _authHeaders;
-    return http.delete(uri, headers: headers).timeout(_timeout);
+    return http
+        .delete(
+          uri,
+          headers: headers,
+          body: body != null ? jsonEncode(body) : null,
+        )
+        .timeout(_timeout);
   }
 
   /// Clear the session and fire [onSessionExpired].

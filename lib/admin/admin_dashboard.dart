@@ -61,10 +61,13 @@ class _AdminDashboardState extends State<AdminDashboard>
   }
 
   Future<void> _loadStats() async {
+    debugPrint('📊 [Dashboard] Loading stats');
     try {
       final s = await _apiService.getDashboardStats();
+      debugPrint('✅ [Dashboard] Stats loaded — keys=${s.keys.toList()}');
       if (mounted) setState(() { _stats = s; _statsLoading = false; });
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('❌ [Dashboard] getDashboardStats failed: $e\n$st');
       if (mounted) setState(() => _statsLoading = false);
     }
   }

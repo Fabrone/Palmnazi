@@ -9,6 +9,15 @@ import 'package:palmnazi/models/place_model.dart';
 // NOTE: This service uses ApiClient.authPatch for all PATCH calls.
 // If that method does not yet exist in api_client.dart, add it alongside
 // authPut — identical implementation but with method: 'PATCH'.
+//
+// NOTE v2.0: unlinkPlaceCategories uses DELETE with a JSON body.
+// Ensure ApiClient.authDelete accepts an optional `body` parameter, e.g.:
+//
+//   static Future<http.Response> authDelete(String path,
+//       {Map<String, dynamic>? body}) async { ... }
+//
+// If authDelete doesn't support body yet, add it alongside the existing
+// authPut implementation (change method to 'DELETE' and include body encoding).
 // ─────────────────────────────────────────────────────────────────────────────
 
 final Logger _adminLog = Logger(
@@ -132,8 +141,13 @@ class AdminApiService {
       final data = body['data'];
       if (data is List) return data;
       // Some list responses wrap in {places:[...], pagination:{...}}
-      for (final key in ['places', 'categories', 'rooms', 'shows',
-          'performances', 'exhibitions', 'artifacts']) {
+      // NOTE: keep this list in sync with every list endpoint the backend exposes.
+      for (final key in [
+        'places', 'categories', 'rooms',
+        'shows', 'performances',
+        'exhibitions', 'artifacts',
+        'menuSections', 'menuItems',   // v2.0 — Dining endpoints
+      ]) {
         if (data is Map && data.containsKey(key)) {
           return data[key] as List;
         }
@@ -301,6 +315,12 @@ class AdminApiService {
   // ══════════════════════════════════════════════════════════════════════════
 
   /// Fetch places with optional filtering.
+  ///
+  /// [includeAttributes] — v2.0 opt-in flag.  When true the API adds
+  /// `attributes`, `contact`, `images`, `description`, `bookingSettings`,
+  /// and `searchKeywords` to every list item (heavier payload).
+  /// Omit (default false) for lean list screens; use [getPlaceById] for
+  /// full detail in the edit wizard.
   Future<List<PlaceModel>> getPlaces({
     String? cityId,
     String? categoryId,
@@ -308,10 +328,11 @@ class AdminApiService {
     String? search,
     String? taxonomy,
     bool? isBookable,
+    bool includeAttributes = false,   // v2.0 opt-in
     int page = 1,
     int limit = 20,
   }) async {
-    _adminLog.i('📍 [AdminApiService] GET places  cityId=$cityId  categoryId=$categoryId');
+    _adminLog.i('📍 [AdminApiService] GET places  cityId=$cityId  categoryId=$categoryId  includeAttributes=$includeAttributes');
     final params = <String, String>{};
     if (cityId != null) params['cityId'] = cityId;
     if (categoryId != null) params['categoryId'] = categoryId;
@@ -319,6 +340,7 @@ class AdminApiService {
     if (search != null && search.isNotEmpty) params['search'] = search;
     if (taxonomy != null) params['taxonomy'] = taxonomy;
     if (isBookable != null) params['isBookable'] = isBookable.toString();
+    if (includeAttributes) params['includeAttributes'] = 'true';
     params['page'] = page.toString();
     params['limit'] = limit.toString();
 
@@ -434,17 +456,46 @@ class AdminApiService {
   }
 
   /// STEP 9 — Link this place to one or more categories.
-  /// This is how the "same place in multiple channels" requirement is satisfied:
-  /// pass all applicable categoryIds in one call.
-  /// Example: [accommodationId, diningId, wellnessId]
+  ///
+  /// **v2.0 behaviour change — READ THIS.**
+  /// The API is now ADDITIVE by default: only the provided categoryIds are
+  /// linked; existing links not in the list are left untouched.
+  ///
+  /// Set [replaceMode] = true to use `?mode=replace` and replicate the old
+  /// v1.0 "replace all" behaviour.  You almost always want this when editing
+  /// an existing place so that removed categories are properly unlinked.
+  ///
+  /// For the initial creation wizard pass [replaceMode] = false (additive is
+  /// fine — there are no pre-existing links to worry about).
   Future<PlaceModel> linkPlaceCategories(
-      String id, List<String> categoryIds) async {
+      String id,
+      List<String> categoryIds, {
+      bool replaceMode = false,
+  }) async {
     _adminLog.i(
-        '🔗 [AdminApiService] PUT placeCategories  id=$id  categories=${categoryIds.length}');
-    final ep = _Ep.placeCategories(id);
+        '🔗 [AdminApiService] PUT placeCategories  id=$id  categories=${categoryIds.length}  replaceMode=$replaceMode');
+    final ep = replaceMode
+        ? '${_Ep.placeCategories(id)}?mode=replace'
+        : _Ep.placeCategories(id);
     final response =
         await ApiClient.authPut(ep, body: {'categoryIds': categoryIds});
     return PlaceModel.fromJson(_unwrapObject(response, 'PUT', ep));
+  }
+
+  /// Unlink specific categories from a place without touching other links.
+  ///
+  /// Uses `DELETE /api/places/:id/categories` — new in v2.0.
+  /// Returns the updated place after removal.
+  ///
+  /// Requires ApiClient.authDelete to accept an optional `body` parameter —
+  /// see the note at the top of this file.
+  Future<PlaceModel> unlinkPlaceCategories(
+      String id, List<String> categoryIds) async {
+    _adminLog.i(
+        '🔓 [AdminApiService] DELETE placeCategories  id=$id  categories=${categoryIds.length}');
+    final ep = _Ep.placeCategories(id);
+    final response = await ApiClient.authDelete(ep, body: {'categoryIds': categoryIds});
+    return PlaceModel.fromJson(_unwrapObject(response, 'DELETE', ep));
   }
 
   /// STEP 10 — Check if the place has all required fields for submission.

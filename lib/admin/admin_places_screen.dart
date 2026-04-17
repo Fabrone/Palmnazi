@@ -116,11 +116,13 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
   }
 
   Future<void> _loadAll() async {
+    debugPrint('🔄 [PlacesScreen] _loadAll — cityId=${_cityFilter?.id}  categoryId=${_categoryFilter?.id}  status=$_statusFilter');
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
+      debugPrint('   ↳ Firing 3 parallel requests: cities, categoryTree, places');
       final results = await Future.wait([
         widget.apiService.getCities(),
         widget.apiService.getCategoryTree(),
@@ -135,10 +137,12 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
       if (mounted) {
         final freshCities = results[0] as List<CityModel>;
         final freshCategories = results[1] as List<CategoryModel>;
+        final freshPlaces = results[2] as List<PlaceModel>;
+        debugPrint('✅ [PlacesScreen] _loadAll complete — cities=${freshCities.length}  categories=${freshCategories.length}  places=${freshPlaces.length}');
         setState(() {
           _cities = freshCities;
           _categories = freshCategories;
-          _places = results[2] as List<PlaceModel>;
+          _places = freshPlaces;
           // Reconcile filter objects by id so DropdownButton doesn't throw
           if (_cityFilter != null) {
             _cityFilter = freshCities
@@ -153,7 +157,8 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
           _loading = false;
         });
       }
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('❌ [PlacesScreen] _loadAll failed: $e\n$st');
       if (mounted) {
         setState(() {
           _error = e.toString();
@@ -164,6 +169,7 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
   }
 
   Future<void> _fetchPlaces() async {
+    debugPrint('🔄 [PlacesScreen] _fetchPlaces — cityId=${_cityFilter?.id}  categoryId=${_categoryFilter?.id}  status=$_statusFilter  search="$_search"');
     setState(() {
       _loading = true;
       _error = null;
@@ -176,13 +182,16 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
         search: _search.trim().isNotEmpty ? _search.trim() : null,
         limit: 50,
       );
+      debugPrint('✅ [PlacesScreen] _fetchPlaces — got ${list.length} place(s)');
       if (mounted) setState(() { _places = list; _loading = false; });
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('❌ [PlacesScreen] _fetchPlaces failed: $e\n$st');
       if (mounted) setState(() { _error = e.toString(); _loading = false; });
     }
   }
 
   Future<void> _delete(PlaceModel place) async {
+    debugPrint('🗑️ [PlacesScreen] Delete requested — placeId=${place.id}  name="${place.name}"  isActive=${place.isActive}');
     final confirmed = await adminConfirm(
       context,
       'Delete "${place.name}"?',
@@ -191,24 +200,61 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
           : 'This action cannot be undone.',
       confirmLabel: 'Delete',
     );
-    if (!confirmed) return;
+    if (!confirmed) {
+      debugPrint('   ↳ Delete cancelled by user for placeId=${place.id}');
+      return;
+    }
     try {
+      debugPrint('   ↳ Sending DELETE /api/places/${place.id}');
       await widget.apiService.deletePlaceById(place.id);
+      debugPrint('✅ [PlacesScreen] Deleted place "${place.name}" (${place.id})');
       _snack('Deleted ${place.name}', isError: false);
       _fetchPlaces();
     } on AdminApiException catch (e) {
+      debugPrint('❌ [PlacesScreen] deletePlaceById AdminApiException: ${e.statusCode} ${e.message}');
       _snack(e.message, isError: true);
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('💥 [PlacesScreen] deletePlaceById unexpected error: $e\n$st');
       _snack('Delete failed: $e', isError: true);
     }
   }
 
+  // ── Open wizard ────────────────────────────────────────────────────────────
+  //
+  // FIX: The list endpoint (GET /api/places) returns lightweight PlaceModel
+  // objects that omit the `attributes` JSONB blob for performance.  If we pass
+  // that thin model directly to the wizard, _preloadFromExisting finds
+  // attributes={} and skips restoring the Step-5 controllers — making the
+  // Attributes step appear blank even though data was correctly saved.
+  //
+  // Solution: in edit mode, always fetch the full place detail via
+  // GET /api/places/:id before opening the wizard.  That endpoint returns the
+  // complete model including the attributes blob, so every field is pre-filled.
   void _openWizard({PlaceModel? existing}) async {
+    debugPrint('🧙 [PlacesScreen] _openWizard — mode=${existing == null ? "CREATE" : "EDIT(${existing.id})"}');
     if (_cities.isEmpty || _categories.isEmpty) {
+      debugPrint('   ↳ Cities/categories not loaded yet — running _loadAll first');
       _snack('Loading data…', isError: false);
       await _loadAll();
     }
     if (!mounted) return;
+
+    // In edit mode fetch the full place (includes attributes) before opening.
+    PlaceModel? fullPlace = existing;
+    if (existing != null) {
+      debugPrint('🔍 [PlacesScreen] Fetching full place detail — id=${existing.id}');
+      try {
+        fullPlace = await widget.apiService.getPlaceById(existing.id);
+        debugPrint('✅ [PlacesScreen] Full place loaded — attributeKeys=${fullPlace.attributes.keys.toList()}');
+      } catch (e, st) {
+        // Non-fatal: wizard still opens with whatever data we have.
+        debugPrint('⚠️ [PlacesScreen] Could not fetch full place detail, falling back to list model: $e\n$st');
+        fullPlace = existing;
+      }
+      if (!mounted) return;
+    }
+
+    debugPrint('   ↳ Pushing AdminPlaceWizardScreen — attributesPresent=${fullPlace?.attributes.isNotEmpty}');
     final refreshed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         fullscreenDialog: true,
@@ -216,10 +262,11 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
           apiService: widget.apiService,
           cities: _cities,
           categories: _categories,
-          existingPlace: existing,
+          existingPlace: fullPlace,
         ),
       ),
     );
+    debugPrint('   ↳ Wizard returned — refreshed=$refreshed');
     if (refreshed != null) _fetchPlaces();
   }
 
