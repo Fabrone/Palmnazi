@@ -1211,6 +1211,14 @@ class _CityFormDialogState extends State<_CityFormDialog> {
 
     setState(() => _saving = true);
 
+    // On CREATE omit coverImage when empty so the backend does not receive
+    // an empty-string URL it may reject with a validation error.
+    // On EDIT always include it (even when empty) so the admin can
+    // intentionally clear an existing image — the backend's partial-update
+    // PUT only touches fields that are sent, meaning omitting the key on
+    // EDIT would leave an old image permanently stuck with no way to remove it.
+    final isEdit = widget.existing != null;
+
     final payload = <String, dynamic>{
       'name': _name.text.trim(),
       'country': _country.text.trim(),
@@ -1218,7 +1226,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
       'slug': _slug.text.trim(),
       'latitude': lat,
       'longitude': lng,
-      if (_coverImage.text.trim().isNotEmpty)
+      if (isEdit || _coverImage.text.trim().isNotEmpty)
         'coverImage': _coverImage.text.trim(),
       'description': _description.text.trim(),
       'isActive': _isActive,

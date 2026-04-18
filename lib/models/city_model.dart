@@ -68,7 +68,12 @@ class CityModel {
     Map<String, int>? counts;
     final raw = json['categoryCounts'];
     if (raw is Map) {
-      counts = raw.map((k, v) => MapEntry(k.toString(), (v as num).toInt()));
+      // Guard against null or non-numeric values from a malformed response.
+      // The API guarantees integers here, but a defensive cast avoids a
+      // hard-crash if the backend ever sends unexpected data for a key.
+      counts = raw.map(
+        (k, v) => MapEntry(k.toString(), v is num ? v.toInt() : 0),
+      );
     }
 
     return CityModel(
@@ -94,8 +99,34 @@ class CityModel {
 
   // ── Serialization (POST / PUT request body) ────────────────────────────────
 
-  /// Returns only the fields the backend accepts for CREATE.
+  /// Returns the fields the backend accepts for CREATE (POST /api/cities).
+  ///
+  /// [coverImage] is omitted when empty so the backend does not receive an
+  /// empty-string URL that may fail URL validation on creation.
   Map<String, dynamic> toCreateJson() => {
+        'name':        name,
+        'country':     country,
+        'region':      region,
+        'slug':        slug,
+        'latitude':    latitude,
+        'longitude':   longitude,
+        if (coverImage.isNotEmpty) 'coverImage': coverImage,
+        'description': description,
+        'isActive':    isActive,
+      };
+
+  /// Returns the writable fields for a partial UPDATE (PUT /api/cities/:id).
+  ///
+  /// Every scalar field is always included, even when empty/zero, so that an
+  /// admin can intentionally clear a value (e.g. remove a cover image or
+  /// description).  The backend treats missing fields as "leave unchanged", so
+  /// omitting a field makes it impossible to clear — which is why all fields
+  /// must be sent unconditionally here.
+  ///
+  /// IMPORTANT: [latitude] and [longitude] must NOT be filtered by `!= 0.0`.
+  /// Zero is a perfectly valid coordinate (Gulf of Guinea / prime meridian).
+  /// Using 0.0 as a sentinel would silently drop real coordinates on update.
+  Map<String, dynamic> toUpdateJson() => {
         'name':        name,
         'country':     country,
         'region':      region,
@@ -106,21 +137,6 @@ class CityModel {
         'description': description,
         'isActive':    isActive,
       };
-
-  /// Returns only non-null fields for a partial UPDATE.
-  Map<String, dynamic> toUpdateJson() {
-    final map = <String, dynamic>{};
-    if (name.isNotEmpty)        map['name']        = name;
-    if (country.isNotEmpty)     map['country']     = country;
-    if (region.isNotEmpty)      map['region']      = region;
-    if (slug.isNotEmpty)        map['slug']        = slug;
-    if (latitude != 0.0)        map['latitude']    = latitude;
-    if (longitude != 0.0)       map['longitude']   = longitude;
-    if (coverImage.isNotEmpty)  map['coverImage']  = coverImage;
-    if (description.isNotEmpty) map['description'] = description;
-    map['isActive'] = isActive;
-    return map;
-  }
 
   // ── Copy-with for in-memory edits ─────────────────────────────────────────
 

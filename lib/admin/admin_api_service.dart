@@ -80,8 +80,8 @@ abstract class _Ep {
   static String placeArtifacts(String placeId) =>
       '/api/places/$placeId/artifacts';
 
-  // Dashboard
-  static const String adminStats = '/api/admin/stats';
+  // Dashboard  — stats API lives at /api/stats, not /api/admin/stats
+  static const String adminStats = '/api/stats';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -167,10 +167,20 @@ class AdminApiService {
 
   Never _throwFromBody(Map<String, dynamic> body, int statusCode,
       String method, String endpoint) {
+    // The backend returns two distinct error shapes:
+    //   • { status: "error", message: "..." }            — general errors (4xx/5xx)
+    //   • { status: "error", errors: { field: [...] } }  — field-validation (400)
+    //
+    // In the validation case there is NO "message" key in the body.
+    // Extract the errors first so they can inform the fallback message string,
+    // preventing the unhelpful "Request failed (400)" from showing in the
+    // snackbar when the form dialog's _fieldErrors map somehow ends up empty.
+    final errors = body['errors'] as Map<String, dynamic>?;
     final message = body['message'] as String? ??
         body['error'] as String? ??
-        'Request failed ($statusCode)';
-    final errors = body['errors'] as Map<String, dynamic>?;
+        (errors != null
+            ? 'Validation failed — check the highlighted fields'
+            : 'Request failed ($statusCode)');
     _adminLog.e(
       '❌ [AdminApiService] $method $endpoint → $statusCode\n'
       '   message: $message'
@@ -661,11 +671,51 @@ class AdminApiService {
 
   // ──────────────────────────────────────────────────────────────────────────
   // DASHBOARD STATS
+  //
+  // The stats API lives at GET /api/stats and uses a ?keys= query param to
+  // select exactly which resolvers run.  The response shape is:
+  //   { stats: [{ key, label, value, group, meta? }, ...], meta: {...} }
+  // There is no "data" envelope, so _unwrapObject must NOT be used here.
+  //
+  // Keys used for the home dashboard:
+  //   cities_total  — total resort cities
+  //   places_total  — total places
+  //   places_active — active / published places
+  //   places_pending — pending / draft places
+  //   users_total   — registered users (replaces the old totalCategories key
+  //                   which has no equivalent in the stats API)
+  //
+  // Returns a Map<String, dynamic> keyed by stat key, e.g.:
+  //   { 'cities_total': 12, 'places_total': 340, ... }
   // ──────────────────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> getDashboardStats() async {
     _adminLog.i('📊 [AdminApiService] GET adminStats');
-    final response = await ApiClient.authGet(_Ep.adminStats);
-    return _unwrapObject(response, 'GET', _Ep.adminStats);
+    const requestedKeys =
+        'cities_total,places_total,places_active,places_pending,users_total';
+    final response = await ApiClient.authGetWithParams(
+      _Ep.adminStats,
+      queryParams: {'keys': requestedKeys},
+    );
+    final body = ApiClient.parseBody(response);
+    _adminLog.d('   ↳ GET ${_Ep.adminStats}  →  ${response.statusCode}');
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final statsList = body['stats'];
+      if (statsList is List) {
+        // Flatten the array into { key: value } so the dashboard can do
+        // stats['cities_total'] rather than iterating the list each time.
+        return {
+          for (final item in statsList)
+            if (item is Map<String, dynamic> && item['key'] is String)
+              item['key'] as String: item['value'],
+        };
+      }
+      _adminLog.w(
+          '⚠️ [AdminApiService] getDashboardStats: '
+          '"stats" field missing or not a list — body: $body');
+      return {};
+    }
+    _throwFromBody(body, response.statusCode, 'GET', _Ep.adminStats);
   }
 }
