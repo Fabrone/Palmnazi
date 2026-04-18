@@ -776,7 +776,9 @@ class _CategoryFormDialog extends StatefulWidget {
 class _CategoryFormDialogState extends State<_CategoryFormDialog> {
   final _formKey = GlobalKey<FormState>();
   bool _saving = false;
-  Map<String, dynamic>? _apiErrors;
+  // Normalized flat map of field → first error message string.
+  // Populated from both POST (Zod _errors) and PUT (fieldErrors) shapes.
+  Map<String, String>? _apiErrors;
 
   late TextEditingController _name;
   late TextEditingController _slug;
@@ -843,7 +845,12 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
     } on AdminApiException catch (e) {
       if (mounted) {
         setState(() {
-          _apiErrors = e.errors;
+          // Normalize the two different 400 error shapes the backend returns:
+          //   POST shape: { "_errors":[], "name":{ "_errors":["Required"] } }
+          //   PUT shape:  { "fieldErrors":{ "slug":["msg"] }, "formErrors":[] }
+          // Storing e.errors raw and calling .toString() on values produces
+          // "{_errors: [Required]}" — the Dart map repr, not the actual message.
+          _apiErrors = e.errors != null ? _normalizeApiErrors(e.errors!) : null;
           _saving = false;
         });
         if (e.message.isNotEmpty) {
@@ -857,6 +864,47 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
     } catch (_) {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  /// POST 400 (Zod): { "_errors": [], "name": { "_errors": ["Required"] } }
+  /// PUT  400 (flat): { "fieldErrors": { "slug": ["…"] }, "formErrors": [] }
+  Map<String, String> _normalizeApiErrors(Map<String, dynamic> raw) {
+    final result = <String, String>{};
+
+    raw.forEach((key, value) {
+      // Skip Zod root _errors and PUT formErrors — these are non-field entries.
+      if (key == '_errors' || key == 'formErrors') return;
+
+      if (key == 'fieldErrors' && value is Map) {
+        // PUT 400: unpack the nested fieldErrors map.
+        value.forEach((field, msgs) {
+          if (msgs is List && msgs.isNotEmpty) {
+            result[field.toString()] = msgs.first.toString();
+          } else if (msgs is String && msgs.isNotEmpty) {
+            result[field.toString()] = msgs;
+          }
+        });
+        return;
+      }
+
+      // POST 400 Zod: value is { "_errors": ["msg"] }
+      if (value is Map) {
+        final errs = value['_errors'];
+        if (errs is List && errs.isNotEmpty) {
+          result[key] = errs.first.toString();
+        }
+        return;
+      }
+
+      // Flat string or list at root level (defensive catch-all).
+      if (value is List && value.isNotEmpty) {
+        result[key] = value.first.toString();
+      } else if (value is String && value.isNotEmpty) {
+        result[key] = value;
+      }
+    });
+
+    return result;
   }
 
   @override
@@ -928,7 +976,7 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
               label: 'Category Name',
               hint: 'e.g. Accommodation',
               required: true,
-              apiError: _apiErrors?['name']?.toString(),
+              apiError: _apiErrors?['name'],
             ),
 
             AdminField(
@@ -937,7 +985,7 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
               hint: 'e.g. accommodation',
               required: true,
               helperText: 'Auto-generated from name. Lowercase, hyphens only.',
-              apiError: _apiErrors?['slug']?.toString(),
+              apiError: _apiErrors?['slug'],
               onChanged: (_) => _slugManuallyEdited = true,
             ),
 

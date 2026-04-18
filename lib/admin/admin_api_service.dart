@@ -99,6 +99,8 @@ class AdminApiException implements Exception {
   });
 
   String? fieldError(String field) {
+    // ── Format 1: POST 400 — Zod-style nested errors
+    // Backend shape: { "_errors": [], "name": { "_errors": ["Required"] } }
     final v = errors?[field];
     if (v is List && v.isNotEmpty) return v.first.toString();
     if (v is Map) {
@@ -106,6 +108,19 @@ class AdminApiException implements Exception {
       if (errs is List && errs.isNotEmpty) return errs.first.toString();
     }
     if (v is String) return v;
+
+    // ── Format 2: PUT 400 — flat fieldErrors wrapper
+    // Backend shape: { "fieldErrors": { "slug": ["msg"] }, "formErrors": [] }
+    // Field errors are nested one level deeper under "fieldErrors", not at the
+    // root of `errors`. Without this fallback every PUT 400 validation error
+    // is silently swallowed and never shown in the form.
+    final fieldErrors = errors?['fieldErrors'];
+    if (fieldErrors is Map) {
+      final fe = fieldErrors[field];
+      if (fe is List && fe.isNotEmpty) return fe.first.toString();
+      if (fe is String) return fe;
+    }
+
     return null;
   }
 
