@@ -132,6 +132,7 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
           status: _statusFilter,
           search: _search.trim().isNotEmpty ? _search.trim() : null,
           limit: 50,
+          includeAttributes: true,
         ),
       ]);
       if (mounted) {
@@ -181,6 +182,7 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
         status: _statusFilter,
         search: _search.trim().isNotEmpty ? _search.trim() : null,
         limit: 50,
+        includeAttributes: true,
       );
       debugPrint('✅ [PlacesScreen] _fetchPlaces — got ${list.length} place(s)');
       if (mounted) setState(() { _places = list; _loading = false; });

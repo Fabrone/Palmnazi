@@ -76,8 +76,17 @@ class PlaceModel {
   bool get hasCategories => categoryLinks.isNotEmpty;
   bool get hasDescription => description != null && description!.isNotEmpty;
 
-  // Returns 0-100 progress of how complete the place setup is
+  // Returns 0-100 progress of how complete the place setup is.
+  //
+  // SHORT-CIRCUIT: The backend's submit endpoint runs full validation before
+  // transitioning a place to ACTIVE — it cannot become ACTIVE with any required
+  // field missing.  The list endpoint (GET /api/places) returns lean payloads
+  // that omit description, contact, and attributes, so scoring those fields on
+  // a lean model always shows < 100% even for a fully complete place.
+  // Rather than requiring includeAttributes=true for every list call, we treat
+  // ACTIVE status as the authoritative signal that all steps are done.
   int get completionPercent {
+    if (isActive) return 100;
     int completed = 0;
     if (hasDescription) completed += 20;
     if (hasLocation) completed += 15;
