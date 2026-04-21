@@ -2,68 +2,66 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:palmnazi/models/city_model.dart';
+import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/screens/resort_city_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/admin/admin_dashboard.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// landing_page.dart
+// landing_page.dart  (v2)
 //
-// Public home screen. Live data from:
-//   GET /api/cities?isActive=true   → resort city cards
-//   GET /api/blog?limit=6           → blog / travel inspiration
+// Public home screen.  Live data from:
+//   GET /api/cities?isActive=true                → resort city cards
+//   GET /api/blog?limit=6                        → blog / travel inspiration
+//   GET /api/categories?tree=true&isActive=true  → nav categories overlay
+//   GET /api/cities?search=q                     → search: cities
+//   GET /api/places?search=q&status=ACTIVE        → search: places
+//   GET /api/categories?search=q                 → search: categories
 //
-// NAVIGATION
-//   City card → ResortCityScreen(city: CityModel)
-//   ⚠  ResortCityScreen must have its constructor updated from
-//      `ResortCityItem city` → `CityModel city` before this compiles.
-//      That update is done when resort_city_screen.dart is migrated.
+// KEY CHANGES FROM v1
+//   • Hero background is now assets/images/homepage.jpg with a dark overlay
+//     instead of a pure gradient.  The gradient tokens are kept for fallback
+//     and for non-hero sections.
+//   • Search panel removed from hero.  Replaced by a compact floating Search
+//     button that opens a full-featured search dialog (City / Place / Category).
+//   • Stats row moved to its own section below the Travel Inspiration grid.
+//   • "Destinations" nav link scrolls to the cities section.
+//   • "Blog" nav link scrolls to the blog section.
+//   • "Categories" nav link opens a full-screen categories overlay that lists
+//     ALL system categories from the backend (different from the city-specific
+//     CategoryScreen reached via a city card).
 //
 // RESPONSIVE BREAKPOINTS
-//   mobile   <  600 dp  → 1-col layout, stacked search inputs
-//   tablet   <  900 dp  → 2-col cities, 2-row search
-//   desktop  ≥  900 dp  → 3-col cities, single-row inline search bar
-//
-// ANIMATIONS
-//   • Hero headline  → SlideTransition + FadeTransition on load
-//   • City cards     → staggered FadeTransition after data loads
-//   • Hover (web/desktop) → subtle scale lift on CityCard and BlogCard
+//   mobile   <  600 dp
+//   tablet   <  900 dp
+//   desktop  ≥  900 dp
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Design tokens
+// Design tokens  (unchanged from v1 — kept in one place)
 // ─────────────────────────────────────────────────────────────────────────────
 abstract final class RC {
-  // ── Backgrounds ─────────────────────────────────────────────────────────
-  static const Color navy      = Color(0xFF010C18); // deepest page bg
-  static const Color deepBlue  = Color(0xFF071829); // section / card bg
-  static const Color surface   = Color(0xFF0B2135); // input / elevated surface
-  static const Color surfaceHi = Color(0xFF0F2840); // hover surface
-
-  // ── Primary accent — teal/aqua ───────────────────────────────────────────
-  static const Color teal      = Color(0xFF00D4F5); // primary CTA, focus
-  static const Color tealMid   = Color(0xFF0097B2); // mid gradient stop
-  static const Color tealDark  = Color(0xFF006580); // dark gradient stop
-
-  // ── Secondary accents ───────────────────────────────────────────────────
-  static const Color gold      = Color(0xFFF5A623); // blog, ratings, stars
-  static const Color coral     = Color(0xFFFF6B6B); // secondary CTA / tags
-  static const Color emerald   = Color(0xFF00C98A); // open/active badge
-
-  // ── Text ────────────────────────────────────────────────────────────────
-  static const Color textPri  = Color(0xFFFFFFFF);
-  static const Color textSec  = Color(0xFFAFC6D8);
+  static const Color navy = Color(0xFF010C18);
+  static const Color deepBlue = Color(0xFF071829);
+  static const Color surface = Color(0xFF0B2135);
+  static const Color surfaceHi = Color(0xFF0F2840);
+  static const Color teal = Color(0xFF00D4F5);
+  static const Color tealMid = Color(0xFF0097B2);
+  static const Color tealDark = Color(0xFF006580);
+  static const Color gold = Color(0xFFF5A623);
+  static const Color coral = Color(0xFFFF6B6B);
+  static const Color emerald = Color(0xFF00C98A);
+  static const Color textPri = Color(0xFFFFFFFF);
+  static const Color textSec = Color(0xFFAFC6D8);
   static const Color textMute = Color(0xFF4E6A7A);
 
-  // ── Gradients (helpers) ─────────────────────────────────────────────────
-  static const LinearGradient tealGrad = LinearGradient(
-    colors: [teal, tealDark],
-  );
+  static const LinearGradient tealGrad =
+      LinearGradient(colors: [teal, tealDark]);
   static const LinearGradient heroGrad = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: [Color(0xFF010C18), Color(0xFF071829), Color(0xFF0A2030)],
-    stops: [0.0, 0.55, 1.0],
+    colors: [Color(0xCC010C18), Color(0xBB071829), Color(0xDD0A2030)],
+    stops: [0.0, 0.45, 1.0],
   );
 }
 
@@ -96,17 +94,19 @@ class BlogPost {
   });
 
   factory BlogPost.fromJson(Map<String, dynamic> j) => BlogPost(
-        id:                  j['id']    as String? ?? '',
-        title:               j['title'] as String? ?? '',
-        slug:                j['slug']  as String? ?? '',
-        excerpt:             j['excerpt'] as String? ?? '',
-        featuredImage:       j['featuredImage'] as String?,
-        categories:          (j['categories'] as List<dynamic>?)
-                                 ?.map((c) => c.toString()).toList() ?? [],
-        readingTimeMinutes:  j['readingTimeMinutes'] as int?,
-        views:               (j['stats'] as Map<String, dynamic>?)?['views'] as int?,
-        author:              j['author'] as Map<String, dynamic>?,
-        city:                j['city']   as Map<String, dynamic>?,
+        id: j['id'] as String? ?? '',
+        title: j['title'] as String? ?? '',
+        slug: j['slug'] as String? ?? '',
+        excerpt: j['excerpt'] as String? ?? '',
+        featuredImage: j['featuredImage'] as String?,
+        categories: (j['categories'] as List<dynamic>?)
+                ?.map((c) => c.toString())
+                .toList() ??
+            [],
+        readingTimeMinutes: j['readingTimeMinutes'] as int?,
+        views: (j['stats'] as Map<String, dynamic>?)?['views'] as int?,
+        author: j['author'] as Map<String, dynamic>?,
+        city: j['city'] as Map<String, dynamic>?,
       );
 
   String get authorName {
@@ -115,7 +115,7 @@ class BlogPost {
     final profile = a['profile'] as Map<String, dynamic>?;
     final src = profile ?? a;
     final fn = src['firstName'] as String? ?? '';
-    final ln = src['lastName']  as String? ?? '';
+    final ln = src['lastName'] as String? ?? '';
     final full = '$fn $ln'.trim();
     return full.isNotEmpty ? full : 'Staff';
   }
@@ -124,13 +124,38 @@ class BlogPost {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Public API helpers  (no auth headers needed for public reads)
+// Search result model  (unified across cities / places / categories)
+// ─────────────────────────────────────────────────────────────────────────────
+enum _SearchType { city, place, category }
+
+class _SearchResult {
+  final String id;
+  final String name;
+  final String? subtitle;
+  final String? imageUrl;
+  final _SearchType type;
+  final dynamic raw; // CityModel, CategoryModel, or raw map for places
+
+  const _SearchResult({
+    required this.id,
+    required this.name,
+    this.subtitle,
+    this.imageUrl,
+    required this.type,
+    this.raw,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public API helpers
 // ─────────────────────────────────────────────────────────────────────────────
 class _LandingApi {
   static const _timeout = Duration(seconds: 15);
 
+  // ── Cities ─────────────────────────────────────────────────────────────────
   static Future<List<CityModel>> fetchCities() async {
-    final uri = Uri.parse(ApiEndpoints.url('/api/cities?isActive=true&limit=50'));
+    final uri =
+        Uri.parse(ApiEndpoints.url('/api/cities?isActive=true&limit=50'));
     final resp = await http.get(uri).timeout(_timeout);
     if (resp.statusCode != 200) return [];
     final body = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -150,6 +175,7 @@ class _LandingApi {
         .toList();
   }
 
+  // ── Blog ───────────────────────────────────────────────────────────────────
   static Future<List<BlogPost>> fetchBlogPosts({int limit = 6}) async {
     final uri = Uri.parse(ApiEndpoints.url('/api/blog?limit=$limit'));
     final resp = await http.get(uri).timeout(_timeout);
@@ -160,6 +186,104 @@ class _LandingApi {
         .whereType<Map<String, dynamic>>()
         .map(BlogPost.fromJson)
         .toList();
+  }
+
+  // ── All categories (tree) ──────────────────────────────────────────────────
+  static Future<List<CategoryModel>> fetchAllCategories() async {
+    final uri =
+        Uri.parse(ApiEndpoints.url('/api/categories?tree=true&isActive=true'));
+    final resp = await http.get(uri).timeout(_timeout);
+    if (resp.statusCode != 200) return [];
+    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    final list = body['data'] as List<dynamic>? ??
+        body['categories'] as List<dynamic>? ??
+        [];
+    return list
+        .whereType<Map<String, dynamic>>()
+        .map(CategoryModel.fromJson)
+        .toList();
+  }
+
+  // ── Search ─────────────────────────────────────────────────────────────────
+  static Future<List<_SearchResult>> search(String q, _SearchType type) async {
+    final enc = Uri.encodeQueryComponent(q.trim());
+    switch (type) {
+      case _SearchType.city:
+        final uri = Uri.parse(
+            ApiEndpoints.url('/api/cities?search=$enc&isActive=true&limit=20'));
+        final resp = await http.get(uri).timeout(_timeout);
+        if (resp.statusCode != 200) return [];
+        final body = jsonDecode(resp.body) as Map<String, dynamic>;
+        final data = body['data'];
+        final List<dynamic> list;
+        if (data is List) {
+          list = data;
+        } else if (data is Map) {
+          list = (data['cities'] ?? data['data'] ?? []) as List<dynamic>;
+        } else {
+          list = [];
+        }
+        return list
+            .whereType<Map<String, dynamic>>()
+            .map(CityModel.fromJson)
+            .where((c) => c.isActive)
+            .map((c) => _SearchResult(
+                  id: c.id,
+                  name: c.name,
+                  subtitle: c.country.isNotEmpty
+                      ? '${c.region.isNotEmpty ? "${c.region}, " : ""}${c.country}'
+                      : null,
+                  imageUrl: c.coverImage.isNotEmpty ? c.coverImage : null,
+                  type: _SearchType.city,
+                  raw: c,
+                ))
+            .toList();
+
+      case _SearchType.place:
+        final uri = Uri.parse(
+            ApiEndpoints.url('/api/places?search=$enc&status=ACTIVE&limit=20'));
+        final resp = await http.get(uri).timeout(_timeout);
+        if (resp.statusCode != 200) return [];
+        final body = jsonDecode(resp.body) as Map<String, dynamic>;
+        final places = (body['data'] as List<dynamic>?) ??
+            (body['places'] as List<dynamic>?) ??
+            [];
+        return places
+            .whereType<Map<String, dynamic>>()
+            .map((p) => _SearchResult(
+                  id: p['id'] as String? ?? '',
+                  name: p['name'] as String? ?? '',
+                  subtitle:
+                      (p['city'] as Map<String, dynamic>?)?['name'] as String?,
+                  imageUrl: (p['images'] as List<dynamic>?)?.isNotEmpty == true
+                      ? (p['images'] as List<dynamic>).first as String?
+                      : null,
+                  type: _SearchType.place,
+                  raw: p,
+                ))
+            .toList();
+
+      case _SearchType.category:
+        final uri = Uri.parse(ApiEndpoints.url(
+            '/api/categories?search=$enc&isActive=true&limit=20'));
+        final resp = await http.get(uri).timeout(_timeout);
+        if (resp.statusCode != 200) return [];
+        final body = jsonDecode(resp.body) as Map<String, dynamic>;
+        final list = (body['data'] as List<dynamic>?) ??
+            (body['categories'] as List<dynamic>?) ??
+            [];
+        return list
+            .whereType<Map<String, dynamic>>()
+            .map(CategoryModel.fromJson)
+            .map((cat) => _SearchResult(
+                  id: cat.id,
+                  name: cat.name,
+                  subtitle: cat.description,
+                  type: _SearchType.category,
+                  raw: cat,
+                ))
+            .toList();
+    }
   }
 }
 
@@ -175,34 +299,31 @@ class LandingPage extends StatefulWidget {
 
 class _LandingPageState extends State<LandingPage>
     with TickerProviderStateMixin {
-
   // ── Data ──────────────────────────────────────────────────────────────────
-  List<CityModel> _cities     = [];
-  List<BlogPost>  _blogPosts  = [];
+  List<CityModel> _cities = [];
+  List<BlogPost> _blogPosts = [];
   bool _citiesLoading = true;
-  bool _blogLoading   = true;
+  bool _blogLoading = true;
   String? _citiesError;
 
   // ── Scroll ────────────────────────────────────────────────────────────────
-  final _scrollCtrl  = ScrollController();
+  final _scrollCtrl = ScrollController();
   double _scrollOffset = 0;
+
+  // Scroll-to section keys
+  final _citiesKey = GlobalKey();
+  final _blogKey = GlobalKey();
 
   // ── Hero animation ────────────────────────────────────────────────────────
   late AnimationController _heroCtrl;
-  late Animation<double>   _heroFade;
-  late Animation<Offset>   _heroSlide;
+  late Animation<double> _heroFade;
+  late Animation<Offset> _heroSlide;
 
-  // ── Section reveal (cities / blog) ───────────────────────────────────────
+  // ── Section reveal ────────────────────────────────────────────────────────
   late AnimationController _revealCtrl;
-  late Animation<double>   _revealFade;
+  late Animation<double> _revealFade;
 
-  // ── Search state ──────────────────────────────────────────────────────────
-  final _searchCtrl = TextEditingController();
-  DateTime? _checkIn;
-  DateTime? _checkOut;
-  int _adults   = 2;
-  int _children = 0;
-
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
@@ -210,12 +331,14 @@ class _LandingPageState extends State<LandingPage>
       if (mounted) setState(() => _scrollOffset = _scrollCtrl.offset);
     });
 
-    _heroCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100));
-    _heroFade  = CurvedAnimation(parent: _heroCtrl, curve: Curves.easeOut);
+    _heroCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1100));
+    _heroFade = CurvedAnimation(parent: _heroCtrl, curve: Curves.easeOut);
     _heroSlide = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
         .animate(CurvedAnimation(parent: _heroCtrl, curve: Curves.easeOut));
 
-    _revealCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
+    _revealCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 800));
     _revealFade = CurvedAnimation(parent: _revealCtrl, curve: Curves.easeIn);
 
     _heroCtrl.forward();
@@ -229,82 +352,49 @@ class _LandingPageState extends State<LandingPage>
 
   Future<void> _loadCities() async {
     if (!mounted) return;
-    setState(() { _citiesLoading = true; _citiesError = null; });
+    setState(() {
+      _citiesLoading = true;
+      _citiesError = null;
+    });
     try {
       final cities = await _LandingApi.fetchCities();
       if (mounted) {
-        setState(() { _cities = cities; _citiesLoading = false; });
+        setState(() {
+          _cities = cities;
+          _citiesLoading = false;
+        });
         _revealCtrl.forward(from: 0);
       }
     } catch (e) {
-      if (mounted) setState(() { _citiesError = e.toString(); _citiesLoading = false; });
+      if (mounted) {
+        setState(() {
+          _citiesError = e.toString();
+          _citiesLoading = false;
+        });
+      }
     }
   }
 
   Future<void> _loadBlog() async {
     try {
       final posts = await _LandingApi.fetchBlogPosts();
-      if (mounted) setState(() { _blogPosts = posts; _blogLoading = false; });
+      if (mounted) {
+        setState(() {
+          _blogPosts = posts;
+          _blogLoading = false;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _blogLoading = false);
     }
   }
 
-  Future<void> _pickDate(bool isCheckIn) async {
-    final now   = DateTime.now();
-    final first = isCheckIn ? now : (_checkIn ?? now);
-    final initial = isCheckIn
-        ? (_checkIn ?? now)
-        : (_checkOut ?? first.add(const Duration(days: 1)));
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: first,
-      lastDate: now.add(const Duration(days: 730)),
-      builder: (ctx, child) => Theme(
-        data: ThemeData.dark().copyWith(
-          colorScheme: const ColorScheme.dark(
-            primary: RC.teal,
-            onPrimary: Colors.black,
-            surface: RC.deepBlue,
-            onSurface: Colors.white,
-          ),
-          dialogTheme: const DialogThemeData(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(16)),
-            ),
-          ),
-        ),
-        child: child!,
-      ),
-    );
-    if (picked == null || !mounted) return;
-    setState(() {
-      if (isCheckIn) {
-        _checkIn = picked;
-        if (_checkOut != null && !_checkOut!.isAfter(picked)) _checkOut = null;
-      } else {
-        _checkOut = picked;
-      }
-    });
-  }
-
-  void _doSearch() {
-    // ToDO: Navigate to a dedicated search-results screen when built.
-    // The screen will call GET /api/places with:
-    //   search=_searchCtrl.text  (place name / keyword)
-    //   checkIn, checkOut, adults, children (map to your booking model)
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Searching: "${_searchCtrl.text.isEmpty ? "All places" : _searchCtrl.text}" '
-          '· $_adults adult${_adults > 1 ? "s" : ""}, $_children child${_children != 1 ? "ren" : ""}',
-        ),
-        backgroundColor: RC.tealDark,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
+  // ── Navigation helpers ───────────────────────────────────────────────────
+  void _scrollToKey(GlobalKey key) {
+    final ctx = key.currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(ctx,
+        duration: const Duration(milliseconds: 550), curve: Curves.easeInOut);
   }
 
   void _goToCity(CityModel city) {
@@ -312,50 +402,70 @@ class _LandingPageState extends State<LandingPage>
       context,
       PageRouteBuilder(
         pageBuilder: (_, anim, __) => ResortCityScreen(city: city),
-        transitionsBuilder: (_, anim, __, child) => FadeTransition(
-          opacity: anim,
-          child: child,
-        ),
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
         transitionDuration: const Duration(milliseconds: 350),
       ),
     );
   }
 
-  String _fmtDate(DateTime d) =>
-      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  // ── Categories overlay ────────────────────────────────────────────────────
+  void _openCategoriesOverlay() {
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        opaque: false,
+        barrierColor: Colors.black87,
+        pageBuilder: (_, __, ___) => const _PublicCategoriesOverlay(),
+        transitionsBuilder: (_, anim, __, child) => SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+              .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
+          child: child,
+        ),
+        transitionDuration: const Duration(milliseconds: 380),
+      ),
+    );
+  }
 
+  // ── Search dialog ─────────────────────────────────────────────────────────
+  void _openSearchDialog() {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.75),
+      builder: (_) => const _SearchDialog(),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   void dispose() {
     _scrollCtrl.dispose();
     _heroCtrl.dispose();
     _revealCtrl.dispose();
-    _searchCtrl.dispose();
     super.dispose();
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    final w          = MediaQuery.of(context).size.width;
+    final w = MediaQuery.of(context).size.width;
     final navOpacity = (_scrollOffset / 80).clamp(0.0, 1.0);
-    final isMobile   = w < 600;
+    final isMobile = w < 600;
 
     return Scaffold(
       backgroundColor: RC.navy,
       body: Stack(
         children: [
-          // ── Scrollable page body ─────────────────────────────────────────
           CustomScrollView(
             controller: _scrollCtrl,
             slivers: [
               SliverToBoxAdapter(child: _hero(w)),
               SliverToBoxAdapter(child: _citiesSection(w)),
               SliverToBoxAdapter(child: _blogSection(w)),
+              SliverToBoxAdapter(child: _statsSection(w)),
               SliverToBoxAdapter(child: _footer(w)),
             ],
           ),
-
-          // ── Sticky nav bar (always on top) ───────────────────────────────
           _navBar(w, navOpacity, isMobile),
         ],
       ),
@@ -367,52 +477,46 @@ class _LandingPageState extends State<LandingPage>
   // ─────────────────────────────────────────────────────────────────────────
   Widget _navBar(double w, double opacity, bool isMobile) {
     return Positioned(
-      top: 0, left: 0, right: 0,
+      top: 0,
+      left: 0,
+      right: 0,
       child: Container(
         decoration: BoxDecoration(
           color: RC.navy.withValues(alpha: opacity > 0.1 ? 0.92 * opacity : 0),
           border: Border(
-            bottom: BorderSide(
-              color: RC.teal.withValues(alpha: opacity * 0.18),
-            ),
+            bottom:
+                BorderSide(color: RC.teal.withValues(alpha: opacity * 0.18)),
           ),
         ),
         child: SafeArea(
           bottom: false,
           child: Padding(
             padding: EdgeInsets.symmetric(
-              horizontal: isMobile ? 16 : 36,
-              vertical: 12,
-            ),
+                horizontal: isMobile ? 16 : 36, vertical: 12),
             child: Row(children: [
-              // ── Brand ──────────────────────────────────────────────────
               _brand(),
               const Spacer(),
-              // ── Nav links (hidden on mobile) ───────────────────────────
               if (!isMobile) ...[
-                _navLink('Destinations', onTap: () {}),
-                _navLink('Categories',   onTap: () {}),
-                _navLink('Blog',         onTap: () {}),
+                _navLink('Destinations', onTap: () => _scrollToKey(_citiesKey)),
+                _navLink('Categories', onTap: _openCategoriesOverlay),
+                _navLink('Blog', onTap: () => _scrollToKey(_blogKey)),
                 const SizedBox(width: 12),
               ],
-              // ── Auth CTAs ──────────────────────────────────────────────
               if (!isMobile)
                 TextButton(
-                  onPressed: () {
-                    // Navigator.push → AuthScreen(isLogin: true)
-                  },
-                  child: const Text(
-                    'Sign In',
-                    style: TextStyle(color: RC.textSec, fontSize: 13),
-                  ),
+                  onPressed: () {},
+                  child: const Text('Sign In',
+                      style: TextStyle(color: RC.textSec, fontSize: 13)),
                 ),
               const SizedBox(width: 6),
-              _pillButton(
-                label: isMobile ? 'Get Started' : 'Get Started',
-                onTap: () {
-                  // Navigator.push → AuthScreen(isLogin: false)
-                },
-              ),
+              _pillButton(label: 'Get Started', onTap: () {}),
+              if (isMobile) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  icon: const Icon(Icons.menu_rounded, color: RC.textSec),
+                  onPressed: () => _showMobileMenu(),
+                ),
+              ],
             ]),
           ),
         ),
@@ -420,37 +524,92 @@ class _LandingPageState extends State<LandingPage>
     );
   }
 
-  Widget _brand() => Row(mainAxisSize: MainAxisSize.min, children: [
-    GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const AdminDashboard()),
+  void _showMobileMenu() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: RC.deepBlue,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      child: Container(
-        width: 34, height: 34,
-        decoration: const BoxDecoration(gradient: RC.tealGrad, shape: BoxShape.circle),
-        child: const Icon(Icons.travel_explore_rounded, color: Colors.white, size: 18),
-      ),
-    ),
-    const SizedBox(width: 10),
-    ShaderMask(
-      shaderCallback: (b) => const LinearGradient(
-        colors: [RC.teal, Colors.white],
-      ).createShader(b),
-      child: const Text(
-        'PALMNAZI',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 17,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 2,
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: RC.textMute,
+                      borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 16),
+              _mobileMenuItem(Icons.location_city_outlined, 'Destinations', () {
+                Navigator.pop(context);
+                _scrollToKey(_citiesKey);
+              }),
+              _mobileMenuItem(Icons.category_outlined, 'Categories', () {
+                Navigator.pop(context);
+                _openCategoriesOverlay();
+              }),
+              _mobileMenuItem(Icons.article_outlined, 'Blog', () {
+                Navigator.pop(context);
+                _scrollToKey(_blogKey);
+              }),
+              _mobileMenuItem(Icons.search_rounded, 'Search', () {
+                Navigator.pop(context);
+                _openSearchDialog();
+              }),
+              const Divider(color: Color(0xFF1A3550), height: 24),
+              _mobileMenuItem(Icons.login_rounded, 'Sign In', () {
+                Navigator.pop(context);
+              }),
+            ],
+          ),
         ),
       ),
-    ),
-  ]);
+    );
+  }
 
-  Widget _navLink(String label, {required VoidCallback onTap}) =>
-      TextButton(
+  Widget _mobileMenuItem(IconData icon, String label, VoidCallback onTap) =>
+      ListTile(
+        leading: Icon(icon, color: RC.teal, size: 20),
+        title: Text(label,
+            style: const TextStyle(color: RC.textSec, fontSize: 14)),
+        onTap: onTap,
+        dense: true,
+      );
+
+  Widget _brand() => Row(mainAxisSize: MainAxisSize.min, children: [
+        GestureDetector(
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const AdminDashboard())),
+          child: Container(
+            width: 34,
+            height: 34,
+            decoration: const BoxDecoration(
+                gradient: RC.tealGrad, shape: BoxShape.circle),
+            child: const Icon(Icons.travel_explore_rounded,
+                color: Colors.white, size: 18),
+          ),
+        ),
+        const SizedBox(width: 10),
+        ShaderMask(
+          shaderCallback: (b) =>
+              const LinearGradient(colors: [RC.teal, Colors.white])
+                  .createShader(b),
+          child: const Text(
+            'PALMNAZI',
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2),
+          ),
+        ),
+      ]);
+
+  Widget _navLink(String label, {required VoidCallback onTap}) => TextButton(
         onPressed: onTap,
         style: TextButton.styleFrom(
           foregroundColor: RC.textSec,
@@ -467,362 +626,305 @@ class _LandingPageState extends State<LandingPage>
           decoration: BoxDecoration(
             gradient: const LinearGradient(colors: [RC.teal, RC.tealMid]),
             borderRadius: BorderRadius.circular(22),
-            boxShadow: [BoxShadow(color: RC.teal.withValues(alpha: 0.30), blurRadius: 14, offset: const Offset(0, 4))],
+            boxShadow: [
+              BoxShadow(
+                  color: RC.teal.withValues(alpha: 0.30),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4))
+            ],
           ),
-          child: Text(
-            label,
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
-          ),
+          child: Text(label,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13)),
         ),
       );
 
   // ─────────────────────────────────────────────────────────────────────────
-  // HERO
+  // HERO  — background: assets/images/homepage.jpg + dark overlay
   // ─────────────────────────────────────────────────────────────────────────
   Widget _hero(double w) {
     final isMobile = w < 600;
     final hPad = isMobile ? 20.0 : 48.0;
 
-    return Container(
-      constraints: BoxConstraints(minHeight: isMobile ? 620 : 720),
-      decoration: const BoxDecoration(gradient: RC.heroGrad),
+    return SizedBox(
+      height: isMobile ? 640.0 : 740.0,
       child: Stack(
         children: [
-          // Background decorative grid
+          // ── Background image ──────────────────────────────────────────────
           Positioned.fill(
-            child: CustomPaint(
-              painter: _DotGridPainter(color: RC.teal.withValues(alpha: 0.045)),
+            child: Image.asset(
+              'assets/images/homepage.jpg',
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                decoration: const BoxDecoration(gradient: RC.heroGrad),
+              ),
             ),
           ),
-          // Teal glow — top right
-          Positioned(
-            top: -120, right: -80,
-            child: _glow(380, RC.teal.withValues(alpha: 0.10)),
-          ),
-          // Gold glow — bottom left
-          Positioned(
-            bottom: 20, left: -60,
-            child: _glow(280, RC.gold.withValues(alpha: 0.07)),
-          ),
 
-          // Main content
-          Padding(
-            padding: EdgeInsets.fromLTRB(hPad, isMobile ? 100 : 130, hPad, 52),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ── Tag pill ──────────────────────────────────────────────
-                FadeTransition(
-                  opacity: _heroFade,
-                  child: SlideTransition(
-                    position: _heroSlide,
-                    child: _tagPill('✦  Discover Africa\'s Premier Resort Destinations', RC.teal),
-                  ),
+          // ── Dark gradient overlay (readability) ───────────────────────────
+          Positioned.fill(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0x99010C18),
+                    Color(0xBB010C18),
+                    Color(0xEE010C18),
+                  ],
+                  stops: [0.0, 0.45, 1.0],
                 ),
-                const SizedBox(height: 22),
+              ),
+            ),
+          ),
 
-                // ── Headline ──────────────────────────────────────────────
-                FadeTransition(
-                  opacity: _heroFade,
-                  child: SlideTransition(
-                    position: _heroSlide,
-                    child: RichText(
-                      text: TextSpan(
-                        style: TextStyle(
-                          fontSize: isMobile ? 38 : 60,
-                          fontWeight: FontWeight.bold,
-                          height: 1.1,
-                          letterSpacing: -0.8,
-                          color: Colors.white,
-                        ),
-                        children: [
-                          const TextSpan(text: 'Find Your\n'),
-                          TextSpan(
-                            text: 'Perfect Escape',
-                            style: TextStyle(
-                              foreground: Paint()
-                                ..shader = const LinearGradient(
-                                  colors: [RC.teal, RC.gold],
-                                ).createShader(const Rect.fromLTWH(0, 0, 400, 80)),
-                            ),
+          // ── Dot grid texture ──────────────────────────────────────────────
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _DotGridPainter(color: RC.teal.withValues(alpha: 0.035)),
+            ),
+          ),
+
+          // ── Ambient glows ─────────────────────────────────────────────────
+          Positioned(
+              top: -100,
+              right: -60,
+              child: _glow(340, RC.teal.withValues(alpha: 0.08))),
+          Positioned(
+              bottom: 30,
+              left: -50,
+              child: _glow(260, RC.gold.withValues(alpha: 0.06))),
+
+          // ── Hero content ──────────────────────────────────────────────────
+          Positioned.fill(
+            child: Padding(
+              padding:
+                  EdgeInsets.fromLTRB(hPad, isMobile ? 110 : 140, hPad, 52),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Tag pill
+                  FadeTransition(
+                    opacity: _heroFade,
+                    child: SlideTransition(
+                      position: _heroSlide,
+                      child: _tagPill(
+                          '✦  Discover Africa\'s Premier Resort Destinations',
+                          RC.teal),
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+
+                  // Headline
+                  FadeTransition(
+                    opacity: _heroFade,
+                    child: SlideTransition(
+                      position: _heroSlide,
+                      child: RichText(
+                        text: TextSpan(
+                          style: TextStyle(
+                            fontSize: isMobile ? 38 : 62,
+                            fontWeight: FontWeight.bold,
+                            height: 1.1,
+                            letterSpacing: -0.8,
+                            color: Colors.white,
                           ),
+                          children: [
+                            const TextSpan(text: 'Find Your\n'),
+                            TextSpan(
+                              text: 'Perfect Escape',
+                              style: TextStyle(
+                                foreground: Paint()
+                                  ..shader = const LinearGradient(
+                                    colors: [RC.teal, RC.gold],
+                                  ).createShader(
+                                      const Rect.fromLTWH(0, 0, 420, 80)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+
+                  // Sub-headline
+                  FadeTransition(
+                    opacity: _heroFade,
+                    child: Text(
+                      'Explore handpicked resort cities, luxury stays,\nand unforgettable experiences across Africa.',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.80),
+                        fontSize: isMobile ? 15 : 18,
+                        height: 1.65,
+                        shadows: const [
+                          Shadow(color: Colors.black54, blurRadius: 6)
                         ],
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 18),
+                  const SizedBox(height: 40),
 
-                // ── Subheadline ───────────────────────────────────────────
-                FadeTransition(
-                  opacity: _heroFade,
-                  child: Text(
-                    'Explore handpicked resort cities, luxury stays,\nand unforgettable experiences across Africa.',
-                    style: TextStyle(
-                      color: RC.textSec,
-                      fontSize: isMobile ? 15 : 18,
-                      height: 1.65,
-                    ),
+                  // ── Search trigger row ─────────────────────────────────────
+                  FadeTransition(
+                    opacity: _heroFade,
+                    child: _heroSearchTrigger(isMobile),
                   ),
-                ),
-                const SizedBox(height: 40),
 
-                // ── Search panel ──────────────────────────────────────────
-                FadeTransition(
-                  opacity: _heroFade,
-                  child: _searchPanel(w),
-                ),
-                const SizedBox(height: 44),
+                  const Spacer(),
 
-                // ── Stats row ─────────────────────────────────────────────
-                FadeTransition(
-                  opacity: _heroFade,
-                  child: _statsRow(w),
-                ),
-              ],
+                  // ── Quick-nav chips ────────────────────────────────────────
+                  FadeTransition(
+                    opacity: _heroFade,
+                    child: _heroQuickChips(),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// Compact search button that floats in the hero and opens the full dialog.
+  Widget _heroSearchTrigger(bool isMobile) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Main search button
+        GestureDetector(
+          onTap: _openSearchDialog,
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: isMobile ? 20 : 28,
+              vertical: 14,
+            ),
+            decoration: BoxDecoration(
+              color: RC.deepBlue.withValues(alpha: 0.88),
+              borderRadius: BorderRadius.circular(50),
+              border: Border.all(
+                  color: RC.teal.withValues(alpha: 0.35), width: 1.2),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    blurRadius: 20,
+                    offset: const Offset(0, 6)),
+                BoxShadow(
+                    color: RC.teal.withValues(alpha: 0.12), blurRadius: 24),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.search_rounded, color: RC.teal, size: 20),
+                const SizedBox(width: 12),
+                Text(
+                  isMobile
+                      ? 'Search destinations…'
+                      : 'Search cities, places, or categories…',
+                  style: const TextStyle(color: RC.textSec, fontSize: 14),
+                ),
+                if (!isMobile) ...[
+                  const SizedBox(width: 20),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      gradient:
+                          const LinearGradient(colors: [RC.teal, RC.tealMid]),
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                            color: RC.teal.withValues(alpha: 0.35),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3))
+                      ],
+                    ),
+                    child: const Text('Search',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13)),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Quick-access category/nav pills at the bottom of the hero.
+  Widget _heroQuickChips() {
+    final chips = [
+      (Icons.location_city_outlined, 'Destinations'),
+      (Icons.category_outlined, 'Categories'),
+      (Icons.hotel_outlined, 'Stays'),
+      (Icons.restaurant_outlined, 'Dining'),
+    ];
+    return Wrap(
+      spacing: 10,
+      runSpacing: 8,
+      children: chips
+          .map((c) => GestureDetector(
+                onTap: () {
+                  if (c.$2 == 'Destinations') {
+                    _scrollToKey(_citiesKey);
+                  } else if (c.$2 == 'Categories') {
+                    _openCategoriesOverlay();
+                  }
+                },
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(24),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(c.$1, size: 14, color: RC.teal),
+                    const SizedBox(width: 6),
+                    Text(c.$2,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500)),
+                  ]),
+                ),
+              ))
+          .toList(),
     );
   }
 
   Widget _glow(double size, Color color) => Container(
-    width: size, height: size,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      gradient: RadialGradient(colors: [color, Colors.transparent]),
-    ),
-  );
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(colors: [color, Colors.transparent])),
+      );
 
   Widget _tagPill(String label, Color color) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-    decoration: BoxDecoration(
-      color: color.withValues(alpha: 0.10),
-      borderRadius: BorderRadius.circular(24),
-      border: Border.all(color: color.withValues(alpha: 0.40)),
-    ),
-    child: Text(
-      label,
-      style: TextStyle(
-        color: color,
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.4,
-      ),
-    ),
-  );
-
-  Widget _statsRow(double w) {
-    final isMobile = w < 600;
-    final count    = _cities.isEmpty ? '10' : '${_cities.length}';
-    final items    = [
-      ('$count+', 'Resort Cities'),
-      ('500+', 'Curated Places'),
-      ('4.9★', 'Avg. Rating'),
-    ];
-    return Wrap(
-      spacing: isMobile ? 28 : 56,
-      runSpacing: 16,
-      children: items.map((s) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(s.$1, style: TextStyle(
-            color: RC.teal,
-            fontSize: isMobile ? 24 : 30,
-            fontWeight: FontWeight.bold,
-          )),
-          const SizedBox(height: 2),
-          Text(s.$2, style: const TextStyle(color: RC.textSec, fontSize: 13)),
-        ],
-      )).toList(),
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // SEARCH PANEL
-  // ─────────────────────────────────────────────────────────────────────────
-  Widget _searchPanel(double w) {
-    final isMobile = w < 600;
-    final isTablet = w < 900;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: RC.deepBlue.withValues(alpha: 0.85),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: RC.teal.withValues(alpha: 0.18)),
-        boxShadow: [BoxShadow(color: RC.teal.withValues(alpha: 0.06), blurRadius: 32)],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: isMobile
-            ? _mobileSearch()
-            : isTablet
-                ? _tabletSearch()
-                : _desktopSearch(),
-      ),
-    );
-  }
-
-  // Single-row inline (desktop ≥900)
-  Widget _desktopSearch() => Row(children: [
-    Expanded(flex: 3, child: _searchInput()),
-    const SizedBox(width: 8),
-    Expanded(flex: 2, child: _dateInput('Check-in',  _checkIn,  () => _pickDate(true))),
-    const SizedBox(width: 8),
-    Expanded(flex: 2, child: _dateInput('Check-out', _checkOut, () => _pickDate(false))),
-    const SizedBox(width: 8),
-    _counter('Adults',   _adults,   1,  (v) => setState(() => _adults   = v)),
-    const SizedBox(width: 8),
-    _counter('Children', _children, 0,  (v) => setState(() => _children = v)),
-    const SizedBox(width: 12),
-    _searchBtn(),
-  ]);
-
-  // Two rows (tablet 600–899)
-  Widget _tabletSearch() => Column(children: [
-    Row(children: [
-      Expanded(child: _searchInput()),
-      const SizedBox(width: 8),
-      Expanded(child: _dateInput('Check-in',  _checkIn,  () => _pickDate(true))),
-      const SizedBox(width: 8),
-      Expanded(child: _dateInput('Check-out', _checkOut, () => _pickDate(false))),
-    ]),
-    const SizedBox(height: 10),
-    Row(children: [
-      _counter('Adults',   _adults,   1, (v) => setState(() => _adults   = v)),
-      const SizedBox(width: 8),
-      _counter('Children', _children, 0, (v) => setState(() => _children = v)),
-      const Spacer(),
-      _searchBtn(),
-    ]),
-  ]);
-
-  // Stacked (mobile <600)
-  Widget _mobileSearch() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      _searchInput(),
-      const SizedBox(height: 10),
-      Row(children: [
-        Expanded(child: _dateInput('Check-in',  _checkIn,  () => _pickDate(true))),
-        const SizedBox(width: 8),
-        Expanded(child: _dateInput('Check-out', _checkOut, () => _pickDate(false))),
-      ]),
-      const SizedBox(height: 10),
-      Row(children: [
-        _counter('Adults',   _adults,   1, (v) => setState(() => _adults   = v)),
-        const SizedBox(width: 8),
-        _counter('Children', _children, 0, (v) => setState(() => _children = v)),
-      ]),
-      const SizedBox(height: 12),
-      _searchBtn(fullWidth: true),
-    ],
-  );
-
-  Widget _searchInput() => _inputBox(
-    child: TextField(
-      controller: _searchCtrl,
-      onSubmitted: (_) => _doSearch(),
-      style: const TextStyle(color: Colors.white, fontSize: 14),
-      decoration: const InputDecoration(
-        hintText: 'Where do you want to go?',
-        hintStyle: TextStyle(color: RC.textMute, fontSize: 13),
-        prefixIcon: Icon(Icons.search_rounded, color: RC.teal, size: 20),
-        border: InputBorder.none,
-        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 14),
-      ),
-    ),
-  );
-
-  Widget _dateInput(String label, DateTime? date, VoidCallback onTap) =>
-      GestureDetector(
-        onTap: onTap,
-        child: _inputBox(
-          child: Row(children: [
-            const Icon(Icons.calendar_today_outlined, color: RC.teal, size: 16),
-            const SizedBox(width: 8),
-            Expanded(child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(label, style: const TextStyle(color: RC.textMute, fontSize: 10, height: 1.2)),
-                Text(
-                  date != null ? _fmtDate(date) : 'Select date',
-                  style: TextStyle(
-                    color: date != null ? Colors.white : RC.textMute,
-                    fontSize: 13,
-                    fontWeight: date != null ? FontWeight.w600 : FontWeight.normal,
-                  ),
-                ),
-              ],
-            )),
-          ]),
-          padded: true,
-        ),
-      );
-
-  Widget _counter(String label, int value, int min, ValueChanged<int> onChange) =>
-      _inputBox(
-        padded: true,
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(label, style: const TextStyle(color: RC.textMute, fontSize: 10, height: 1.2)),
-              Text('$value',  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
-            ],
-          ),
-          const SizedBox(width: 6),
-          Column(mainAxisSize: MainAxisSize.min, children: [
-            GestureDetector(
-              onTap: () { if (value < 20) onChange(value + 1); },
-              child: const Icon(Icons.keyboard_arrow_up_rounded, size: 20, color: RC.teal),
-            ),
-            GestureDetector(
-              onTap: () { if (value > min) onChange(value - 1); },
-              child: const Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: RC.teal),
-            ),
-          ]),
-        ]),
-      );
-
-  Widget _inputBox({required Widget child, bool padded = false}) => Container(
-    padding: padded
-        ? const EdgeInsets.symmetric(horizontal: 12, vertical: 10)
-        : EdgeInsets.zero,
-    decoration: BoxDecoration(
-      color: RC.surface,
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: child,
-  );
-
-  Widget _searchBtn({bool fullWidth = false}) {
-    final btn = GestureDetector(
-      onTap: _doSearch,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 13),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [RC.teal, RC.tealMid]),
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [BoxShadow(color: RC.teal.withValues(alpha: 0.35), blurRadius: 16, offset: const Offset(0, 4))],
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: color.withValues(alpha: 0.40)),
         ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search_rounded, color: Colors.white, size: 18),
-            SizedBox(width: 8),
-            Text('Search', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-          ],
-        ),
-      ),
-    );
-    return fullWidth ? SizedBox(width: double.infinity, child: btn) : btn;
-  }
+        child: Text(label,
+            style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.4)),
+      );
 
   // ─────────────────────────────────────────────────────────────────────────
   // RESORT CITIES SECTION
@@ -832,6 +934,7 @@ class _LandingPageState extends State<LandingPage>
     final hPad = isMobile ? 20.0 : 48.0;
 
     return Container(
+      key: _citiesKey,
       color: RC.navy,
       padding: EdgeInsets.fromLTRB(hPad, 64, hPad, 72),
       child: Center(
@@ -840,17 +943,31 @@ class _LandingPageState extends State<LandingPage>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Header ─────────────────────────────────────────────────
               _sectionLabel('DESTINATIONS', RC.teal),
               const SizedBox(height: 12),
-              Text(
-                'Explore Resort Cities',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: isMobile ? 28 : 38,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: -0.3,
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Explore Resort Cities',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: isMobile ? 28 : 38,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                  ),
+                  if (!isMobile)
+                    TextButton.icon(
+                      onPressed: () {},
+                      icon: const Icon(Icons.arrow_forward_rounded,
+                          color: RC.teal, size: 16),
+                      label: const Text('View All',
+                          style: TextStyle(color: RC.teal, fontSize: 13)),
+                    ),
+                ],
               ),
               const SizedBox(height: 10),
               const Text(
@@ -858,8 +975,6 @@ class _LandingPageState extends State<LandingPage>
                 style: TextStyle(color: RC.textSec, fontSize: 15, height: 1.6),
               ),
               const SizedBox(height: 40),
-
-              // ── City grid ──────────────────────────────────────────────
               _buildCitiesBody(w, isMobile),
             ],
           ),
@@ -872,61 +987,61 @@ class _LandingPageState extends State<LandingPage>
     if (_citiesLoading) return _citySkeletonGrid(w, isMobile);
     if (_citiesError != null) {
       return Center(
-        child: Column(children: [
-          const Icon(Icons.cloud_off_rounded, color: RC.textMute, size: 48),
-          const SizedBox(height: 14),
-          Text('Could not load destinations', style: const TextStyle(color: RC.textSec)),
-          const SizedBox(height: 10),
-          TextButton.icon(
-            onPressed: _loadCities,
-            icon: const Icon(Icons.refresh_rounded, color: RC.teal, size: 16),
-            label: const Text('Try again', style: TextStyle(color: RC.teal)),
-          ),
-        ]),
-      );
+          child: Column(children: [
+        const Icon(Icons.cloud_off_rounded, color: RC.textMute, size: 48),
+        const SizedBox(height: 14),
+        const Text('Could not load destinations',
+            style: TextStyle(color: RC.textSec)),
+        const SizedBox(height: 10),
+        TextButton.icon(
+          onPressed: _loadCities,
+          icon: const Icon(Icons.refresh_rounded, color: RC.teal, size: 16),
+          label: const Text('Try again', style: TextStyle(color: RC.teal)),
+        ),
+      ]));
     }
     if (_cities.isEmpty) {
       return Center(
-        child: Column(children: [
-          const Icon(Icons.location_city_outlined, color: RC.textMute, size: 56),
-          const SizedBox(height: 16),
-          const Text('No destinations available yet', style: TextStyle(color: RC.textSec, fontSize: 15)),
-        ]),
-      );
+          child: Column(children: [
+        const Icon(Icons.location_city_outlined, color: RC.textMute, size: 56),
+        const SizedBox(height: 16),
+        const Text('No destinations available yet',
+            style: TextStyle(color: RC.textSec, fontSize: 15)),
+      ]));
     }
 
     return LayoutBuilder(builder: (_, constraints) {
       final cols = isMobile ? 1 : (w < 1024 ? 2 : 3);
-      const gap  = 22.0;
+      const gap = 22.0;
       final cardW = (constraints.maxWidth - gap * (cols - 1)) / cols;
       return Wrap(
         spacing: gap,
         runSpacing: gap,
-        children: List.generate(_cities.length, (i) {
-          return SizedBox(
-            width: cardW,
-            child: FadeTransition(
-              opacity: _revealFade,
-              child: _CityCard(
-                city:  _cities[i],
-                onTap: () => _goToCity(_cities[i]),
-              ),
-            ),
-          );
-        }),
+        children: List.generate(
+            _cities.length,
+            (i) => SizedBox(
+                  width: cardW,
+                  child: FadeTransition(
+                    opacity: _revealFade,
+                    child: _CityCard(
+                        city: _cities[i], onTap: () => _goToCity(_cities[i])),
+                  ),
+                )),
       );
     });
   }
 
   Widget _citySkeletonGrid(double w, bool isMobile) {
-    final cols  = isMobile ? 1 : (w < 1024 ? 2 : 3);
-    const gap   = 22.0;
+    final cols = isMobile ? 1 : (w < 1024 ? 2 : 3);
+    const gap = 22.0;
     return LayoutBuilder(builder: (_, c) {
       final cardW = (c.maxWidth - gap * (cols - 1)) / cols;
       return Wrap(
-        spacing: gap, runSpacing: gap,
-        children: List.generate(cols == 1 ? 3 : cols * 2, (_) =>
-          _SkeletonBox(width: cardW, height: 310, radius: 20),
+        spacing: gap,
+        runSpacing: gap,
+        children: List.generate(
+          cols == 1 ? 3 : cols * 2,
+          (_) => _SkeletonBox(width: cardW, height: 310, radius: 20),
         ),
       );
     });
@@ -940,6 +1055,7 @@ class _LandingPageState extends State<LandingPage>
     final hPad = isMobile ? 20.0 : 48.0;
 
     return Container(
+      key: _blogKey,
       color: RC.deepBlue,
       padding: EdgeInsets.fromLTRB(hPad, 64, hPad, 72),
       child: Center(
@@ -948,7 +1064,6 @@ class _LandingPageState extends State<LandingPage>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Header row ─────────────────────────────────────────────
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -970,7 +1085,8 @@ class _LandingPageState extends State<LandingPage>
                         const SizedBox(height: 8),
                         const Text(
                           'Guides, tips and stories from our expert travel writers.',
-                          style: TextStyle(color: RC.textSec, fontSize: 15, height: 1.5),
+                          style: TextStyle(
+                              color: RC.textSec, fontSize: 15, height: 1.5),
                         ),
                       ],
                     ),
@@ -979,24 +1095,25 @@ class _LandingPageState extends State<LandingPage>
                     const SizedBox(width: 24),
                     TextButton.icon(
                       onPressed: () {},
-                      icon: const Icon(Icons.arrow_forward_rounded, color: RC.teal, size: 16),
-                      label: const Text('View All', style: TextStyle(color: RC.teal, fontSize: 13)),
+                      icon: const Icon(Icons.arrow_forward_rounded,
+                          color: RC.teal, size: 16),
+                      label: const Text('View All',
+                          style: TextStyle(color: RC.teal, fontSize: 13)),
                     ),
                   ],
                 ],
               ),
               const SizedBox(height: 36),
-
-              // ── Blog grid ──────────────────────────────────────────────
               _buildBlogBody(w, isMobile),
-
               if (isMobile) ...[
                 const SizedBox(height: 20),
                 Center(
                   child: TextButton.icon(
                     onPressed: () {},
-                    icon: const Icon(Icons.arrow_forward_rounded, color: RC.teal, size: 15),
-                    label: const Text('View All Posts', style: TextStyle(color: RC.teal)),
+                    icon: const Icon(Icons.arrow_forward_rounded,
+                        color: RC.teal, size: 15),
+                    label: const Text('View All Posts',
+                        style: TextStyle(color: RC.teal)),
                   ),
                 ),
               ],
@@ -1010,38 +1127,92 @@ class _LandingPageState extends State<LandingPage>
   Widget _buildBlogBody(double w, bool isMobile) {
     if (_blogLoading) {
       return Wrap(
-        spacing: 20, runSpacing: 20,
-        children: List.generate(isMobile ? 2 : 3, (_) =>
-          _SkeletonBox(
-            width: isMobile ? double.infinity : 300,
-            height: 290,
-            radius: 16,
-          ),
+        spacing: 20,
+        runSpacing: 20,
+        children: List.generate(
+          isMobile ? 2 : 3,
+          (_) => _SkeletonBox(
+              width: isMobile ? double.infinity : 300, height: 290, radius: 16),
         ),
       );
     }
     if (_blogPosts.isEmpty) {
-      return Center(child: Column(children: [
+      return Center(
+          child: Column(children: [
         const Icon(Icons.article_outlined, color: RC.textMute, size: 48),
         const SizedBox(height: 12),
         const Text('No blog posts yet', style: TextStyle(color: RC.textSec)),
       ]));
     }
-
     return LayoutBuilder(builder: (_, constraints) {
-      final cols  = isMobile ? 1 : (w < 1024 ? 2 : 3);
-      const gap   = 20.0;
+      final cols = isMobile ? 1 : (w < 1024 ? 2 : 3);
+      const gap = 20.0;
       final cardW = (constraints.maxWidth - gap * (cols - 1)) / cols;
-      final take  = isMobile ? 3 : (cols == 2 ? 4 : 6);
-
+      final take = isMobile ? 3 : (cols == 2 ? 4 : 6);
       return Wrap(
-        spacing: gap, runSpacing: gap,
-        children: _blogPosts.take(take).map((post) => SizedBox(
-          width: cardW,
-          child: _BlogCard(post: post),
-        )).toList(),
+        spacing: gap,
+        runSpacing: gap,
+        children: _blogPosts
+            .take(take)
+            .map((post) => SizedBox(
+                  width: cardW,
+                  child: _BlogCard(post: post),
+                ))
+            .toList(),
       );
     });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // STATS SECTION  (moved here from hero)
+  // ─────────────────────────────────────────────────────────────────────────
+  Widget _statsSection(double w) {
+    final isMobile = w < 600;
+    final hPad = isMobile ? 20.0 : 48.0;
+    final count = _cities.isEmpty ? '10' : '${_cities.length}';
+
+    final items = [
+      (Icons.location_city_rounded, '$count+', 'Resort Cities', RC.teal),
+      (Icons.place_rounded, '500+', 'Curated Places', RC.gold),
+      (Icons.star_rounded, '4.9★', 'Avg. Rating', RC.coral),
+      (Icons.people_alt_rounded, '20K+', 'Happy Travellers', RC.emerald),
+    ];
+
+    return Container(
+      color: RC.navy,
+      padding: EdgeInsets.fromLTRB(hPad, 52, hPad, 60),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1400),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _sectionLabel('BY THE NUMBERS', RC.textSec),
+              const SizedBox(height: 24),
+              LayoutBuilder(builder: (_, c) {
+                final cols = isMobile ? 2 : 4;
+                const gap = 16.0;
+                final cardW = (c.maxWidth - gap * (cols - 1)) / cols;
+                return Wrap(
+                  spacing: gap,
+                  runSpacing: gap,
+                  children: items
+                      .map((s) => SizedBox(
+                            width: cardW,
+                            child: _StatCard(
+                                icon: s.$1,
+                                value: s.$2,
+                                label: s.$3,
+                                color: s.$4),
+                          ))
+                      .toList(),
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1059,26 +1230,49 @@ class _LandingPageState extends State<LandingPage>
           constraints: const BoxConstraints(maxWidth: 1400),
           child: Column(
             children: [
-              // ── Top footer ───────────────────────────────────────────
               isMobile
-                  ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      _footerBrand(),
-                      const SizedBox(height: 32),
-                      _footerLinks('Explore',  ['Resort Cities', 'Categories', 'All Places', 'Blog']),
-                      const SizedBox(height: 28),
-                      _footerLinks('Company',  ['About Us', 'Contact Us', 'Careers']),
-                      const SizedBox(height: 28),
-                      _footerLinks('Legal',    ['Privacy Policy', 'Terms of Service']),
-                    ])
-                  : Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Expanded(flex: 2, child: _footerBrand()),
-                      const SizedBox(width: 40),
-                      Expanded(child: _footerLinks('Explore', ['Resort Cities', 'Categories', 'All Places', 'Blog'])),
-                      const SizedBox(width: 24),
-                      Expanded(child: _footerLinks('Company', ['About Us', 'Contact Us', 'Careers'])),
-                      const SizedBox(width: 24),
-                      Expanded(child: _footerLinks('Legal',   ['Privacy Policy', 'Terms of Service', 'Cookie Policy'])),
-                    ]),
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                          _footerBrand(),
+                          const SizedBox(height: 32),
+                          _footerLinks('Explore', [
+                            'Resort Cities',
+                            'Categories',
+                            'All Places',
+                            'Blog'
+                          ]),
+                          const SizedBox(height: 28),
+                          _footerLinks(
+                              'Company', ['About Us', 'Contact Us', 'Careers']),
+                          const SizedBox(height: 28),
+                          _footerLinks(
+                              'Legal', ['Privacy Policy', 'Terms of Service']),
+                        ])
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                          Expanded(flex: 2, child: _footerBrand()),
+                          const SizedBox(width: 40),
+                          Expanded(
+                              child: _footerLinks('Explore', [
+                            'Resort Cities',
+                            'Categories',
+                            'All Places',
+                            'Blog'
+                          ])),
+                          const SizedBox(width: 24),
+                          Expanded(
+                              child: _footerLinks('Company',
+                                  ['About Us', 'Contact Us', 'Careers'])),
+                          const SizedBox(width: 24),
+                          Expanded(
+                              child: _footerLinks('Legal', [
+                            'Privacy Policy',
+                            'Terms of Service',
+                            'Cookie Policy'
+                          ])),
+                        ]),
               const SizedBox(height: 40),
               Divider(color: Colors.white.withValues(alpha: 0.07)),
               const SizedBox(height: 20),
@@ -1087,15 +1281,12 @@ class _LandingPageState extends State<LandingPage>
                 children: [
                   const Flexible(
                     child: Text(
-                      '© 2026 Palmnazi Resort Cities. All rights reserved.',
-                      style: TextStyle(color: RC.textMute, fontSize: 12),
-                    ),
+                        '© 2026 Palmnazi Resort Cities. All rights reserved.',
+                        style: TextStyle(color: RC.textMute, fontSize: 12)),
                   ),
                   if (!isMobile)
-                    const Text(
-                      'Made with ❤ for Africa\'s travellers',
-                      style: TextStyle(color: RC.textMute, fontSize: 12),
-                    ),
+                    const Text('Made with ❤ for Africa\'s travellers',
+                        style: TextStyle(color: RC.textMute, fontSize: 12)),
                 ],
               ),
             ],
@@ -1106,55 +1297,820 @@ class _LandingPageState extends State<LandingPage>
   }
 
   Widget _footerBrand() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Row(children: [
-        Container(
-          width: 30, height: 30,
-          decoration: const BoxDecoration(gradient: RC.tealGrad, shape: BoxShape.circle),
-          child: const Icon(Icons.travel_explore_rounded, color: Colors.white, size: 16),
-        ),
-        const SizedBox(width: 10),
-        const Text('PALMNAZI', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
-      ]),
-      const SizedBox(height: 14),
-      const Text(
-        'Discover Africa\'s most beautiful resort\ndestinations and unforgettable experiences.',
-        style: TextStyle(color: RC.textSec, fontSize: 13, height: 1.7),
-      ),
-    ],
-  );
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: const BoxDecoration(
+                  gradient: RC.tealGrad, shape: BoxShape.circle),
+              child: const Icon(Icons.travel_explore_rounded,
+                  color: Colors.white, size: 16),
+            ),
+            const SizedBox(width: 10),
+            const Text('PALMNAZI',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.5)),
+          ]),
+          const SizedBox(height: 14),
+          const Text(
+            'Discover Africa\'s most beautiful resort\ndestinations and unforgettable experiences.',
+            style: TextStyle(color: RC.textSec, fontSize: 13, height: 1.7),
+          ),
+        ],
+      );
 
   Widget _footerLinks(String heading, List<String> links) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(heading, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-      const SizedBox(height: 14),
-      ...links.map((l) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: GestureDetector(
-          onTap: () {},
-          child: Text(l, style: const TextStyle(color: RC.textSec, fontSize: 13)),
-        ),
-      )),
-    ],
-  );
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(heading,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 14),
+          ...links.map((l) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: GestureDetector(
+                  onTap: () {},
+                  child: Text(l,
+                      style: const TextStyle(color: RC.textSec, fontSize: 13)),
+                ),
+              )),
+        ],
+      );
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Shared helpers
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── Shared helpers ────────────────────────────────────────────────────────
   Widget _sectionLabel(String label, Color color) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-    decoration: BoxDecoration(
-      color: color.withValues(alpha: 0.10),
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: color.withValues(alpha: 0.35)),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.3)),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _StatCard  — for the stats section
+// ─────────────────────────────────────────────────────────────────────────────
+class _StatCard extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color color;
+
+  const _StatCard(
+      {required this.icon,
+      required this.value,
+      required this.label,
+      required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: RC.deepBlue,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.15)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 12)
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(value,
+                  style: TextStyle(
+                      color: color,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      height: 1.1)),
+              const SizedBox(height: 2),
+              Text(label,
+                  style: const TextStyle(color: RC.textSec, fontSize: 12)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _SearchDialog  — floating search dialog  (City / Place / Category)
+// ─────────────────────────────────────────────────────────────────────────────
+class _SearchDialog extends StatefulWidget {
+  const _SearchDialog();
+
+  @override
+  State<_SearchDialog> createState() => _SearchDialogState();
+}
+
+class _SearchDialogState extends State<_SearchDialog> {
+  final _ctrl = TextEditingController();
+  _SearchType _type = _SearchType.city;
+  bool _loading = false;
+  bool _searched = false;
+  List<_SearchResult> _results = [];
+  String? _error;
+
+  static const _labels = {
+    _SearchType.city: (
+      'City',
+      'Search by city name…',
+      Icons.location_city_outlined
     ),
-    child: Text(
-      label,
-      style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.3),
+    _SearchType.place: ('Place', 'Search by place name…', Icons.place_outlined),
+    _SearchType.category: (
+      'Category',
+      'Search by category name…',
+      Icons.category_outlined
     ),
-  );
+  };
+
+  Future<void> _doSearch() async {
+    final q = _ctrl.text.trim();
+    if (q.isEmpty) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+      _searched = false;
+    });
+    try {
+      final results = await _LandingApi.search(q, _type);
+      if (mounted) {
+        setState(() {
+          _results = results;
+          _loading = false;
+          _searched = true;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Search failed. Please try again.';
+          _loading = false;
+          _searched = true;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    final isMobile = w < 600;
+    final dlgW = isMobile ? w * 0.95 : 560.0;
+    final info = _labels[_type]!;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding:
+          EdgeInsets.symmetric(horizontal: isMobile ? 12 : 40, vertical: 60),
+      child: Container(
+        width: dlgW,
+        constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.78),
+        decoration: BoxDecoration(
+          color: RC.deepBlue,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: RC.teal.withValues(alpha: 0.20)),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.55),
+                blurRadius: 40,
+                offset: const Offset(0, 16)),
+            BoxShadow(color: RC.teal.withValues(alpha: 0.08), blurRadius: 40),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Header ───────────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 16, 0),
+              child: Row(children: [
+                const Icon(Icons.search_rounded, color: RC.teal, size: 20),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text('Search',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700)),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded,
+                      color: RC.textMute, size: 20),
+                  onPressed: () => Navigator.pop(context),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Type selector ─────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                  children: _SearchType.values.map((t) {
+                final selected = t == _type;
+                final l = _labels[t]!;
+                return Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() {
+                      _type = t;
+                      _searched = false;
+                      _results = [];
+                    }),
+                    child: Container(
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? RC.teal.withValues(alpha: 0.15)
+                            : RC.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: selected
+                              ? RC.teal.withValues(alpha: 0.50)
+                              : Colors.white.withValues(alpha: 0.06),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(l.$3,
+                              size: 14,
+                              color: selected ? RC.teal : RC.textMute),
+                          const SizedBox(width: 5),
+                          Text(l.$1,
+                              style: TextStyle(
+                                color: selected ? RC.teal : RC.textMute,
+                                fontSize: 12,
+                                fontWeight: selected
+                                    ? FontWeight.w700
+                                    : FontWeight.normal,
+                              )),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }).toList()),
+            ),
+            const SizedBox(height: 14),
+
+            // ── Search input ──────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(children: [
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: RC.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border:
+                          Border.all(color: RC.teal.withValues(alpha: 0.20)),
+                    ),
+                    child: TextField(
+                      controller: _ctrl,
+                      autofocus: true,
+                      onSubmitted: (_) => _doSearch(),
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      decoration: InputDecoration(
+                        hintText: info.$2,
+                        hintStyle:
+                            const TextStyle(color: RC.textMute, fontSize: 13),
+                        prefixIcon: Icon(info.$3, color: RC.teal, size: 18),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 14),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                GestureDetector(
+                  onTap: _loading ? null : _doSearch,
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      gradient:
+                          const LinearGradient(colors: [RC.teal, RC.tealMid]),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                            color: RC.teal.withValues(alpha: 0.30),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3))
+                      ],
+                    ),
+                    child: _loading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2))
+                        : const Icon(Icons.search_rounded,
+                            color: Colors.white, size: 20),
+                  ),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Results ───────────────────────────────────────────────────────
+            Flexible(
+              child: _buildResults(),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResults() {
+    if (!_searched && !_loading) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Icon(Icons.travel_explore_rounded,
+                color: RC.textMute.withValues(alpha: 0.5), size: 48),
+            const SizedBox(height: 10),
+            const Text('Type to search across cities, places and categories',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: RC.textMute, fontSize: 13)),
+            const SizedBox(height: 16),
+          ],
+        ),
+      );
+    }
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.all(32),
+        child: Center(
+            child: CircularProgressIndicator(color: RC.teal, strokeWidth: 2)),
+      );
+    }
+    if (_error != null) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.error_outline_rounded, color: RC.coral, size: 36),
+          const SizedBox(height: 10),
+          Text(_error!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: RC.textSec, fontSize: 13)),
+        ]),
+      );
+    }
+    if (_results.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.search_off_rounded,
+              color: RC.textMute.withValues(alpha: 0.6), size: 44),
+          const SizedBox(height: 12),
+          Text(
+            'No ${_labels[_type]!.$1.toLowerCase()}s found for "${_ctrl.text.trim()}"',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                color: RC.textSec, fontSize: 14, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Try a different spelling or search term.',
+            style: TextStyle(color: RC.textMute, fontSize: 12),
+          ),
+        ]),
+      );
+    }
+
+    return ListView.separated(
+      shrinkWrap: true,
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+      itemCount: _results.length,
+      separatorBuilder: (_, __) =>
+          Divider(color: Colors.white.withValues(alpha: 0.05), height: 1),
+      itemBuilder: (_, i) {
+        final r = _results[i];
+        return ListTile(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          leading: _resultIcon(r),
+          title: Text(r.name,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500)),
+          subtitle: r.subtitle != null && r.subtitle!.isNotEmpty
+              ? Text(r.subtitle!,
+                  style: const TextStyle(color: RC.textMute, fontSize: 11))
+              : null,
+          trailing: const Icon(Icons.arrow_forward_ios_rounded,
+              color: RC.textMute, size: 12),
+          onTap: () => _onResultTap(r),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          hoverColor: RC.surfaceHi,
+        );
+      },
+    );
+  }
+
+  Widget _resultIcon(_SearchResult r) {
+    if (r.imageUrl != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(r.imageUrl!,
+            width: 44,
+            height: 44,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _iconFallback(r.type)),
+      );
+    }
+    return _iconFallback(r.type);
+  }
+
+  Widget _iconFallback(_SearchType t) {
+    final icon = t == _SearchType.city
+        ? Icons.location_city_outlined
+        : t == _SearchType.place
+            ? Icons.place_outlined
+            : Icons.category_outlined;
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: RC.teal.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Icon(icon, color: RC.teal, size: 20),
+    );
+  }
+
+  void _onResultTap(_SearchResult r) {
+    Navigator.pop(context);
+    // Navigate based on type — wire to the appropriate screens when ready
+    // e.g. for cities: Navigator.push → ResortCityScreen(city: r.raw as CityModel)
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _PublicCategoriesOverlay  — full-screen categories listing from backend
+// ─────────────────────────────────────────────────────────────────────────────
+class _PublicCategoriesOverlay extends StatefulWidget {
+  const _PublicCategoriesOverlay();
+
+  @override
+  State<_PublicCategoriesOverlay> createState() =>
+      _PublicCategoriesOverlayState();
+}
+
+class _PublicCategoriesOverlayState extends State<_PublicCategoriesOverlay> {
+  List<CategoryModel> _roots = [];
+  bool _loading = true;
+  String? _error;
+  final Set<String> _expanded = {};
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetch();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetch() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final roots = await _LandingApi.fetchAllCategories();
+      if (mounted) {
+        setState(() {
+          _roots = roots;
+          _loading = false;
+          // Auto-expand all if there are 6 or fewer root categories
+          if (roots.length <= 6) _expanded.addAll(roots.map((r) => r.id));
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  List<CategoryModel> get _filtered {
+    if (_query.trim().isEmpty) return _roots;
+    final q = _query.toLowerCase();
+    return _roots.where((r) {
+      if (r.name.toLowerCase().contains(q)) return true;
+      return r.children.any((c) => c.name.toLowerCase().contains(q));
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    final isMobile = w < 600;
+
+    return Scaffold(
+      backgroundColor: RC.navy,
+      appBar: AppBar(
+        backgroundColor: RC.deepBlue,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close_rounded, color: RC.textSec),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Categories',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700)),
+            Text('Browse all system categories',
+                style: TextStyle(color: RC.textMute, fontSize: 11)),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(56),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Container(
+              decoration: BoxDecoration(
+                color: RC.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: RC.teal.withValues(alpha: 0.20)),
+              ),
+              child: TextField(
+                controller: _searchCtrl,
+                onChanged: (v) => setState(() => _query = v),
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                decoration: const InputDecoration(
+                  hintText: 'Filter categories…',
+                  hintStyle: TextStyle(color: RC.textMute, fontSize: 13),
+                  prefixIcon:
+                      Icon(Icons.search_rounded, color: RC.teal, size: 18),
+                  border: InputBorder.none,
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 8, vertical: 13),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+      body: _buildBody(isMobile),
+    );
+  }
+
+  Widget _buildBody(bool isMobile) {
+    if (_loading) {
+      return ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: 6,
+        itemBuilder: (_, __) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _SkeletonBox(width: double.infinity, height: 68, radius: 14),
+        ),
+      );
+    }
+    if (_error != null) {
+      return Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.cloud_off_rounded, color: RC.textMute, size: 48),
+        const SizedBox(height: 14),
+        const Text('Could not load categories',
+            style: TextStyle(color: RC.textSec)),
+        const SizedBox(height: 10),
+        TextButton.icon(
+          onPressed: _fetch,
+          icon: const Icon(Icons.refresh_rounded, color: RC.teal, size: 16),
+          label: const Text('Try again', style: TextStyle(color: RC.teal)),
+        ),
+      ]));
+    }
+    final list = _filtered;
+    if (list.isEmpty) {
+      return Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.search_off_rounded,
+            color: RC.textMute.withValues(alpha: 0.6), size: 44),
+        const SizedBox(height: 12),
+        Text(
+          _query.isEmpty
+              ? 'No categories available yet'
+              : 'No categories match "$_query"',
+          style: const TextStyle(color: RC.textSec, fontSize: 14),
+        ),
+      ]));
+    }
+
+    return ListView.builder(
+      padding:
+          EdgeInsets.symmetric(horizontal: isMobile ? 12 : 24, vertical: 16),
+      itemCount: list.length,
+      itemBuilder: (_, i) => _RootCategoryTile(
+        root: list[i],
+        expanded: _expanded.contains(list[i].id),
+        onToggle: (id) => setState(() {
+          if (_expanded.contains(id)) {
+            _expanded.remove(id);
+          } else {
+            _expanded.add(id);
+          }
+        }),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _RootCategoryTile  (used in public categories overlay)
+// ─────────────────────────────────────────────────────────────────────────────
+class _RootCategoryTile extends StatelessWidget {
+  final CategoryModel root;
+  final bool expanded;
+  final void Function(String id) onToggle;
+
+  const _RootCategoryTile(
+      {required this.root, required this.expanded, required this.onToggle});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: RC.deepBlue,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+      ),
+      child: Column(
+        children: [
+          // ── Root row ─────────────────────────────────────────────────────
+          InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: root.children.isNotEmpty ? () => onToggle(root.id) : null,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              child: Row(children: [
+                // Icon badge
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: RC.teal.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Center(
+                    child: root.icon != null && root.icon!.length == 2
+                        ? Text(root.icon!, style: const TextStyle(fontSize: 18))
+                        : const Icon(Icons.category_outlined,
+                            color: RC.teal, size: 18),
+                  ),
+                ),
+                const SizedBox(width: 14),
+
+                // Name + child count
+                Expanded(
+                    child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(root.name,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600)),
+                    if (root.description != null &&
+                        root.description!.isNotEmpty)
+                      Text(root.description!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: RC.textMute, fontSize: 11)),
+                  ],
+                )),
+
+                // Child count pill
+                if (root.children.isNotEmpty) ...[
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: RC.teal.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(20),
+                      border:
+                          Border.all(color: RC.teal.withValues(alpha: 0.25)),
+                    ),
+                    child: Text('${root.children.length}',
+                        style: const TextStyle(
+                            color: RC.teal,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    expanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    color: RC.textMute,
+                    size: 20,
+                  ),
+                ],
+              ]),
+            ),
+          ),
+
+          // ── Children ────────────────────────────────────────────────────
+          if (expanded && root.children.isNotEmpty)
+            Container(
+              decoration: BoxDecoration(
+                border: Border(
+                    top: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.06))),
+              ),
+              child: Column(
+                children: root.children
+                    .map((child) => ListTile(
+                          dense: true,
+                          contentPadding:
+                              const EdgeInsets.fromLTRB(68, 0, 16, 0),
+                          leading: child.icon != null && child.icon!.length == 2
+                              ? Text(child.icon!,
+                                  style: const TextStyle(fontSize: 14))
+                              : const Icon(
+                                  Icons.subdirectory_arrow_right_rounded,
+                                  color: RC.textMute,
+                                  size: 14),
+                          title: Text(child.name,
+                              style: const TextStyle(
+                                  color: RC.textSec, fontSize: 13)),
+                          subtitle: child.placeLinksCount > 0
+                              ? Text('${child.placeLinksCount} places',
+                                  style: const TextStyle(
+                                      color: RC.textMute, fontSize: 11))
+                              : null,
+                          onTap: () {},
+                        ))
+                    .toList(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1173,153 +2129,200 @@ class _CityCardState extends State<_CityCard>
     with SingleTickerProviderStateMixin {
   late AnimationController _hoverCtrl;
   late Animation<double> _scale;
+  bool _hovered = false;
 
   @override
   void initState() {
     super.initState();
-    _hoverCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 180));
+    _hoverCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 180));
     _scale = Tween<double>(begin: 1.0, end: 1.025)
         .animate(CurvedAnimation(parent: _hoverCtrl, curve: Curves.easeOut));
   }
 
   @override
-  void dispose() { _hoverCtrl.dispose(); super.dispose(); }
+  void dispose() {
+    _hoverCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final city = widget.city;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
-      onEnter: (_) => _hoverCtrl.forward(),
-      onExit:  (_) => _hoverCtrl.reverse(),
+      onEnter: (_) {
+        _hoverCtrl.forward();
+        setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        _hoverCtrl.reverse();
+        setState(() => _hovered = false);
+      },
       child: GestureDetector(
         onTap: widget.onTap,
         child: AnimatedBuilder(
           animation: _scale,
-          builder: (_, child) => Transform.scale(scale: _scale.value, child: child),
+          builder: (_, child) =>
+              Transform.scale(scale: _scale.value, child: child),
           child: Container(
             height: 320,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(20),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 20, offset: const Offset(0, 8))],
+              boxShadow: [
+                BoxShadow(
+                  color: _hovered
+                      ? RC.teal.withValues(alpha: 0.20)
+                      : Colors.black.withValues(alpha: 0.35),
+                  blurRadius: _hovered ? 28 : 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(20),
               child: Stack(
                 children: [
-                  // ── Cover image / fallback ──────────────────────────────
                   Positioned.fill(
                     child: city.coverImage.isNotEmpty
-                        ? Image.network(
-                            city.coverImage,
+                        ? Image.network(city.coverImage,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _gradientFallback(),
-                          )
+                            errorBuilder: (_, __, ___) => _gradientFallback())
                         : _gradientFallback(),
                   ),
-
-                  // ── Dark gradient overlay ─────────────────────────────
                   Positioned.fill(
                     child: Container(
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [Colors.transparent, Color(0x80000000), Color(0xE0000000)],
-                          stops: [0.25, 0.60, 1.0],
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.50),
+                            Colors.black.withValues(alpha: 0.88),
+                          ],
+                          stops: const [0.25, 0.60, 1.0],
                         ),
                       ),
                     ),
                   ),
-
-                  // ── Country badge (top-left) ───────────────────────────
                   Positioned(
-                    top: 14, left: 14,
+                    top: 14,
+                    left: 14,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.black.withValues(alpha: 0.55),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.15)),
                       ),
-                      child: Text(city.country, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                      child: Text(city.country,
+                          style: const TextStyle(
+                              color: Colors.white70, fontSize: 11)),
                     ),
                   ),
-
-                  // ── Active pill (top-right) ────────────────────────────
                   if (city.isActive)
                     Positioned(
-                      top: 14, right: 14,
+                      top: 14,
+                      right: 14,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
                           color: RC.emerald.withValues(alpha: 0.88),
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(Icons.circle, size: 6, color: Colors.white),
-                          SizedBox(width: 4),
-                          Text('Open', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
-                        ]),
+                        child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.circle, size: 6, color: Colors.white),
+                              SizedBox(width: 4),
+                              Text('Open',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600)),
+                            ]),
                       ),
                     ),
-
-                  // ── Content at bottom ─────────────────────────────────
                   Positioned(
-                    left: 0, right: 0, bottom: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
                     child: Padding(
                       padding: const EdgeInsets.all(18),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(city.name, style: const TextStyle(
-                            color: Colors.white, fontSize: 22,
-                            fontWeight: FontWeight.bold, height: 1.2,
-                          )),
+                          Text(city.name,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1.2)),
                           if (city.region.isNotEmpty) ...[
                             const SizedBox(height: 3),
                             Row(children: [
-                              const Icon(Icons.location_on_outlined, size: 12, color: RC.teal),
+                              const Icon(Icons.location_on_outlined,
+                                  size: 12, color: RC.teal),
                               const SizedBox(width: 3),
-                              Text(city.region, style: const TextStyle(color: RC.textSec, fontSize: 12)),
+                              Text(city.region,
+                                  style: const TextStyle(
+                                      color: RC.textSec, fontSize: 12)),
                             ]),
                           ],
                           if (city.description.isNotEmpty) ...[
                             const SizedBox(height: 8),
-                            Text(
-                              city.description,
-                              style: const TextStyle(color: Colors.white60, fontSize: 12, height: 1.4),
-                              maxLines: 2, overflow: TextOverflow.ellipsis,
-                            ),
+                            Text(city.description,
+                                style: const TextStyle(
+                                    color: Colors.white60,
+                                    fontSize: 12,
+                                    height: 1.4),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis),
                           ],
                           const SizedBox(height: 14),
-                          // ── Explore pill ───────────────────────────────
                           Row(children: [
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
                               decoration: BoxDecoration(
-                                gradient: const LinearGradient(colors: [RC.teal, RC.tealMid]),
+                                gradient: const LinearGradient(
+                                    colors: [RC.teal, RC.tealMid]),
                                 borderRadius: BorderRadius.circular(20),
-                                boxShadow: [BoxShadow(color: RC.teal.withValues(alpha: 0.40), blurRadius: 10)],
+                                boxShadow: [
+                                  BoxShadow(
+                                      color: RC.teal.withValues(alpha: 0.40),
+                                      blurRadius: 10)
+                                ],
                               ),
-                              child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                                Text('Explore', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
-                                SizedBox(width: 6),
-                                Icon(Icons.arrow_forward_rounded, size: 13, color: Colors.white),
-                              ]),
+                              child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text('Explore',
+                                        style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700)),
+                                    SizedBox(width: 6),
+                                    Icon(Icons.arrow_forward_rounded,
+                                        size: 13, color: Colors.white),
+                                  ]),
                             ),
-                            ...[
                             const SizedBox(width: 10),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 6),
                               decoration: BoxDecoration(
                                 color: Colors.white.withValues(alpha: 0.08),
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: const Icon(Icons.map_outlined, size: 14, color: RC.teal),
+                              child: const Icon(Icons.map_outlined,
+                                  size: 14, color: RC.teal),
                             ),
-                          ],
                           ]),
                         ],
                       ),
@@ -1335,17 +2338,18 @@ class _CityCardState extends State<_CityCard>
   }
 
   Widget _gradientFallback() => Container(
-    decoration: const BoxDecoration(
-      gradient: LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [RC.tealDark, RC.navy],
-      ),
-    ),
-    child: Center(
-      child: Icon(Icons.location_city_rounded, size: 72, color: RC.teal.withValues(alpha: 0.25)),
-    ),
-  );
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [RC.tealDark, RC.navy],
+          ),
+        ),
+        child: Center(
+          child: Icon(Icons.location_city_rounded,
+              size: 72, color: RC.teal.withValues(alpha: 0.25)),
+        ),
+      );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1367,13 +2371,17 @@ class _BlogCardState extends State<_BlogCard>
   @override
   void initState() {
     super.initState();
-    _hoverCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 180));
+    _hoverCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 180));
     _scale = Tween<double>(begin: 1.0, end: 1.02)
         .animate(CurvedAnimation(parent: _hoverCtrl, curve: Curves.easeOut));
   }
 
   @override
-  void dispose() { _hoverCtrl.dispose(); super.dispose(); }
+  void dispose() {
+    _hoverCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1381,88 +2389,105 @@ class _BlogCardState extends State<_BlogCard>
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => _hoverCtrl.forward(),
-      onExit:  (_) => _hoverCtrl.reverse(),
+      onExit: (_) => _hoverCtrl.reverse(),
       child: GestureDetector(
-        onTap: () {}, // ToDO: navigate to blog detail screen
+        onTap: () {},
         child: AnimatedBuilder(
           animation: _scale,
-          builder: (_, child) => Transform.scale(scale: _scale.value, child: child),
+          builder: (_, child) =>
+              Transform.scale(scale: _scale.value, child: child),
           child: Container(
             decoration: BoxDecoration(
               color: RC.surface,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.20), blurRadius: 12)],
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.20), blurRadius: 12)
+              ],
             ),
             clipBehavior: Clip.hardEdge,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Image ────────────────────────────────────────────────
                 AspectRatio(
                   aspectRatio: 16 / 9,
                   child: post.featuredImage != null
-                      ? Image.network(
-                          post.featuredImage!,
+                      ? Image.network(post.featuredImage!,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => _imgFallback(),
-                        )
+                          errorBuilder: (_, __, ___) => _imgFallback())
                       : _imgFallback(),
                 ),
-
-                // ── Body ─────────────────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Category chips
                       if (post.categories.isNotEmpty)
                         Wrap(
-                          spacing: 6, runSpacing: 4,
-                          children: post.categories.take(2).map((c) => Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: RC.gold.withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: RC.gold.withValues(alpha: 0.30)),
-                            ),
-                            child: Text(c, style: const TextStyle(color: RC.gold, fontSize: 10, fontWeight: FontWeight.w600)),
-                          )).toList(),
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: post.categories
+                              .take(2)
+                              .map((c) => Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: RC.gold.withValues(alpha: 0.10),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                          color:
+                                              RC.gold.withValues(alpha: 0.30)),
+                                    ),
+                                    child: Text(c,
+                                        style: const TextStyle(
+                                            color: RC.gold,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600)),
+                                  ))
+                              .toList(),
                         ),
                       const SizedBox(height: 10),
-
-                      // Title
-                      Text(
-                        post.title,
-                        style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600, height: 1.4),
-                        maxLines: 2, overflow: TextOverflow.ellipsis,
-                      ),
+                      Text(post.title,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              height: 1.4),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 8),
-
-                      // Excerpt
-                      Text(
-                        post.excerpt,
-                        style: const TextStyle(color: RC.textSec, fontSize: 12, height: 1.5),
-                        maxLines: 2, overflow: TextOverflow.ellipsis,
-                      ),
+                      Text(post.excerpt,
+                          style: const TextStyle(
+                              color: RC.textSec, fontSize: 12, height: 1.5),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 14),
-
-                      // Meta row
                       Row(children: [
-                        const Icon(Icons.person_outline_rounded, size: 13, color: RC.textMute),
+                        const Icon(Icons.person_outline_rounded,
+                            size: 13, color: RC.textMute),
                         const SizedBox(width: 4),
-                        Expanded(child: Text(post.authorName, style: const TextStyle(color: RC.textMute, fontSize: 11), overflow: TextOverflow.ellipsis)),
+                        Expanded(
+                            child: Text(post.authorName,
+                                style: const TextStyle(
+                                    color: RC.textMute, fontSize: 11),
+                                overflow: TextOverflow.ellipsis)),
                         if (post.readingTimeMinutes != null) ...[
-                          const Icon(Icons.schedule_rounded, size: 12, color: RC.textMute),
+                          const Icon(Icons.schedule_rounded,
+                              size: 12, color: RC.textMute),
                           const SizedBox(width: 3),
-                          Text('${post.readingTimeMinutes}m', style: const TextStyle(color: RC.textMute, fontSize: 11)),
+                          Text('${post.readingTimeMinutes}m',
+                              style: const TextStyle(
+                                  color: RC.textMute, fontSize: 11)),
                         ],
                         if (post.views != null && post.views! > 0) ...[
                           const SizedBox(width: 8),
-                          const Icon(Icons.visibility_outlined, size: 12, color: RC.textMute),
+                          const Icon(Icons.visibility_outlined,
+                              size: 12, color: RC.textMute),
                           const SizedBox(width: 3),
-                          Text('${post.views}', style: const TextStyle(color: RC.textMute, fontSize: 11)),
+                          Text('${post.views}',
+                              style: const TextStyle(
+                                  color: RC.textMute, fontSize: 11)),
                         ],
                       ]),
                     ],
@@ -1477,9 +2502,10 @@ class _BlogCardState extends State<_BlogCard>
   }
 
   Widget _imgFallback() => Container(
-    color: RC.deepBlue,
-    child: const Center(child: Icon(Icons.article_outlined, color: RC.textMute, size: 40)),
-  );
+        color: RC.deepBlue,
+        child: const Center(
+            child: Icon(Icons.article_outlined, color: RC.textMute, size: 40)),
+      );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1489,7 +2515,8 @@ class _SkeletonBox extends StatefulWidget {
   final double width;
   final double height;
   final double radius;
-  const _SkeletonBox({required this.width, required this.height, required this.radius});
+  const _SkeletonBox(
+      {required this.width, required this.height, required this.radius});
 
   @override
   State<_SkeletonBox> createState() => _SkeletonBoxState();
@@ -1503,32 +2530,36 @@ class _SkeletonBoxState extends State<_SkeletonBox>
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200))
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1200))
       ..repeat(reverse: true);
     _anim = Tween<double>(begin: 0.4, end: 0.8)
         .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
   }
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: _anim,
-    builder: (_, __) => Container(
-      width: widget.width,
-      height: widget.height,
-      decoration: BoxDecoration(
-        color: RC.deepBlue.withValues(alpha: _anim.value),
-        borderRadius: BorderRadius.circular(widget.radius),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-      ),
-    ),
-  );
+        animation: _anim,
+        builder: (_, __) => Container(
+          width: widget.width,
+          height: widget.height,
+          decoration: BoxDecoration(
+            color: RC.deepBlue.withValues(alpha: _anim.value),
+            borderRadius: BorderRadius.circular(widget.radius),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+          ),
+        ),
+      );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Background painter  (subtle dot grid)
+// Background dot grid painter
 // ─────────────────────────────────────────────────────────────────────────────
 class _DotGridPainter extends CustomPainter {
   final Color color;
@@ -1538,7 +2569,7 @@ class _DotGridPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()..color = color;
     const spacing = 52.0;
-    const radius  = 1.2;
+    const radius = 1.2;
     for (double x = 0; x < size.width; x += spacing) {
       for (double y = 0; y < size.height; y += spacing) {
         canvas.drawCircle(Offset(x, y), radius, paint);
