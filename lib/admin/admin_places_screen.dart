@@ -31,6 +31,22 @@ import 'package:palmnazi/models/place_model.dart';
 const double _kNarrow = 480;
 const double _kMedium = 900;
 
+// ── URL safety guard ─────────────────────────────────────────────────────────
+// Returns the URL only when it is a non-empty HTTPS string, otherwise null.
+//
+// WHY: Firebase Storage getDownloadURL() always produces an https:// URL, so
+// any legitimate uploaded image passes this check.  Plain http:// URLs (old
+// test records, user-pasted values) are rejected before Image.network() is
+// called — preventing the browser from blocking them as mixed content and
+// logging a noisy statusCode-0 exception.
+String? _safeImageUrl(String? url) {
+  if (url == null) return null;
+  final t = url.trim();
+  if (t.isEmpty) return null;
+  if (!t.startsWith('https://')) return null;
+  return t;
+}
+
 class AdminPlacesScreen extends StatefulWidget {
   final AdminApiService apiService;
   final CityModel? filterCity;
@@ -874,29 +890,38 @@ class _PlaceCardState extends State<_PlaceCard> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Thumbnail
-                      Container(
-                        width: (42 * scale).clamp(32, 48).toDouble(),
-                        height: (42 * scale).clamp(32, 48).toDouble(),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.05),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.white12),
-                          image: p.coverImage != null
-                              ? DecorationImage(
-                                  image: NetworkImage(p.coverImage!),
+                      // ── Thumbnail ─────────────────────────────────────
+                      // DecorationImage.onError swallows load failures but
+                      // never renders the fallback child (because coverImage
+                      // != null, child is null). Replaced with ClipRRect +
+                      // Image.network so errorBuilder actually fires, and
+                      // _safeImageUrl() drops plain-http URLs before any
+                      // blocked-mixed-content exception can be thrown.
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          width: (42 * scale).clamp(32, 48).toDouble(),
+                          height: (42 * scale).clamp(32, 48).toDouble(),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.05),
+                            border: Border.all(color: Colors.white12),
+                          ),
+                          child: _safeImageUrl(p.coverImage) != null
+                              ? Image.network(
+                                  _safeImageUrl(p.coverImage)!,
                                   fit: BoxFit.cover,
-                                  onError: (_, __) {},
+                                  errorBuilder: (_, __, ___) => Icon(
+                                    Icons.broken_image_rounded,
+                                    color: Colors.white24,
+                                    size: (20 * scale).clamp(16, 22).toDouble(),
+                                  ),
                                 )
-                              : null,
+                              : Icon(
+                                  Icons.image_rounded,
+                                  color: Colors.white24,
+                                  size: (20 * scale).clamp(16, 22).toDouble(),
+                                ),
                         ),
-                        child: p.coverImage == null
-                            ? Icon(Icons.image_rounded,
-                                color: Colors.white24,
-                                size: (20 * scale)
-                                    .clamp(16, 22)
-                                    .toDouble())
-                            : null,
                       ),
                       SizedBox(width: (8 * scale).clamp(6, 10).toDouble()),
 

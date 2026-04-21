@@ -2707,6 +2707,17 @@ class _SummaryPill extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// URL safety guard  (mirrors the one in admin_places_screen.dart)
+// ─────────────────────────────────────────────────────────────────────────────
+String? _safeImageUrl(String? url) {
+  if (url == null) return null;
+  final t = url.trim();
+  if (t.isEmpty) return null;
+  if (!t.startsWith('https://')) return null;
+  return t;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // _ImageUploadTile
 //
 // Reusable upload tile used by both the cover image and each gallery slot in
@@ -2732,7 +2743,7 @@ class _ImageUploadTile extends StatelessWidget {
   });
 
   bool get _hasPreview =>
-      imageBytes != null || existingUrl.trim().isNotEmpty;
+      imageBytes != null || _safeImageUrl(existingUrl) != null;
 
   @override
   Widget build(BuildContext context) {
@@ -2826,6 +2837,8 @@ class _ImageUploadTile extends StatelessWidget {
   }
 
   Widget _buildPreview() {
+    // Show local bytes immediately after the user picks a file (before upload
+    // completes — gives instant visual feedback).
     if (imageBytes != null) {
       return Image.memory(
         imageBytes!,
@@ -2833,9 +2846,15 @@ class _ImageUploadTile extends StatelessWidget {
         errorBuilder: (_, __, ___) => _placeholder(),
       );
     }
-    if (existingUrl.trim().isNotEmpty) {
+    // _safeImageUrl rejects empty strings and plain-http:// values so
+    // Image.network is never called with a URL that would be blocked by the
+    // browser as mixed content (which produces a noisy statusCode-0 error).
+    // Firebase Storage getDownloadURL() always returns https://, so all
+    // legitimately uploaded images pass this check without issue.
+    final safeUrl = _safeImageUrl(existingUrl);
+    if (safeUrl != null) {
       return Image.network(
-        existingUrl.trim(),
+        safeUrl,
         fit: BoxFit.cover,
         loadingBuilder: (_, child, progress) => progress == null
             ? child

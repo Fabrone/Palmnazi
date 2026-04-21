@@ -79,6 +79,19 @@ class _PlaceDetailApi {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// URL safety guard — same pattern used in admin screens.
+// Firebase Storage URLs are always https://; any http:// value is old test
+// data and must be dropped before Image.network is called.
+// ─────────────────────────────────────────────────────────────────────────────
+String? _safeImageUrl(String? url) {
+  if (url == null) return null;
+  final t = url.trim();
+  if (t.isEmpty) return null;
+  if (!t.startsWith('https://')) return null;
+  return t;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PlaceDetailsScreen
 // ─────────────────────────────────────────────────────────────────────────────
 class PlaceDetailsScreen extends StatefulWidget {
@@ -268,8 +281,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
 
   // ── Background ─────────────────────────────────────────────────────────────
   Widget _buildBackground() {
-    final cover = _place.coverImage ?? '';
-    if (cover.isNotEmpty) {
+    final cover = _safeImageUrl(_place.coverImage);
+    if (cover != null) {
       return Image.network(
         cover,
         fit: BoxFit.cover,
@@ -807,6 +820,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             itemCount: _place.images.length,
             itemBuilder: (context, i) {
               final img = _place.images[i];
+              // Skip gallery slots whose URL is not a valid https:// link
+              // (e.g. old http:// test data) — show broken-image placeholder.
+              final safeUrl = _safeImageUrl(img.url);
               return Container(
                 width: 220,
                 margin: const EdgeInsets.only(right: 12),
@@ -819,23 +835,30 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Image.network(
-                      img.url,
-                      fit: BoxFit.cover,
-                      frameBuilder: (ctx, child, frame, _) =>
-                          AnimatedOpacity(
-                        opacity: frame == null ? 0.0 : 1.0,
-                        duration:
-                            const Duration(milliseconds: 400),
-                        child: child,
-                      ),
-                      errorBuilder: (_, __, ___) => Container(
-                        color: _P.deepBlue,
-                        child: Icon(Icons.broken_image_outlined,
-                            color: Colors.white.withValues(alpha: 0.25),
-                            size: 36),
-                      ),
-                    ),
+                    safeUrl != null
+                        ? Image.network(
+                            safeUrl,
+                            fit: BoxFit.cover,
+                            frameBuilder: (ctx, child, frame, _) =>
+                                AnimatedOpacity(
+                              opacity: frame == null ? 0.0 : 1.0,
+                              duration:
+                                  const Duration(milliseconds: 400),
+                              child: child,
+                            ),
+                            errorBuilder: (_, __, ___) => Container(
+                              color: _P.deepBlue,
+                              child: Icon(Icons.broken_image_outlined,
+                                  color: Colors.white.withValues(alpha: 0.25),
+                                  size: 36),
+                            ),
+                          )
+                        : Container(
+                            color: _P.deepBlue,
+                            child: Icon(Icons.broken_image_outlined,
+                                color: Colors.white.withValues(alpha: 0.25),
+                                size: 36),
+                          ),
                     if ((img.caption ?? '').isNotEmpty)
                       Positioned(
                         bottom: 0, left: 0, right: 0,
