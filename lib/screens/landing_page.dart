@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/screens/resort_city_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/admin/admin_dashboard.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // landing_page.dart
@@ -420,10 +421,16 @@ class _LandingPageState extends State<LandingPage>
   }
 
   Widget _brand() => Row(mainAxisSize: MainAxisSize.min, children: [
-    Container(
-      width: 34, height: 34,
-      decoration: const BoxDecoration(gradient: RC.tealGrad, shape: BoxShape.circle),
-      child: const Icon(Icons.travel_explore_rounded, color: Colors.white, size: 18),
+    GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const AdminDashboard()),
+      ),
+      child: Container(
+        width: 34, height: 34,
+        decoration: const BoxDecoration(gradient: RC.tealGrad, shape: BoxShape.circle),
+        child: const Icon(Icons.travel_explore_rounded, color: Colors.white, size: 18),
+      ),
     ),
     const SizedBox(width: 10),
     ShaderMask(

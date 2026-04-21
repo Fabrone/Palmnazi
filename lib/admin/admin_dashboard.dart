@@ -359,6 +359,41 @@ class _AdminSidebar extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 24),
+          // Back to App button
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: EdgeInsets.symmetric(
+                    horizontal: isExpanded ? 12 : 0, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                child: Row(
+                  mainAxisAlignment: isExpanded
+                      ? MainAxisAlignment.start
+                      : MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.logout_rounded,
+                        size: 20, color: Colors.white38),
+                    if (isExpanded) ...[
+                      const SizedBox(width: 12),
+                      const Text('Back to App',
+                          style: TextStyle(
+                              color: Colors.white54,
+                              fontSize: 14,
+                              fontWeight: FontWeight.normal)),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -494,6 +529,28 @@ class _AdminTopBar extends StatelessWidget {
                 style:
                     const TextStyle(color: Colors.white38, fontSize: 11)),
           ],
+        ),
+        const Spacer(),
+        TextButton.icon(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              size: 14, color: Color(0xFF14FFEC)),
+          label: const Text(
+            'Back to App',
+            style: TextStyle(
+                color: Color(0xFF14FFEC),
+                fontSize: 13,
+                fontWeight: FontWeight.w500),
+          ),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            backgroundColor: const Color(0xFF14FFEC).withValues(alpha: 0.08),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(
+                  color: const Color(0xFF14FFEC).withValues(alpha: 0.25)),
+            ),
+          ),
         ),
       ]),
     );
