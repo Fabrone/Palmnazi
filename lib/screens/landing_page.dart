@@ -8,36 +8,6 @@ import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/admin/admin_dashboard.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// landing_page.dart  (v2)
-//
-// Public home screen.  Live data from:
-//   GET /api/cities?isActive=true                → resort city cards
-//   GET /api/blog?limit=6                        → blog / travel inspiration
-//   GET /api/categories?tree=true&isActive=true  → nav categories overlay
-//   GET /api/cities?search=q                     → search: cities
-//   GET /api/places?search=q&status=ACTIVE        → search: places
-//   GET /api/categories?search=q                 → search: categories
-//
-// KEY CHANGES FROM v1
-//   • Hero background is now assets/images/homepage.jpg with a dark overlay
-//     instead of a pure gradient.  The gradient tokens are kept for fallback
-//     and for non-hero sections.
-//   • Search panel removed from hero.  Replaced by a compact floating Search
-//     button that opens a full-featured search dialog (City / Place / Category).
-//   • Stats row moved to its own section below the Travel Inspiration grid.
-//   • "Destinations" nav link scrolls to the cities section.
-//   • "Blog" nav link scrolls to the blog section.
-//   • "Categories" nav link opens a full-screen categories overlay that lists
-//     ALL system categories from the backend (different from the city-specific
-//     CategoryScreen reached via a city card).
-//
-// RESPONSIVE BREAKPOINTS
-//   mobile   <  600 dp
-//   tablet   <  900 dp
-//   desktop  ≥  900 dp
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Design tokens  (unchanged from v1 — kept in one place)
 // ─────────────────────────────────────────────────────────────────────────────
 abstract final class RC {
