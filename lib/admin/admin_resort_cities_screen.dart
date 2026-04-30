@@ -1088,7 +1088,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
     }
 
     // Use file_picker so this works on mobile, web AND desktop.
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.image,
       withData: true, // ensures bytes are available on all platforms (incl. web)
     );

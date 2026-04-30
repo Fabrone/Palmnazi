@@ -435,7 +435,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       return;
     }
 
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.image,
       withData: true,
     );
@@ -508,7 +508,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       return;
     }
 
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.image,
       withData: true,
     );
