@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
+import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/resort_city_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/admin/admin_dashboard.dart';
@@ -47,6 +48,8 @@ class BlogPost {
   final List<String> categories;
   final int? readingTimeMinutes;
   final int? views;
+  final int? likes;
+  final String? publishedAt;
   final Map<String, dynamic>? author;
   final Map<String, dynamic>? city;
 
@@ -59,6 +62,8 @@ class BlogPost {
     this.categories = const [],
     this.readingTimeMinutes,
     this.views,
+    this.likes,
+    this.publishedAt,
     this.author,
     this.city,
   });
@@ -75,6 +80,8 @@ class BlogPost {
             [],
         readingTimeMinutes: j['readingTimeMinutes'] as int?,
         views: (j['stats'] as Map<String, dynamic>?)?['views'] as int?,
+        likes: (j['stats'] as Map<String, dynamic>?)?['likes'] as int?,
+        publishedAt: j['publishedAt'] as String?,
         author: j['author'] as Map<String, dynamic>?,
         city: j['city'] as Map<String, dynamic>?,
       );
@@ -91,12 +98,27 @@ class BlogPost {
   }
 
   String get cityName => (city?['name'] as String?) ?? '';
+
+  /// Returns a short human-readable date string, e.g. "Feb 15, 2026".
+  String get formattedDate {
+    if (publishedAt == null) return '';
+    try {
+      final dt = DateTime.parse(publishedAt!).toLocal();
+      const months = [
+        '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      ];
+      return '${months[dt.month]} ${dt.day}, ${dt.year}';
+    } catch (_) {
+      return '';
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Search result model  (unified across cities / places / categories)
 // ─────────────────────────────────────────────────────────────────────────────
-enum _SearchType { city, place, category }
+enum _SearchType { city, place, category, blog }
 
 class _SearchResult {
   final String id;
@@ -146,16 +168,25 @@ class _LandingApi {
   }
 
   // ── Blog ───────────────────────────────────────────────────────────────────
-  static Future<List<BlogPost>> fetchBlogPosts({int limit = 6}) async {
-    final uri = Uri.parse(ApiEndpoints.url('/api/blog?limit=$limit'));
+  static Future<({List<BlogPost> posts, int total})> fetchBlogPosts({
+    int limit = 6,
+    int page = 1,
+  }) async {
+    final uri = Uri.parse(
+        ApiEndpoints.url('/api/blog?limit=$limit&page=$page&sortBy=publishedAt&order=desc'));
     final resp = await http.get(uri).timeout(_timeout);
-    if (resp.statusCode != 200) return [];
+    if (resp.statusCode != 200) return (posts: <BlogPost>[], total: 0);
     final body = jsonDecode(resp.body) as Map<String, dynamic>;
     final posts = body['posts'] as List<dynamic>? ?? [];
-    return posts
-        .whereType<Map<String, dynamic>>()
-        .map(BlogPost.fromJson)
-        .toList();
+    final pagination = body['pagination'] as Map<String, dynamic>?;
+    final total = pagination?['total'] as int? ?? posts.length;
+    return (
+      posts: posts
+          .whereType<Map<String, dynamic>>()
+          .map(BlogPost.fromJson)
+          .toList(),
+      total: total,
+    );
   }
 
   // ── All categories (tree) ──────────────────────────────────────────────────
@@ -253,6 +284,30 @@ class _LandingApi {
                   raw: cat,
                 ))
             .toList();
+
+      case _SearchType.blog:
+        final uri = Uri.parse(
+            ApiEndpoints.url('/api/blog/search?q=$enc&page=1&limit=20'));
+        final resp = await http.get(uri).timeout(_timeout);
+        if (resp.statusCode != 200) return [];
+        final body = jsonDecode(resp.body) as Map<String, dynamic>;
+        final posts = (body['posts'] as List<dynamic>?) ?? [];
+        return posts
+            .whereType<Map<String, dynamic>>()
+            .map(BlogPost.fromJson)
+            .map((p) => _SearchResult(
+                  id: p.id,
+                  name: p.title,
+                  subtitle: p.categories.isNotEmpty
+                      ? p.categories.join(' · ')
+                      : p.cityName.isNotEmpty
+                          ? p.cityName
+                          : null,
+                  imageUrl: p.featuredImage,
+                  type: _SearchType.blog,
+                  raw: p,
+                ))
+            .toList();
     }
   }
 }
@@ -272,8 +327,12 @@ class _LandingPageState extends State<LandingPage>
   // ── Data ──────────────────────────────────────────────────────────────────
   List<CityModel> _cities = [];
   List<BlogPost> _blogPosts = [];
+  List<CategoryModel> _cachedCategories = [];   // pre-fetched for instant overlay
   bool _citiesLoading = true;
   bool _blogLoading = true;
+  bool _blogLoadingMore = false;
+  int _blogPage = 1;
+  int _blogTotal = 0;
   String? _citiesError;
 
   // ── Scroll ────────────────────────────────────────────────────────────────
@@ -318,6 +377,18 @@ class _LandingPageState extends State<LandingPage>
   Future<void> _loadAll() async {
     _loadCities();
     _loadBlog();
+    _loadCategories(); // background pre-fetch so the overlay opens instantly
+  }
+
+  /// Pre-fetches the category tree in the background. The result is cached and
+  /// passed directly to [_PublicCategoriesOverlay] so it never needs to fetch.
+  Future<void> _loadCategories() async {
+    try {
+      final cats = await _LandingApi.fetchAllCategories();
+      if (mounted) setState(() => _cachedCategories = cats);
+    } catch (_) {
+      // Silently fail — the overlay will fetch on its own as fallback.
+    }
   }
 
   Future<void> _loadCities() async {
@@ -347,15 +418,38 @@ class _LandingPageState extends State<LandingPage>
 
   Future<void> _loadBlog() async {
     try {
-      final posts = await _LandingApi.fetchBlogPosts();
+      final result = await _LandingApi.fetchBlogPosts(
+          limit: 6, page: 1);
       if (mounted) {
         setState(() {
-          _blogPosts = posts;
+          _blogPosts = result.posts;
+          _blogTotal = result.total;
+          _blogPage = 1;
           _blogLoading = false;
         });
       }
     } catch (_) {
       if (mounted) setState(() => _blogLoading = false);
+    }
+  }
+
+  Future<void> _loadMoreBlog() async {
+    if (_blogLoadingMore) return;
+    final nextPage = _blogPage + 1;
+    setState(() => _blogLoadingMore = true);
+    try {
+      final result = await _LandingApi.fetchBlogPosts(
+          limit: 6, page: nextPage);
+      if (mounted) {
+        setState(() {
+          _blogPosts = [..._blogPosts, ...result.posts];
+          _blogTotal = result.total;
+          _blogPage = nextPage;
+          _blogLoadingMore = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _blogLoadingMore = false);
     }
   }
 
@@ -386,7 +480,8 @@ class _LandingPageState extends State<LandingPage>
       PageRouteBuilder(
         opaque: false,
         barrierColor: Colors.black87,
-        pageBuilder: (_, __, ___) => const _PublicCategoriesOverlay(),
+        pageBuilder: (_, __, ___) =>
+            _PublicCategoriesOverlay(preloaded: _cachedCategories),
         transitionsBuilder: (_, anim, __, child) => SlideTransition(
           position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
               .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
@@ -444,6 +539,14 @@ class _LandingPageState extends State<LandingPage>
 
   // ─────────────────────────────────────────────────────────────────────────
   // NAV BAR
+  // Two breakpoints driven purely by width:
+  //   < 600 px  — mobile portrait  → brand + spacer + menu icon
+  //   ≥ 600 px  — mobile landscape, tablet, desktop
+  //             → brand + spacer + nav links + Sign In
+  //
+  // A phone in landscape is typically 667–900 px wide, so it comfortably
+  // clears the 600 px threshold and keeps the full link row.
+  // All tablet widths (portrait and landscape) are ≥ 600 px.
   // ─────────────────────────────────────────────────────────────────────────
   Widget _navBar(double w, double opacity, bool isMobile) {
     return Positioned(
@@ -462,34 +565,52 @@ class _LandingPageState extends State<LandingPage>
           bottom: false,
           child: Padding(
             padding: EdgeInsets.symmetric(
-                horizontal: isMobile ? 16 : 36, vertical: 12),
+                horizontal: isMobile ? 16 : 28, vertical: 10),
             child: Row(children: [
               _brand(),
               const Spacer(),
+              // ── Full nav links (≥ 600 px) ──────────────────────────────────
               if (!isMobile) ...[
-                _navLink('Destinations', onTap: () => _scrollToKey(_citiesKey)),
+                _navLink('Destinations',
+                    onTap: () => _scrollToKey(_citiesKey)),
                 _navLink('Categories', onTap: _openCategoriesOverlay),
                 _navLink('Blog', onTap: () => _scrollToKey(_blogKey)),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
+                _signInButton(),
               ],
-              if (!isMobile)
-                TextButton(
-                  onPressed: () {},
-                  child: const Text('Sign In',
-                      style: TextStyle(color: RC.textSec, fontSize: 13)),
-                ),
-              const SizedBox(width: 6),
-              _pillButton(label: 'Get Started', onTap: () {}),
-              if (isMobile) ...[
-                const SizedBox(width: 6),
-                IconButton(
-                  icon: const Icon(Icons.menu_rounded, color: RC.textSec),
-                  onPressed: () => _showMobileMenu(),
-                ),
-              ],
+              // ── Hamburger (< 600 px — mobile portrait) ────────────────────
+              if (isMobile) _menuIconButton(),
             ]),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _signInButton() => TextButton(
+        onPressed: _goToSignIn,
+        style: TextButton.styleFrom(
+          foregroundColor: RC.textSec,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        ),
+        child: const Text('Sign In', style: TextStyle(fontSize: 13)),
+      );
+
+  Widget _menuIconButton() => IconButton(
+        icon: const Icon(Icons.menu_rounded, color: RC.textSec, size: 22),
+        onPressed: _showMobileMenu,
+        splashRadius: 20,
+        tooltip: 'Menu',
+      );
+
+  void _goToSignIn() {
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, anim, __) => const AuthScreen(isLogin: true),
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 320),
       ),
     );
   }
@@ -533,6 +654,7 @@ class _LandingPageState extends State<LandingPage>
               const Divider(color: Color(0xFF1A3550), height: 24),
               _mobileMenuItem(Icons.login_rounded, 'Sign In', () {
                 Navigator.pop(context);
+                _goToSignIn();
               }),
             ],
           ),
@@ -588,28 +710,6 @@ class _LandingPageState extends State<LandingPage>
         child: Text(label, style: const TextStyle(fontSize: 13)),
       );
 
-  Widget _pillButton({required String label, required VoidCallback onTap}) =>
-      GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [RC.teal, RC.tealMid]),
-            borderRadius: BorderRadius.circular(22),
-            boxShadow: [
-              BoxShadow(
-                  color: RC.teal.withValues(alpha: 0.30),
-                  blurRadius: 14,
-                  offset: const Offset(0, 4))
-            ],
-          ),
-          child: Text(label,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13)),
-        ),
-      );
 
   // ─────────────────────────────────────────────────────────────────────────
   // HERO  — background: assets/images/homepage.jpg + dark overlay
@@ -1023,6 +1123,7 @@ class _LandingPageState extends State<LandingPage>
   Widget _blogSection(double w) {
     final isMobile = w < 600;
     final hPad = isMobile ? 20.0 : 48.0;
+    final hasMore = _blogPosts.length < _blogTotal;
 
     return Container(
       key: _blogKey,
@@ -1053,21 +1154,29 @@ class _LandingPageState extends State<LandingPage>
                           ),
                         ),
                         const SizedBox(height: 8),
-                        const Text(
-                          'Guides, tips and stories from our expert travel writers.',
-                          style: TextStyle(
+                        Text(
+                          _blogTotal > 0
+                              ? 'Guides, tips and stories — $_blogTotal articles published.'
+                              : 'Guides, tips and stories from our expert travel writers.',
+                          style: const TextStyle(
                               color: RC.textSec, fontSize: 15, height: 1.5),
                         ),
                       ],
                     ),
                   ),
-                  if (!isMobile) ...[
+                  if (!isMobile && hasMore) ...[
                     const SizedBox(width: 24),
                     TextButton.icon(
-                      onPressed: () {},
-                      icon: const Icon(Icons.arrow_forward_rounded,
-                          color: RC.teal, size: 16),
-                      label: const Text('View All',
+                      onPressed: _blogLoadingMore ? null : _loadMoreBlog,
+                      icon: _blogLoadingMore
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                  color: RC.teal, strokeWidth: 2))
+                          : const Icon(Icons.expand_more_rounded,
+                              color: RC.teal, size: 16),
+                      label: const Text('Load More',
                           style: TextStyle(color: RC.teal, fontSize: 13)),
                     ),
                   ],
@@ -1075,16 +1184,39 @@ class _LandingPageState extends State<LandingPage>
               ),
               const SizedBox(height: 36),
               _buildBlogBody(w, isMobile),
-              if (isMobile) ...[
-                const SizedBox(height: 20),
+              if (!_blogLoading && _blogPosts.isNotEmpty) ...[
+                const SizedBox(height: 28),
                 Center(
-                  child: TextButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.arrow_forward_rounded,
-                        color: RC.teal, size: 15),
-                    label: const Text('View All Posts',
-                        style: TextStyle(color: RC.teal)),
-                  ),
+                  child: hasMore
+                      ? _blogLoadingMore
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                  color: RC.teal, strokeWidth: 2))
+                          : OutlinedButton.icon(
+                              onPressed: _loadMoreBlog,
+                              icon: const Icon(Icons.expand_more_rounded,
+                                  color: RC.teal, size: 18),
+                              label: Text(
+                                'Load More Articles (${_blogTotal - _blogPosts.length} remaining)',
+                                style: const TextStyle(
+                                    color: RC.teal, fontSize: 13),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                side: BorderSide(
+                                    color: RC.teal.withValues(alpha: 0.40)),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 24, vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(30)),
+                              ),
+                            )
+                      : Text(
+                          'All ${_blogTotal > 0 ? '$_blogTotal ' : ''}articles loaded',
+                          style: const TextStyle(
+                              color: RC.textMute, fontSize: 12),
+                        ),
                 ),
               ],
             ],
@@ -1096,34 +1228,39 @@ class _LandingPageState extends State<LandingPage>
 
   Widget _buildBlogBody(double w, bool isMobile) {
     if (_blogLoading) {
-      return Wrap(
-        spacing: 20,
-        runSpacing: 20,
-        children: List.generate(
-          isMobile ? 2 : 3,
-          (_) => _SkeletonBox(
-              width: isMobile ? double.infinity : 300, height: 290, radius: 16),
-        ),
-      );
+      return LayoutBuilder(builder: (_, c) {
+        final cols = isMobile ? 1 : (w < 1024 ? 2 : 3);
+        const gap = 20.0;
+        final cardW = (c.maxWidth - gap * (cols - 1)) / cols;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: List.generate(
+            isMobile ? 2 : cols * 2,
+            (_) => _SkeletonBox(width: cardW, height: 290, radius: 16),
+          ),
+        );
+      });
     }
     if (_blogPosts.isEmpty) {
       return Center(
           child: Column(children: [
         const Icon(Icons.article_outlined, color: RC.textMute, size: 48),
         const SizedBox(height: 12),
-        const Text('No blog posts yet', style: TextStyle(color: RC.textSec)),
+        const Text('No blog posts yet.', style: TextStyle(color: RC.textSec)),
+        const SizedBox(height: 6),
+        const Text('Check back soon for travel guides and inspiration.',
+            style: TextStyle(color: RC.textMute, fontSize: 13)),
       ]));
     }
     return LayoutBuilder(builder: (_, constraints) {
       final cols = isMobile ? 1 : (w < 1024 ? 2 : 3);
       const gap = 20.0;
       final cardW = (constraints.maxWidth - gap * (cols - 1)) / cols;
-      final take = isMobile ? 3 : (cols == 2 ? 4 : 6);
       return Wrap(
         spacing: gap,
         runSpacing: gap,
         children: _blogPosts
-            .take(take)
             .map((post) => SizedBox(
                   width: cardW,
                   child: _BlogCard(post: post),
@@ -1349,40 +1486,47 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
       decoration: BoxDecoration(
         color: RC.deepBlue,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: 0.15)),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 12)
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15), blurRadius: 12)
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: color, size: 22),
+            child: Icon(icon, color: color, size: 18),
           ),
-          const SizedBox(width: 14),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(value,
-                  style: TextStyle(
-                      color: color,
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      height: 1.1)),
-              const SizedBox(height: 2),
-              Text(label,
-                  style: const TextStyle(color: RC.textSec, fontSize: 12)),
-            ],
+          const SizedBox(height: 12),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: TextStyle(
+                  color: color,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  height: 1.1),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            style: const TextStyle(color: RC.textSec, fontSize: 12),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
           ),
         ],
       ),
@@ -1419,6 +1563,11 @@ class _SearchDialogState extends State<_SearchDialog> {
       'Category',
       'Search by category name…',
       Icons.category_outlined
+    ),
+    _SearchType.blog: (
+      'Blog',
+      'Search articles & guides…',
+      Icons.article_outlined
     ),
   };
 
@@ -1513,20 +1662,21 @@ class _SearchDialogState extends State<_SearchDialog> {
             // ── Type selector ─────────────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                  children: _SearchType.values.map((t) {
-                final selected = t == _type;
-                final l = _labels[t]!;
-                return Expanded(
-                  child: GestureDetector(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _SearchType.values.map((t) {
+                  final selected = t == _type;
+                  final l = _labels[t]!;
+                  return GestureDetector(
                     onTap: () => setState(() {
                       _type = t;
                       _searched = false;
                       _results = [];
                     }),
                     child: Container(
-                      margin: const EdgeInsets.only(right: 8),
-                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 9),
                       decoration: BoxDecoration(
                         color: selected
                             ? RC.teal.withValues(alpha: 0.15)
@@ -1539,7 +1689,7 @@ class _SearchDialogState extends State<_SearchDialog> {
                         ),
                       ),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(l.$3,
                               size: 14,
@@ -1556,9 +1706,9 @@ class _SearchDialogState extends State<_SearchDialog> {
                         ],
                       ),
                     ),
-                  ),
-                );
-              }).toList()),
+                  );
+                }).toList(),
+              ),
             ),
             const SizedBox(height: 14),
 
@@ -1743,22 +1893,47 @@ class _SearchDialogState extends State<_SearchDialog> {
         ? Icons.location_city_outlined
         : t == _SearchType.place
             ? Icons.place_outlined
-            : Icons.category_outlined;
+            : t == _SearchType.blog
+                ? Icons.article_outlined
+                : Icons.category_outlined;
+    final color = t == _SearchType.blog ? RC.gold : RC.teal;
     return Container(
       width: 44,
       height: 44,
       decoration: BoxDecoration(
-        color: RC.teal.withValues(alpha: 0.10),
+        color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Icon(icon, color: RC.teal, size: 20),
+      child: Icon(icon, color: color, size: 20),
     );
   }
 
   void _onResultTap(_SearchResult r) {
     Navigator.pop(context);
-    // Navigate based on type — wire to the appropriate screens when ready
-    // e.g. for cities: Navigator.push → ResortCityScreen(city: r.raw as CityModel)
+    switch (r.type) {
+      case _SearchType.city:
+        if (r.raw is CityModel) {
+          Navigator.push(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (_, anim, __) =>
+                  ResortCityScreen(city: r.raw as CityModel),
+              transitionsBuilder: (_, anim, __, child) =>
+                  FadeTransition(opacity: anim, child: child),
+              transitionDuration: const Duration(milliseconds: 350),
+            ),
+          );
+        }
+      case _SearchType.place:
+        // Navigate to place detail when screen is available
+        break;
+      case _SearchType.category:
+        // Navigate to category listing when screen is available
+        break;
+      case _SearchType.blog:
+        // Navigate to blog post detail when screen is available
+        break;
+    }
   }
 }
 
@@ -1766,7 +1941,11 @@ class _SearchDialogState extends State<_SearchDialog> {
 // _PublicCategoriesOverlay  — full-screen categories listing from backend
 // ─────────────────────────────────────────────────────────────────────────────
 class _PublicCategoriesOverlay extends StatefulWidget {
-  const _PublicCategoriesOverlay();
+  /// Pre-fetched category tree from LandingPage. When non-empty the overlay
+  /// renders immediately without a network call. Fallback fetch still runs if
+  /// this list is empty (e.g. first open before pre-fetch finished).
+  final List<CategoryModel> preloaded;
+  const _PublicCategoriesOverlay({this.preloaded = const []});
 
   @override
   State<_PublicCategoriesOverlay> createState() =>
@@ -1784,7 +1963,14 @@ class _PublicCategoriesOverlayState extends State<_PublicCategoriesOverlay> {
   @override
   void initState() {
     super.initState();
-    _fetch();
+    if (widget.preloaded.isNotEmpty) {
+      // Data is already here — show instantly, no spinner.
+      _roots = List.of(widget.preloaded);
+      _loading = false;
+      if (_roots.length <= 6) _expanded.addAll(_roots.map((r) => r.id));
+    } else {
+      _fetch(); // fallback: pre-fetch hadn't finished yet
+    }
   }
 
   @override
@@ -2433,6 +2619,32 @@ class _BlogCardState extends State<_BlogCard>
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 14),
+                      // ── Date row ─────────────────────────────────────────
+                      if (post.formattedDate.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(children: [
+                            const Icon(Icons.calendar_today_outlined,
+                                size: 11, color: RC.textMute),
+                            const SizedBox(width: 4),
+                            Text(post.formattedDate,
+                                style: const TextStyle(
+                                    color: RC.textMute, fontSize: 11)),
+                            if (post.cityName.isNotEmpty) ...[
+                              const SizedBox(width: 8),
+                              const Icon(Icons.location_on_outlined,
+                                  size: 11, color: RC.textMute),
+                              const SizedBox(width: 3),
+                              Expanded(
+                                child: Text(post.cityName,
+                                    style: const TextStyle(
+                                        color: RC.textMute, fontSize: 11),
+                                    overflow: TextOverflow.ellipsis),
+                              ),
+                            ],
+                          ]),
+                        ),
+                      // ── Author / reading time / views ─────────────────────
                       Row(children: [
                         const Icon(Icons.person_outline_rounded,
                             size: 13, color: RC.textMute),

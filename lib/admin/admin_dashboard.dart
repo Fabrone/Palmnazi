@@ -3,6 +3,7 @@ import 'package:palmnazi/admin/admin_api_service.dart';
 import 'package:palmnazi/admin/admin_resort_cities_screen.dart';
 import 'package:palmnazi/admin/admin_categories_screen.dart';
 import 'package:palmnazi/admin/admin_places_screen.dart';
+import 'package:palmnazi/admin/admin_blog_list_screen.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 
@@ -14,6 +15,7 @@ import 'package:palmnazi/models/category_model.dart';
 //   1 — Resort Cities CRUD
 //   2 — Categories CRUD (global — no city scope)
 //   3 — Places CRUD (city + category filter, multi-step wizard)
+//   4 — Blog  (create / edit / delete posts)
 //
 // Key architectural change from previous version:
 //   • Channels are now Categories — they are GLOBAL, not scoped to a city.
@@ -35,7 +37,7 @@ class _AdminDashboardState extends State<AdminDashboard>
   late AnimationController _sidebarAnim;
 
   // Optional filter context passed to the Places tab
-  CityModel? _filterCity;
+  CityModel?     _filterCity;
   CategoryModel? _filterCategory;
 
   final _apiService = AdminApiService();
@@ -43,10 +45,11 @@ class _AdminDashboardState extends State<AdminDashboard>
   bool _statsLoading = true;
 
   static const _navItems = [
-    _NavItem(Icons.dashboard_rounded, 'Dashboard'),
-    _NavItem(Icons.location_city_rounded, 'Resort Cities'),
-    _NavItem(Icons.category_rounded, 'Categories'),
-    _NavItem(Icons.place_rounded, 'Places'),
+    _NavItem(Icons.dashboard_rounded,       'Dashboard'),
+    _NavItem(Icons.location_city_rounded,   'Resort Cities'),
+    _NavItem(Icons.category_rounded,        'Categories'),
+    _NavItem(Icons.place_rounded,           'Places'),
+    _NavItem(Icons.article_rounded,         'Blog'),
   ];
 
   @override
@@ -81,20 +84,19 @@ class _AdminDashboardState extends State<AdminDashboard>
   void _onNavTap(int index) {
     setState(() {
       _selectedIndex = index;
+      // Clear place-filter context when leaving the Places tab
       if (index != 3) {
-        // Clear both filters when leaving Places via the nav bar/sidebar so
-        // returning later starts with the full unfiltered list.
         _filterCategory = null;
-        _filterCity = null;
+        _filterCity     = null;
       }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
+    final w         = MediaQuery.of(context).size.width;
     final isDesktop = w >= 1100;
-    final isTablet = w >= 700;
+    final isTablet  = w >= 700;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E1A),
@@ -102,19 +104,19 @@ class _AdminDashboardState extends State<AdminDashboard>
         children: [
           if (isTablet)
             _AdminSidebar(
-              items: _navItems,
-              selectedIndex: _selectedIndex,
-              isExpanded: isDesktop,
-              onTap: _onNavTap,
-              filterCity: _filterCity,
+              items:          _navItems,
+              selectedIndex:  _selectedIndex,
+              isExpanded:     isDesktop,
+              onTap:          _onNavTap,
+              filterCity:     _filterCity,
               filterCategory: _filterCategory,
             ),
           Expanded(
             child: Column(
               children: [
                 _AdminTopBar(
-                  title: _pageTitle,
-                  subtitle: _pageSubtitle,
+                  title:     _pageTitle,
+                  subtitle:  _pageSubtitle,
                   onMenuTap: isTablet ? null : () => _showMobileDrawer(context),
                 ),
                 Expanded(child: _buildBody()),
@@ -126,94 +128,97 @@ class _AdminDashboardState extends State<AdminDashboard>
       bottomNavigationBar: isTablet
           ? null
           : NavigationBar(
-              backgroundColor: const Color(0xFF111827),
-              indicatorColor: const Color(0xFF14FFEC).withValues(alpha: 0.15),
-              selectedIndex: _selectedIndex,
+              backgroundColor:   const Color(0xFF111827),
+              indicatorColor:    const Color(0xFF14FFEC).withValues(alpha: 0.15),
+              selectedIndex:     _selectedIndex,
               onDestinationSelected: _onNavTap,
               destinations: _navItems
                   .map((e) => NavigationDestination(
-                        icon: Icon(e.icon, color: Colors.white54),
-                        selectedIcon:
-                            Icon(e.icon, color: const Color(0xFF14FFEC)),
-                        label: e.label,
+                        icon:         Icon(e.icon, color: Colors.white54),
+                        selectedIcon: Icon(e.icon, color: const Color(0xFF14FFEC)),
+                        label:        e.label,
                       ))
                   .toList(),
             ),
     );
   }
 
+  // ── Page title / subtitle ──────────────────────────────────────────────────
+
   String get _pageTitle {
     switch (_selectedIndex) {
-      case 0: return 'Admin Console';
-      case 1: return 'Resort Cities';
-      case 2: return 'Categories';
+      case 0:  return 'Admin Console';
+      case 1:  return 'Resort Cities';
+      case 2:  return 'Categories';
       case 3:
         if (_filterCategory != null && _filterCity != null) {
           return '${_filterCategory!.name} — ${_filterCity!.name}';
         }
-        if (_filterCity != null) return 'Places — ${_filterCity!.name}';
+        if (_filterCity     != null) return 'Places — ${_filterCity!.name}';
         if (_filterCategory != null) return 'Places — ${_filterCategory!.name}';
         return 'Places';
+      case 4:  return 'Blog';
       default: return 'Admin';
     }
   }
 
   String get _pageSubtitle {
     switch (_selectedIndex) {
-      case 0: return 'System overview & quick actions';
-      case 1: return 'Add, edit and remove resort destinations';
-      case 2: return 'Manage global categories and subcategories';
+      case 0:  return 'System overview & quick actions';
+      case 1:  return 'Add, edit and remove resort destinations';
+      case 2:  return 'Manage global categories and subcategories';
       case 3:
         if (_filterCity != null && _filterCategory == null) {
           return 'Showing places in ${_filterCity!.name} · use the category filter to narrow down';
         }
         return 'Manage listings and places';
+      case 4:  return 'Create, edit and publish blog articles';
       default: return '';
     }
   }
+
+  // ── Body router ────────────────────────────────────────────────────────────
 
   Widget _buildBody() {
     switch (_selectedIndex) {
       case 0:
         return _DashboardOverview(
-          stats: _stats,
+          stats:     _stats,
           isLoading: _statsLoading,
-          onGoTo: _onNavTap,
+          onGoTo:    _onNavTap,
         );
       case 1:
         return AdminResortCitiesScreen(
-          apiService: _apiService,
-          // "Places" button → Places tab pre-filtered by city only
-          onCitySelected: (city) => setState(() {
-            _filterCity = city;
+          apiService:               _apiService,
+          onCitySelected:           (city) => setState(() {
+            _filterCity     = city;
             _filterCategory = null;
-            _selectedIndex = 3;
+            _selectedIndex  = 3;
           }),
-          // "Categories" button → Places tab pre-filtered by city;
-          // the user picks a category from the filter row to drill down further.
-          // We also clear any stale category filter so the dropdown starts fresh.
           onCityForCategoriesSelected: (city) => setState(() {
-            _filterCity = city;
+            _filterCity     = city;
             _filterCategory = null;
-            _selectedIndex = 3;
+            _selectedIndex  = 3;
           }),
         );
       case 2:
-        // Categories are global — no city context required
         return AdminCategoriesScreen(apiService: _apiService);
       case 3:
         return AdminPlacesScreen(
-          apiService: _apiService,
-          filterCity: _filterCity,
-          filterCategory: _filterCategory,
-          onCityFilterChanged: (city) => setState(() => _filterCity = city),
-          onCategoryFilterChanged: (cat) =>
-              setState(() => _filterCategory = cat),
+          apiService:              _apiService,
+          filterCity:              _filterCity,
+          filterCategory:          _filterCategory,
+          onCityFilterChanged:     (city) => setState(() => _filterCity     = city),
+          onCategoryFilterChanged: (cat)  => setState(() => _filterCategory = cat),
         );
+      case 4:
+        return AdminBlogListScreen(apiService: _apiService);
       default:
         return const SizedBox.shrink();
     }
   }
+
+  // ── Mobile drawer ──────────────────────────────────────────────────────────
 
   void _showMobileDrawer(BuildContext context) {
     showModalBottomSheet(
@@ -269,7 +274,7 @@ class _AdminSidebar extends StatelessWidget {
   final int selectedIndex;
   final bool isExpanded;
   final ValueChanged<int> onTap;
-  final CityModel? filterCity;
+  final CityModel?     filterCity;
   final CategoryModel? filterCategory;
 
   const _AdminSidebar({
@@ -321,36 +326,37 @@ class _AdminSidebar extends StatelessWidget {
           ...items.asMap().entries.map((e) {
             final isSelected = selectedIndex == e.key;
             return _SidebarItem(
-              icon: e.value.icon,
-              label: e.value.label,
+              icon:       e.value.icon,
+              label:      e.value.label,
               isSelected: isSelected,
               isExpanded: isExpanded,
-              onTap: () => onTap(e.key),
+              onTap:      () => onTap(e.key),
             );
           }),
 
           const Spacer(),
 
-          // Active filter context chips
+          // Active filter context chips (only relevant for Places tab)
           if (isExpanded && (filterCity != null || filterCategory != null)) ...[
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('Active filters',
-                      style:
-                          TextStyle(color: Colors.white38, fontSize: 11)),
+                      style: TextStyle(
+                          color: Colors.white38, fontSize: 11)),
                   const SizedBox(height: 6),
                   if (filterCity != null)
                     _ContextChip(
-                        icon: Icons.location_city_rounded,
+                        icon:  Icons.location_city_rounded,
                         label: filterCity!.name,
                         color: const Color(0xFF0D7377)),
                   if (filterCategory != null) ...[
                     const SizedBox(height: 4),
                     _ContextChip(
-                        icon: Icons.category_rounded,
+                        icon:  Icons.category_rounded,
                         label: filterCategory!.name,
                         color: const Color(0xFF2196F3)),
                   ],
@@ -358,7 +364,9 @@ class _AdminSidebar extends StatelessWidget {
               ),
             ),
           ],
+
           const SizedBox(height: 24),
+
           // Back to App button
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -371,7 +379,8 @@ class _AdminSidebar extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.08)),
                 ),
                 child: Row(
                   mainAxisAlignment: isExpanded
@@ -440,7 +449,7 @@ class _SidebarItem extends StatelessWidget {
               : MainAxisAlignment.center,
           children: [
             Icon(icon,
-                size: 20,
+                size:  20,
                 color: isSelected
                     ? const Color(0xFF14FFEC)
                     : Colors.white38),
@@ -448,9 +457,13 @@ class _SidebarItem extends StatelessWidget {
               const SizedBox(width: 12),
               Text(label,
                   style: TextStyle(
-                      color: isSelected ? const Color(0xFF14FFEC) : Colors.white54,
+                      color: isSelected
+                          ? const Color(0xFF14FFEC)
+                          : Colors.white54,
                       fontSize: 14,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal)),
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.normal)),
             ],
           ],
         ),
@@ -468,7 +481,8 @@ class _ContextChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(6),
@@ -481,7 +495,9 @@ class _ContextChip extends StatelessWidget {
             child: Text(label,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    color: color, fontSize: 10, fontWeight: FontWeight.w600)),
+                    color: color,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600)),
           ),
         ]),
       );
@@ -506,13 +522,16 @@ class _AdminTopBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 24),
       decoration: BoxDecoration(
         color: const Color(0xFF111827),
-        border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.07))),
+        border: Border(
+            bottom: BorderSide(
+                color: Colors.white.withValues(alpha: 0.07))),
       ),
       child: Row(children: [
         if (onMenuTap != null) ...[
           IconButton(
             onPressed: onMenuTap,
-            icon: const Icon(Icons.menu_rounded, color: Colors.white54, size: 22),
+            icon: const Icon(Icons.menu_rounded,
+                color: Colors.white54, size: 22),
           ),
           const SizedBox(width: 8),
         ],
@@ -526,8 +545,8 @@ class _AdminTopBar extends StatelessWidget {
                     fontSize: 18,
                     fontWeight: FontWeight.bold)),
             Text(subtitle,
-                style:
-                    const TextStyle(color: Colors.white38, fontSize: 11)),
+                style: const TextStyle(
+                    color: Colors.white38, fontSize: 11)),
           ],
         ),
         const Spacer(),
@@ -543,12 +562,15 @@ class _AdminTopBar extends StatelessWidget {
                 fontWeight: FontWeight.w500),
           ),
           style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            backgroundColor: const Color(0xFF14FFEC).withValues(alpha: 0.08),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 14, vertical: 8),
+            backgroundColor:
+                const Color(0xFF14FFEC).withValues(alpha: 0.08),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
               side: BorderSide(
-                  color: const Color(0xFF14FFEC).withValues(alpha: 0.25)),
+                  color:
+                      const Color(0xFF14FFEC).withValues(alpha: 0.25)),
             ),
           ),
         ),
@@ -576,33 +598,34 @@ class _DashboardOverview extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Stats cards ─────────────────────────────────────────────────
           Wrap(
             spacing: 16,
             runSpacing: 16,
             children: [
               _StatCard(
-                icon: Icons.location_city_rounded,
+                icon:  Icons.location_city_rounded,
                 label: 'Resort Cities',
                 value: isLoading ? '…' : '${stats['cities_total'] ?? 0}',
                 color: const Color(0xFF0D7377),
                 onTap: () => onGoTo(1),
               ),
               _StatCard(
-                icon: Icons.people_rounded,
+                icon:  Icons.people_rounded,
                 label: 'Registered Users',
                 value: isLoading ? '…' : '${stats['users_total'] ?? 0}',
                 color: const Color(0xFF2196F3),
                 onTap: () => onGoTo(0),
               ),
               _StatCard(
-                icon: Icons.place_rounded,
+                icon:  Icons.place_rounded,
                 label: 'Active Places',
                 value: isLoading ? '…' : '${stats['places_active'] ?? 0}',
                 color: const Color(0xFF9C27B0),
                 onTap: () => onGoTo(3),
               ),
               _StatCard(
-                icon: Icons.pending_actions_rounded,
+                icon:  Icons.pending_actions_rounded,
                 label: 'Pending Drafts',
                 value: isLoading ? '…' : '${stats['places_pending'] ?? 0}',
                 color: const Color(0xFFFF9800),
@@ -610,7 +633,10 @@ class _DashboardOverview extends StatelessWidget {
               ),
             ],
           ),
+
           const SizedBox(height: 32),
+
+          // ── Quick Actions ───────────────────────────────────────────────
           const Text('Quick Actions',
               style: TextStyle(
                   color: Colors.white,
@@ -622,28 +648,36 @@ class _DashboardOverview extends StatelessWidget {
             runSpacing: 16,
             children: [
               _QuickAction(
-                icon: Icons.add_location_alt_rounded,
-                label: 'Add Resort City',
+                icon:        Icons.add_location_alt_rounded,
+                label:       'Add Resort City',
                 description: 'Create a new resort destination',
-                color: const Color(0xFF0D7377),
-                onTap: () => onGoTo(1),
+                color:       const Color(0xFF0D7377),
+                onTap:       () => onGoTo(1),
               ),
               _QuickAction(
-                icon: Icons.add_box_rounded,
-                label: 'Add Category',
+                icon:        Icons.add_box_rounded,
+                label:       'Add Category',
                 description: 'Create a global service category',
-                color: const Color(0xFF2196F3),
-                onTap: () => onGoTo(2),
+                color:       const Color(0xFF2196F3),
+                onTap:       () => onGoTo(2),
               ),
               _QuickAction(
-                icon: Icons.add_business_rounded,
-                label: 'Add Place',
+                icon:        Icons.add_business_rounded,
+                label:       'Add Place',
                 description: 'List a new place or business',
-                color: const Color(0xFF9C27B0),
-                onTap: () => onGoTo(3),
+                color:       const Color(0xFF9C27B0),
+                onTap:       () => onGoTo(3),
+              ),
+              _QuickAction(
+                icon:        Icons.edit_note_rounded,
+                label:       'Write Blog Post',
+                description: 'Publish a new article or guide',
+                color:       const Color(0xFFE91E8C),
+                onTap:       () => onGoTo(4),
               ),
             ],
           ),
+
           const SizedBox(height: 32),
           _WorkflowGuide(),
         ],
@@ -651,6 +685,10 @@ class _DashboardOverview extends StatelessWidget {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stat Card
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _StatCard extends StatelessWidget {
   final IconData icon;
@@ -660,8 +698,11 @@ class _StatCard extends StatelessWidget {
   final VoidCallback? onTap;
 
   const _StatCard({
-    required this.icon, required this.label,
-    required this.value, required this.color, this.onTap,
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+    this.onTap,
   });
 
   @override
@@ -673,7 +714,8 @@ class _StatCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: const Color(0xFF111827),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withValues(alpha: 0.25)),
+            border:
+                Border.all(color: color.withValues(alpha: 0.25)),
           ),
           child: Row(children: [
             Container(
@@ -685,17 +727,26 @@ class _StatCard extends StatelessWidget {
               child: Icon(icon, color: color, size: 22),
             ),
             const SizedBox(width: 16),
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
               Text(value,
                   style: TextStyle(
-                      color: color, fontSize: 28, fontWeight: FontWeight.bold)),
+                      color: color,
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold)),
               Text(label,
-                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                  style: const TextStyle(
+                      color: Colors.white54, fontSize: 12)),
             ]),
           ]),
         ),
       );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Quick Action card
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _QuickAction extends StatelessWidget {
   final IconData icon;
@@ -705,8 +756,11 @@ class _QuickAction extends StatelessWidget {
   final VoidCallback onTap;
 
   const _QuickAction({
-    required this.icon, required this.label,
-    required this.description, required this.color, required this.onTap,
+    required this.icon,
+    required this.label,
+    required this.description,
+    required this.color,
+    required this.onTap,
   });
 
   @override
@@ -719,21 +773,31 @@ class _QuickAction extends StatelessWidget {
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: color.withValues(alpha: 0.3)),
+            border:
+                Border.all(color: color.withValues(alpha: 0.3)),
           ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             Icon(icon, color: color, size: 28),
             const SizedBox(height: 12),
             Text(label,
                 style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14)),
             const SizedBox(height: 4),
             Text(description,
-                style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                style: const TextStyle(
+                    color: Colors.white38, fontSize: 12)),
           ]),
         ),
       );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Workflow guide
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _WorkflowGuide extends StatelessWidget {
   @override
@@ -744,13 +808,18 @@ class _WorkflowGuide extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Colors.white12),
         ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
           const Row(children: [
-            Icon(Icons.map_rounded, color: Color(0xFF14FFEC), size: 18),
+            Icon(Icons.map_rounded,
+                color: Color(0xFF14FFEC), size: 18),
             SizedBox(width: 10),
             Text('Setup Workflow',
                 style: TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15)),
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15)),
           ]),
           const SizedBox(height: 20),
           _step('1', 'Resort Cities',
@@ -762,18 +831,25 @@ class _WorkflowGuide extends StatelessWidget {
           _step('3', 'Places',
               'Add each place via the 11-step wizard. At step 9, link it to all categories it belongs to — this is how one place appears in multiple channels.',
               const Color(0xFF9C27B0)),
+          _step('4', 'Blog',
+              'Publish articles, guides, and city highlights. Associate posts with a resort city to surface them in the right context on the user app.',
+              const Color(0xFFE91E8C)),
         ]),
       );
 
-  Widget _step(String num, String title, String body, Color color) => Padding(
+  Widget _step(String num, String title, String body, Color color) =>
+      Padding(
         padding: const EdgeInsets.only(bottom: 16),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
           Container(
             width: 28, height: 28,
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.2),
               shape: BoxShape.circle,
-              border: Border.all(color: color.withValues(alpha: 0.5)),
+              border: Border.all(
+                  color: color.withValues(alpha: 0.5)),
             ),
             child: Center(
                 child: Text(num,
@@ -784,15 +860,22 @@ class _WorkflowGuide extends StatelessWidget {
           ),
           const SizedBox(width: 14),
           Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title,
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
-            const SizedBox(height: 2),
-            Text(body,
-                style: const TextStyle(
-                    color: Colors.white38, fontSize: 12, height: 1.5)),
-          ])),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              Text(title,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13)),
+              const SizedBox(height: 2),
+              Text(body,
+                  style: const TextStyle(
+                      color: Colors.white38,
+                      fontSize: 12,
+                      height: 1.5)),
+            ]),
+          ),
         ]),
       );
 }

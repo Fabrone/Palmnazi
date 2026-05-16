@@ -82,6 +82,11 @@ abstract class _Ep {
 
   // Dashboard  — stats API lives at /api/stats, not /api/admin/stats
   static const String adminStats = '/api/stats';
+
+  // Blog
+  static const String blog = '/api/blog';
+  static String blogBySlug(String slug) => '/api/blog/$slug';
+  static const String blogDrafts = '/api/blog/drafts';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -159,6 +164,7 @@ class AdminApiService {
       // NOTE: keep this list in sync with every list endpoint the backend exposes.
       for (final key in [
         'places', 'categories', 'rooms',
+        'posts', 'drafts',               // blog endpoints
         'shows', 'performances',
         'exhibitions', 'artifacts',
         'menuSections', 'menuItems',   // v2.0 — Dining endpoints
@@ -732,5 +738,94 @@ class AdminApiService {
       return {};
     }
     _throwFromBody(body, response.statusCode, 'GET', _Ep.adminStats);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // BLOG
+  //
+  // getBlogPosts — returns { posts, page, total, totalPages }
+  //   The API response shape: { posts: [...], pagination: { page, limit, total, totalPages } }
+  //
+  // createBlogPost  POST  /api/blog
+  // updateBlogPost  PATCH /api/blog/:slug
+  // deleteBlogPost  DELETE /api/blog/:slug        (soft delete by default)
+  // getBlogDrafts   GET   /api/blog/drafts        (current admin's drafts)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> getBlogPosts({
+    int page = 1,
+    int limit = 20,
+    String? status,
+  }) async {
+    _adminLog.i('📰 [AdminApiService] GET blog  page=$page  status=$status');
+    final params = <String, String>{
+      'page': '$page',
+      'limit': '$limit',
+      if (status != null) 'status': status,
+    };
+    final response = await ApiClient.authGetWithParams(
+      _Ep.blog,
+      queryParams: params,
+    );
+    final body = ApiClient.parseBody(response);
+    _adminLog.d('   ↳ GET ${_Ep.blog}  →  ${response.statusCode}');
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final posts = (body['posts'] as List? ?? []).cast<Map<String, dynamic>>();
+      final pagination = body['pagination'] as Map<String, dynamic>? ?? {};
+      return {
+        'posts': posts,
+        'page': pagination['page'] ?? page,
+        'total': pagination['total'] ?? posts.length,
+        'totalPages': pagination['totalPages'] ?? 1,
+      };
+    }
+    _throwFromBody(body, response.statusCode, 'GET', _Ep.blog);
+  }
+
+  Future<Map<String, dynamic>> createBlogPost(
+      Map<String, dynamic> payload) async {
+    _adminLog.i('➕ [AdminApiService] POST createBlogPost  title=${payload['title']}');
+    const ep = _Ep.blog;
+    final response = await ApiClient.authPost(ep, body: payload);
+    final body = ApiClient.parseBody(response);
+    _adminLog.d('   ↳ POST $ep  →  ${response.statusCode}');
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      // API wraps in { post: {...} } or { data: {...} }
+      final post = body['post'] ?? body['data'] ?? body;
+      return post as Map<String, dynamic>;
+    }
+    _throwFromBody(body, response.statusCode, 'POST', ep);
+  }
+
+  Future<Map<String, dynamic>> updateBlogPost(
+      String slug, Map<String, dynamic> payload) async {
+    _adminLog.i('✏️ [AdminApiService] PATCH updateBlogPost  slug=$slug');
+    final ep = _Ep.blogBySlug(slug);
+    final response = await ApiClient.authPatch(ep, body: payload);
+    final body = ApiClient.parseBody(response);
+    _adminLog.d('   ↳ PATCH $ep  →  ${response.statusCode}');
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final post = body['post'] ?? body['data'] ?? body;
+      return post as Map<String, dynamic>;
+    }
+    _throwFromBody(body, response.statusCode, 'PATCH', ep);
+  }
+
+  Future<void> deleteBlogPost(String slug) async {
+    _adminLog.i('🗑️ [AdminApiService] DELETE blog  slug=$slug');
+    final ep = _Ep.blogBySlug(slug);
+    _unwrapDelete(await ApiClient.authDelete(ep), 'DELETE', ep);
+  }
+
+  Future<List<Map<String, dynamic>>> getBlogDrafts() async {
+    _adminLog.i('📝 [AdminApiService] GET blog drafts');
+    const ep = _Ep.blogDrafts;
+    final response = await ApiClient.authGet(ep);
+    final body = ApiClient.parseBody(response);
+    _adminLog.d('   ↳ GET $ep  →  ${response.statusCode}');
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return (body['drafts'] as List? ?? []).cast<Map<String, dynamic>>();
+    }
+    _throwFromBody(body, response.statusCode, 'GET', ep);
   }
 }
