@@ -1,8 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:flutter_quill_delta_from_html/flutter_quill_delta_from_html.dart';
 import 'package:vsc_quill_delta_to_html/vsc_quill_delta_to_html.dart';
 import 'package:palmnazi/admin/admin_api_service.dart';
+import 'package:palmnazi/services/api_client.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AdminBlogComposeScreen
@@ -231,12 +233,61 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
     };
 
     try {
+      Map<String, dynamic> savedPost;
       if (_isEdit) {
-        await widget.apiService
+        savedPost = await widget.apiService
             .updateBlogPost(widget.existingPost!['slug'] as String, payload);
       } else {
-        await widget.apiService.createBlogPost(payload);
+        savedPost = await widget.apiService.createBlogPost(payload);
       }
+
+      // ── Mirror to Firestore ──────────────────────────────────────────────
+      // Writes the confirmed post (using the slug returned by the API) to the
+      // `blog_posts` Firestore collection so the blog is durable in Firebase
+      // as well as the REST API database.
+      //
+      // The document ID is the post slug (stable, unique, human-readable).
+      // All fields from the API response are stored verbatim, plus:
+      //   firestoreUpdatedAt — server timestamp for TTL rules / ordering
+      //   authorId           — current API user ID for security rules
+      // ────────────────────────────────────────────────────────────────────
+      try {
+        final slug = (savedPost['slug'] ?? '').toString();
+        final authorId = await ApiClient.getUserId() ?? '';
+
+        if (slug.isNotEmpty) {
+          await FirebaseFirestore.instance
+              .collection('blog_posts')
+              .doc(slug)
+              .set(
+            {
+              ...savedPost,
+              // Enrich with any payload fields the API may not echo back
+              'title':           payload['title'],
+              'status':          payload['status'],
+              'excerpt':         payload['excerpt']        ?? savedPost['excerpt'],
+              'categories':      payload['categories']     ?? savedPost['categories'] ?? [],
+              'tags':            payload['tags']           ?? savedPost['tags'] ?? [],
+              'featuredImage':   payload['featuredImage']  ?? savedPost['featuredImage'],
+              'metaTitle':       payload['metaTitle']      ?? savedPost['metaTitle'],
+              'metaDescription': payload['metaDescription'] ?? savedPost['metaDescription'],
+              'cityId':          payload['cityId']         ?? savedPost['cityId'],
+              'authorId':        authorId,
+              'firestoreUpdatedAt': FieldValue.serverTimestamp(),
+            },
+            // SetOptions(merge: true) means an update only overwrites the
+            // fields listed above — any Firestore-only fields (likes, views)
+            // are preserved intact.
+            SetOptions(merge: true),
+          );
+        }
+      } catch (firestoreError) {
+        // Non-fatal — the API is the source of truth.  Log and continue so
+        // the user is not blocked by a secondary write failure.
+        debugPrint('⚠️ AdminBlogComposeScreen: Firestore mirror write failed '
+            '— $firestoreError');
+      }
+      // ── End Firestore mirror ─────────────────────────────────────────────
 
       if (!mounted) return;
       setState(() => _saving = false);

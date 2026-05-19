@@ -7,6 +7,7 @@ import 'package:palmnazi/firebase_options.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/landing_page.dart';
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/services/firebase_session_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NAVIGATOR KEY
@@ -36,6 +37,22 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // ── Firebase Session Backup ────────────────────────────────────────────────
+  //
+  // WHY THIS IS HERE
+  // FirebaseSessionService uses Firebase Anonymous Auth + Firestore as a
+  // durable backup for the custom API tokens.  On web, FlutterSecureStorage
+  // uses localStorage which browsers can silently wipe (incognito sessions,
+  // privacy-mode clears, OS storage pressure).  Firestore backed by IndexedDB
+  // survives all of these scenarios.
+  //
+  // init() must be called:
+  //  • AFTER Firebase.initializeApp() — so Firebase SDK is ready
+  //  • BEFORE any ApiClient method is called — so the anonymous UID exists
+  //    when saveSession() or restoreSessionIfNeeded() fire
+  // ──────────────────────────────────────────────────────────────────────────
+  await FirebaseSessionService.init();
 
   // ── Session-Expired Hook ───────────────────────────────────────────────────
   //

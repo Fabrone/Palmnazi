@@ -320,20 +320,23 @@ class FirebaseSessionService {
       );
     }
 
-    // ── Sign out anonymous Firebase user ────────────────────────────────────
-    // Signing out invalidates the anonymous UID.  The next init() call will
-    // sign in anonymously again and receive a fresh UID.
-    try {
-      await _auth.signOut();
-      _fbLog.i(
-        '✅ FirebaseSessionService.clearSession: '
-        '✓ Firebase anonymous user signed out',
-      );
-    } catch (e) {
-      _fbLog.w(
-        '⚠️ FirebaseSessionService.clearSession: '
-        'Firebase sign-out failed — $e',
-      );
-    }
+    // ── WHY WE DO NOT sign out the anonymous Firebase user ──────────────────
+    // Calling _auth.signOut() here destroys the anonymous UID.  The next
+    // saveSession() call (which fires immediately after the user logs back in)
+    // would then find _uid == null and skip the Firestore backup write —
+    // leaving the new session completely unprotected.
+    //
+    // The anonymous UID is not a security credential; it is a stable key for
+    // the Firestore document.  The document was just deleted above, so there
+    // is nothing sensitive left in Firestore under this UID.  Keeping the
+    // anonymous user signed in costs nothing and ensures saveSession() always
+    // has a valid UID ready to write to on the very next login.
+    //
+    // A fresh anonymous UID is only needed when init() runs on a completely
+    // fresh app install — which is handled correctly already.
+    _fbLog.d(
+      '🔥 FirebaseSessionService.clearSession: '
+      'Anonymous Firebase user retained (uid=$uid) — Firestore doc deleted only',
+    );
   }
 }
