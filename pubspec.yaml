@@ -18,6 +18,13 @@ dependencies:
   logger: ^2.6.2
   file_picker: ^11.0.2
   firebase_storage: ^13.2.0
+  flutter_quill: ^11.5.0
+  flutter_quill_delta_from_html: ^1.5.3
+  vsc_quill_delta_to_html: ^1.0.5
+  flutter_localizations:
+    sdk: flutter
+  firebase_auth: ^6.5.1
+  cloud_firestore: ^6.4.1
 
 dev_dependencies:
   flutter_test:

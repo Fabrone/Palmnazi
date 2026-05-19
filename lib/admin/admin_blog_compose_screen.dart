@@ -1,37 +1,61 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_quill/flutter_quill.dart';
+import 'package:flutter_quill_delta_from_html/flutter_quill_delta_from_html.dart';
+import 'package:vsc_quill_delta_to_html/vsc_quill_delta_to_html.dart';
 import 'package:palmnazi/admin/admin_api_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AdminBlogComposeScreen
 //
-// Full-screen editor for creating and editing blog posts.
-// Pushed via Navigator.push from AdminBlogListScreen (inside AdminDashboard).
-// Returns true to the caller when a post is successfully saved so the list
-// can refresh itself.
+// Full-screen rich-text editor for creating and editing blog posts.
 //
-// Three tabs:
-//   1. Content  — title, HTML body, excerpt, categories, tags
-//   2. Meta/SEO — metaTitle, metaDescription, featuredImage URL (live preview)
-//   3. Settings — status picker, scheduled date, city ID
+// DEPENDENCIES — add to pubspec.yaml:
+//   flutter_quill: ^11.5.0
+//   flutter_quill_delta_from_html: ^1.0.5
+//   vsc_quill_delta_to_html: ^0.6.2
 //
-// AppBar actions:
-//   • Save Draft  → POST/PATCH with status: DRAFT
-//   • Publish     → POST/PATCH with status: PUBLISHED
-//   • (Settings tab) Schedule button → POST/PATCH with status: SCHEDULED
+// ── FIX v2.1 ─────────────────────────────────────────────────────────────────
 //
-// Fixes vs. initial version:
-//   • _saving is now reset to false before Navigator.pop() on the success
-//     path so the spinner never flashes if the pop animation is slow.
-//   • Field-error jump logic also clears errors for meta/SEO fields so a
-//     server-reported metaTitle error jumps to Tab 2 instead of silently
-//     staying on Tab 1.
-//   • _status state is synchronised into the payload when the Settings tab
-//     "Save as Scheduled" button is used, preventing stale-status edge case.
+// BUG 1 — MissingFlutterQuillLocalizationException (CRASH)
+//   flutter_quill v11+ requires FlutterQuillLocalizations.delegate to be
+//   present somewhere in the widget tree above every QuillSimpleToolbar /
+//   QuillEditor.  If the host MaterialApp does not register it (the common
+//   case), every toolbar button throws at build time.
+//
+//   PREFERRED global fix (add once to your MaterialApp in main.dart):
+//
+//     import 'package:flutter_quill/flutter_quill.dart';
+//
+//     MaterialApp(
+//       localizationsDelegates: const [
+//         FlutterQuillLocalizations.delegate,   // ← add this
+//         GlobalMaterialLocalizations.delegate,
+//         GlobalWidgetsLocalizations.delegate,
+//         GlobalCupertinoLocalizations.delegate,
+//       ],
+//       ...
+//     )
+//
+//   LOCAL fix applied here (belt-and-suspenders, works even when the global
+//   fix is absent):
+//     _ContentTab.build() now wraps its subtree in Localizations.override,
+//     injecting FlutterQuillLocalizations.delegate into the local scope.
+//     This is safe: Localizations.override merges with — not replaces — the
+//     parent's localizations, so all existing Material/Cupertino text stays
+//     correctly localised.
+//
+// BUG 2 — ScrollController memory leak
+//   The previous code created ScrollController() inline inside
+//   _ContentTab.build(), producing a new, never-disposed controller on every
+//   rebuild.  The controller is now a late final field in
+//   _AdminBlogComposeScreenState, passed down to _ContentTab, and disposed
+//   alongside the other controllers.
+//
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AdminBlogComposeScreen extends StatefulWidget {
-  final AdminApiService apiService;
-  final Map<String, dynamic>? existingPost; // null → create mode
+  final AdminApiService        apiService;
+  final Map<String, dynamic>?  existingPost; // null → create mode
 
   const AdminBlogComposeScreen({
     super.key,
@@ -46,9 +70,8 @@ class AdminBlogComposeScreen extends StatefulWidget {
 
 class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
     with SingleTickerProviderStateMixin {
-  // ── Controllers ────────────────────────────────────────────────────────────
+  // ── Plain-text field controllers ───────────────────────────────────────────
   late final TextEditingController _titleCtrl;
-  late final TextEditingController _contentCtrl;
   late final TextEditingController _excerptCtrl;
   late final TextEditingController _categoriesCtrl;
   late final TextEditingController _tagsCtrl;
@@ -58,10 +81,18 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
   late final TextEditingController _cityIdCtrl;
   late final TextEditingController _scheduledCtrl;
 
+  // ── flutter_quill controller (pure Dart, no WebView) ──────────────────────
+  late QuillController  _quillCtrl;
+  final FocusNode       _quillFocus = FocusNode();
+
+  // FIX BUG 2: ScrollController promoted from an inline build() expression
+  // to a properly lifecycle-managed field.
+  late final ScrollController _quillScrollCtrl;
+
   late final TabController _tabCtrl;
 
   String _status = 'DRAFT';
-  bool _saving = false;
+  bool   _saving = false;
   final Map<String, String> _fieldErrors = {};
 
   static const _accent    = Color(0xFF14FFEC);
@@ -70,6 +101,7 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
   bool get _isEdit => widget.existingPost != null;
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
+
   @override
   void initState() {
     super.initState();
@@ -79,7 +111,6 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
     final tags = (p?['tags']       as List?)?.join(', ') ?? '';
 
     _titleCtrl         = TextEditingController(text: p?['title']           ?? '');
-    _contentCtrl       = TextEditingController(text: p?['content']         ?? '');
     _excerptCtrl       = TextEditingController(text: p?['excerpt']         ?? '');
     _categoriesCtrl    = TextEditingController(text: cats);
     _tagsCtrl          = TextEditingController(text: tags);
@@ -90,18 +121,44 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
     _scheduledCtrl     = TextEditingController(text: p?['scheduledFor']    ?? '');
     _status            = (p?['status'] as String? ?? 'DRAFT').toUpperCase();
 
+    // Build the Quill document from existing HTML (edit mode) or empty (create)
+    _quillCtrl       = _buildQuillController(p?['content'] as String? ?? '');
+
+    // FIX BUG 2: initialise here, dispose below.
+    _quillScrollCtrl = ScrollController();
+
     _tabCtrl = TabController(length: 3, vsync: this);
+  }
+
+  /// Convert an HTML string to a QuillController with the appropriate Delta.
+  /// Falls back to an empty document if the string is blank.
+  QuillController _buildQuillController(String html) {
+    if (html.trim().isEmpty) {
+      return QuillController.basic();
+    }
+    try {
+      final delta = HtmlToDelta().convert(html);
+      return QuillController(
+        document:  Document.fromDelta(delta),
+        selection: const TextSelection.collapsed(offset: 0),
+      );
+    } catch (_) {
+      return QuillController.basic();
+    }
   }
 
   @override
   void dispose() {
     for (final c in [
-      _titleCtrl, _contentCtrl, _excerptCtrl, _categoriesCtrl, _tagsCtrl,
-      _featuredImageCtrl, _metaTitleCtrl, _metaDescCtrl, _cityIdCtrl,
-      _scheduledCtrl,
+      _titleCtrl, _excerptCtrl, _categoriesCtrl, _tagsCtrl,
+      _featuredImageCtrl, _metaTitleCtrl, _metaDescCtrl,
+      _cityIdCtrl, _scheduledCtrl,
     ]) {
       c.dispose();
     }
+    _quillCtrl.dispose();
+    _quillFocus.dispose();
+    _quillScrollCtrl.dispose(); // FIX BUG 2
     _tabCtrl.dispose();
     super.dispose();
   }
@@ -111,34 +168,49 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
   List<String> _splitComma(String raw) =>
       raw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
 
+  /// Export the current Quill document to an HTML string.
+  String _getHtml() {
+    final delta = _quillCtrl.document.toDelta();
+    final ops   = List<Map<String, dynamic>>.from(delta.toJson());
+    return QuillDeltaToHtmlConverter(ops).convert();
+  }
+
+  /// Plain text from the Quill document for character-count validation.
+  String _getPlainText() =>
+      _quillCtrl.document.toPlainText().replaceAll(RegExp(r'\s+'), ' ').trim();
+
   // ── Save ───────────────────────────────────────────────────────────────────
 
   Future<void> _save({required String status}) async {
-    // Clear stale errors first so re-validation starts fresh
-    setState(() => _fieldErrors.clear());
+    setState(() {
+      _fieldErrors.clear();
+      _saving = true;
+    });
+
+    final rawHtml   = _getHtml();
+    final plainText = _getPlainText();
 
     // ── Client-side validation ─────────────────────────────────────────────
     if (_titleCtrl.text.trim().isEmpty) {
       _fieldErrors['title'] = 'Title is required';
     }
-    if (_contentCtrl.text.trim().length < 100) {
-      _fieldErrors['content'] = 'Content must be at least 100 characters';
+    if (plainText.length < 100) {
+      _fieldErrors['content'] =
+          'Content must be at least 100 characters (currently ${plainText.length})';
     }
     if (status == 'SCHEDULED' && _scheduledCtrl.text.trim().isEmpty) {
       _fieldErrors['scheduledFor'] = 'Scheduled date/time is required';
     }
 
     if (_fieldErrors.isNotEmpty) {
-      setState(() {});
+      setState(() => _saving = false);
       _jumpToFirstError();
       return;
     }
 
-    setState(() => _saving = true);
-
     final payload = <String, dynamic>{
       'title':   _titleCtrl.text.trim(),
-      'content': _contentCtrl.text.trim(),
+      'content': rawHtml,
       'status':  status,
       if (_excerptCtrl.text.isNotEmpty)
         'excerpt': _excerptCtrl.text.trim(),
@@ -160,20 +232,18 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
 
     try {
       if (_isEdit) {
-        await widget.apiService.updateBlogPost(
-            widget.existingPost!['slug'] as String, payload);
+        await widget.apiService
+            .updateBlogPost(widget.existingPost!['slug'] as String, payload);
       } else {
         await widget.apiService.createBlogPost(payload);
       }
 
       if (!mounted) return;
-
-      // Reset spinner before pop so there is no visual flash during the
-      // page-transition animation on slow devices.
       setState(() => _saving = false);
 
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(_isEdit ? 'Post updated' : 'Post created'),
+        content: Text(
+            _isEdit ? 'Post updated successfully' : 'Post created successfully'),
         backgroundColor: const Color(0xFF0D7377),
         behavior: SnackBarBehavior.floating,
       ));
@@ -184,7 +254,6 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
       setState(() => _saving = false);
 
       if (e is AdminApiException) {
-        // Populate field errors from the server response
         const tab0Fields = ['title', 'content', 'excerpt', 'categories', 'tags'];
         const tab1Fields = ['metaTitle', 'metaDescription', 'featuredImage'];
         const tab2Fields = ['scheduledFor', 'cityId'];
@@ -206,11 +275,9 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
     }
   }
 
-  /// Jump to the tab that contains the first field error.
   void _jumpToFirstError() {
     const tab0Fields = ['title', 'content', 'excerpt', 'categories', 'tags'];
     const tab1Fields = ['metaTitle', 'metaDescription', 'featuredImage'];
-
     if (_fieldErrors.keys.any((k) => tab0Fields.contains(k))) {
       _tabCtrl.animateTo(0);
     } else if (_fieldErrors.keys.any((k) => tab1Fields.contains(k))) {
@@ -221,13 +288,11 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
   }
 
   void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: Colors.redAccent,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg),
+      backgroundColor: Colors.redAccent,
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -292,8 +357,7 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
                 TextButton(
                   onPressed: () => _save(status: 'DRAFT'),
                   child: const Text('Save Draft',
-                      style: TextStyle(
-                          color: Colors.white54, fontSize: 13)),
+                      style: TextStyle(color: Colors.white54, fontSize: 13)),
                 ),
                 const SizedBox(width: 4),
                 Padding(
@@ -318,13 +382,17 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
       body: TabBarView(
         controller: _tabCtrl,
         children: [
+          // FIX BUG 2: pass the managed _quillScrollCtrl instead of
+          // creating a new ScrollController() on each build.
           _ContentTab(
-            titleCtrl:      _titleCtrl,
-            contentCtrl:    _contentCtrl,
-            excerptCtrl:    _excerptCtrl,
-            categoriesCtrl: _categoriesCtrl,
-            tagsCtrl:       _tagsCtrl,
-            fieldErrors:    _fieldErrors,
+            titleCtrl:        _titleCtrl,
+            excerptCtrl:      _excerptCtrl,
+            categoriesCtrl:   _categoriesCtrl,
+            tagsCtrl:         _tagsCtrl,
+            fieldErrors:      _fieldErrors,
+            quillCtrl:        _quillCtrl,
+            quillFocus:       _quillFocus,
+            quillScrollCtrl:  _quillScrollCtrl,
           ),
           _MetaTab(
             metaTitleCtrl:     _metaTitleCtrl,
@@ -348,19 +416,19 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared form field
+// Shared plain-text form field
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _Field extends StatelessWidget {
-  final String label;
+  final String                label;
   final TextEditingController ctrl;
-  final String? hint;
-  final String? helper;
-  final bool required;
-  final String? error;
-  final int maxLines;
-  final IconData? icon;
-  final TextInputType? keyboardType;
+  final String?               hint;
+  final String?               helper;
+  final bool                  required;
+  final String?               error;
+  final int                   maxLines;
+  final IconData?             icon;
+  final TextInputType?        keyboardType;
 
   const _Field({
     required this.label,
@@ -404,16 +472,15 @@ class _Field extends StatelessWidget {
               helperText:  error == null ? helper : null,
               helperStyle: const TextStyle(
                   color: Colors.white38, fontSize: 11),
-              errorText: error,
-              prefixIcon: icon != null
+              errorText:   error,
+              prefixIcon:  icon != null
                   ? Icon(icon, size: 16, color: Colors.white38)
                   : null,
               filled:    true,
               fillColor: const Color(0xFF0D1117),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide:
-                    const BorderSide(color: Colors.white12),
+                borderSide: const BorderSide(color: Colors.white12),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -431,8 +498,7 @@ class _Field extends StatelessWidget {
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide:
-                    const BorderSide(color: Colors.redAccent),
+                borderSide: const BorderSide(color: Colors.redAccent),
               ),
               focusedErrorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -448,75 +514,368 @@ class _Field extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tab 1 — Content
+// Tab 1 — Content  (flutter_quill rich-text editor)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ContentTab extends StatelessWidget {
   final TextEditingController titleCtrl;
-  final TextEditingController contentCtrl;
   final TextEditingController excerptCtrl;
   final TextEditingController categoriesCtrl;
   final TextEditingController tagsCtrl;
-  final Map<String, String> fieldErrors;
+  final Map<String, String>   fieldErrors;
+  final QuillController       quillCtrl;
+  final FocusNode             quillFocus;
+  // FIX BUG 2: receive the managed ScrollController instead of creating one.
+  final ScrollController      quillScrollCtrl;
 
   const _ContentTab({
     required this.titleCtrl,
-    required this.contentCtrl,
     required this.excerptCtrl,
     required this.categoriesCtrl,
     required this.tagsCtrl,
     required this.fieldErrors,
+    required this.quillCtrl,
+    required this.quillFocus,
+    required this.quillScrollCtrl, // FIX BUG 2
   });
 
+  static const _accent    = Color(0xFF14FFEC);
+  static const _blogColor = Color(0xFFE91E8C);
+
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-          _Field(
-            label:    'Post Title',
-            ctrl:     titleCtrl,
-            required: true,
-            hint:     'e.g. 10 Best Hotels in Mombasa',
-            icon:     Icons.title_rounded,
-            error:    fieldErrors['title'],
+  Widget build(BuildContext context) {
+    // ─────────────────────────────────────────────────────────────────────────
+    // FIX BUG 1 — MissingFlutterQuillLocalizationException
+    //
+    // flutter_quill v11+ resolves its localisation strings (button tooltips,
+    // ARIA labels, placeholder text, etc.) via Flutter's standard Localizations
+    // mechanism.  Every QuillSimpleToolbar and QuillEditor widget calls
+    //
+    //   FlutterQuillLocalizations.of(context)
+    //
+    // If the delegate is not present in the ancestor Localizations widget the
+    // call throws UnimplementedError at build time, which is what caused the
+    // cascade of exceptions in the logs.
+    //
+    // Localizations.override() merges the new delegate into — rather than
+    // replacing — the parent's existing Localizations scope.  All existing
+    // Material and Cupertino strings therefore continue to work normally; only
+    // the Quill-specific strings are newly resolved here.
+    //
+    // This local fix is self-contained and does not require touching main.dart.
+    // However, also adding FlutterQuillLocalizations.delegate to your
+    // MaterialApp.localizationsDelegates (see the class-level comment at the
+    // top of this file) is the recommended belt-and-suspenders approach.
+    // ─────────────────────────────────────────────────────────────────────────
+    return Localizations.override(
+      context: context,
+      delegates: const [
+        FlutterQuillLocalizations.delegate,
+      ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Quill toolbar ──────────────────────────────────────────────────
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF111827),
+              border: Border(
+                bottom: BorderSide(
+                    color: Colors.white.withValues(alpha: 0.08)),
+              ),
+            ),
+            child: QuillSimpleToolbar(
+              controller: quillCtrl,
+              config: QuillSimpleToolbarConfig(
+                multiRowsDisplay:          false,
+                toolbarIconAlignment:      WrapAlignment.start,
+                showBoldButton:            true,
+                showItalicButton:          true,
+                showUnderLineButton:       true,
+                showStrikeThrough:         true,
+                showInlineCode:            true,
+                showCodeBlock:             true,
+                showQuote:                 true,
+                showLink:                  true,
+                showListNumbers:           true,
+                showListBullets:           true,
+                showListCheck:             true,
+                showHeaderStyle:           true,
+                showIndent:                true,
+                showAlignmentButtons:      true,
+                showColorButton:           true,
+                showBackgroundColorButton: true,
+                showUndo:                  true,
+                showRedo:                  true,
+                showClearFormat:           true,
+                showSearchButton:          false,
+                showFontFamily:            false,
+                showFontSize:              false,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF111827),
+                ),
+              ),
+            ),
           ),
-          _Field(
-            label:    'Content (HTML)',
-            ctrl:     contentCtrl,
-            required: true,
-            maxLines: 20,
-            hint:     '<p>Your full post content here…</p>',
-            helper:   'Minimum 100 characters. HTML tags are supported.',
-            error:    fieldErrors['content'],
+
+          // ── Scrollable fields ──────────────────────────────────────────────
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                // Title
+                _Field(
+                  label:    'Post Title',
+                  ctrl:     titleCtrl,
+                  required: true,
+                  hint:     'e.g. 10 Best Hotels in Mombasa',
+                  icon:     Icons.title_rounded,
+                  error:    fieldErrors['title'],
+                ),
+
+                // Content label
+                Row(children: [
+                  const Text('Content',
+                      style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500)),
+                  const Text(' *',
+                      style: TextStyle(
+                          color: _accent, fontSize: 13)),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: _blogColor.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                          color: _blogColor.withValues(alpha: 0.2)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.auto_awesome_rounded,
+                            size: 10, color: _blogColor),
+                        SizedBox(width: 4),
+                        Text('Rich Text',
+                            style: TextStyle(
+                                color: _blogColor,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 8),
+
+                // Content error banner
+                if (fieldErrors['content'] != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color:
+                              Colors.redAccent.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.error_outline_rounded,
+                          size: 14, color: Colors.redAccent),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(fieldErrors['content']!,
+                            style: const TextStyle(
+                                color: Colors.redAccent, fontSize: 12)),
+                      ),
+                    ]),
+                  ),
+
+                // ── flutter_quill editor ───────────────────────────────────
+                Container(
+                  constraints:
+                      const BoxConstraints(minHeight: 320, maxHeight: 480),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D1117),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: fieldErrors['content'] != null
+                          ? Colors.redAccent.withValues(alpha: 0.5)
+                          : Colors.white12,
+                    ),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: QuillEditor(
+                    controller:       quillCtrl,
+                    focusNode:        quillFocus,
+                    // FIX BUG 2: use the lifecycle-managed controller.
+                    scrollController: quillScrollCtrl,
+                    config: QuillEditorConfig(
+                      placeholder: 'Start writing your article here. Use '
+                          'the toolbar above to format text, add headings, '
+                          'bullet lists, links…',
+                      padding:    const EdgeInsets.all(14),
+                      autoFocus:  false,
+                      expands:    false,
+                      scrollable: true,
+                      customStyles: DefaultStyles(
+                        paragraph: DefaultTextBlockStyle(
+                          const TextStyle(
+                            color:    Colors.white70,
+                            fontSize: 14,
+                            height:   1.6,
+                          ),
+                          const HorizontalSpacing(0, 0),
+                          const VerticalSpacing(2, 2),
+                          const VerticalSpacing(0, 0),
+                          null,
+                        ),
+                        h1: DefaultTextBlockStyle(
+                          const TextStyle(
+                            color:      Colors.white,
+                            fontSize:   24,
+                            fontWeight: FontWeight.w700,
+                            height:     1.3,
+                          ),
+                          const HorizontalSpacing(0, 0),
+                          const VerticalSpacing(8, 4),
+                          const VerticalSpacing(0, 0),
+                          null,
+                        ),
+                        h2: DefaultTextBlockStyle(
+                          const TextStyle(
+                            color:      Colors.white,
+                            fontSize:   20,
+                            fontWeight: FontWeight.w600,
+                            height:     1.35,
+                          ),
+                          const HorizontalSpacing(0, 0),
+                          const VerticalSpacing(6, 3),
+                          const VerticalSpacing(0, 0),
+                          null,
+                        ),
+                        h3: DefaultTextBlockStyle(
+                          const TextStyle(
+                            color:      Colors.white,
+                            fontSize:   17,
+                            fontWeight: FontWeight.w600,
+                            height:     1.4,
+                          ),
+                          const HorizontalSpacing(0, 0),
+                          const VerticalSpacing(4, 2),
+                          const VerticalSpacing(0, 0),
+                          null,
+                        ),
+                        bold: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700),
+                        italic: const TextStyle(
+                            color: Colors.white70,
+                            fontStyle: FontStyle.italic),
+                        underline: const TextStyle(
+                            color: Colors.white70,
+                            decoration: TextDecoration.underline),
+                        strikeThrough: const TextStyle(
+                            color: Colors.white38,
+                            decoration: TextDecoration.lineThrough),
+                        link: TextStyle(
+                            color: const Color(0xFF14FFEC),
+                            decoration: TextDecoration.underline,
+                            decorationColor: const Color(0xFF14FFEC)
+                                .withValues(alpha: 0.5)),
+                        placeHolder: DefaultTextBlockStyle(
+                          const TextStyle(
+                              color: Colors.white24, fontSize: 14),
+                          const HorizontalSpacing(0, 0),
+                          const VerticalSpacing(2, 2),
+                          const VerticalSpacing(0, 0),
+                          null,
+                        ),
+                        code: DefaultTextBlockStyle(
+                          const TextStyle(
+                            color:      Color(0xFF14FFEC),
+                            fontSize:   13,
+                            fontFamily: 'monospace',
+                          ),
+                          const HorizontalSpacing(12, 12),
+                          const VerticalSpacing(4, 4),
+                          const VerticalSpacing(4, 4),
+                          BoxDecoration(
+                            color: Colors.black38,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                        ),
+                        quote: DefaultTextBlockStyle(
+                          const TextStyle(
+                              color: Colors.white38,
+                              fontStyle: FontStyle.italic,
+                              fontSize: 14),
+                          const HorizontalSpacing(16, 0),
+                          const VerticalSpacing(4, 4),
+                          const VerticalSpacing(0, 0),
+                          BoxDecoration(
+                            border: Border(
+                              left: BorderSide(
+                                color: const Color(0xFF14FFEC)
+                                    .withValues(alpha: 0.4),
+                                width: 3,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 4),
+                const Text('Minimum 100 characters of actual content.',
+                    style: TextStyle(
+                        color: Colors.white24, fontSize: 11)),
+                const SizedBox(height: 20),
+
+                // Excerpt
+                _Field(
+                  label:    'Excerpt',
+                  ctrl:     excerptCtrl,
+                  maxLines: 3,
+                  hint:     'Short teaser shown in post listings…',
+                  helper:   'Optional — auto-generated if left empty.',
+                  error:    fieldErrors['excerpt'],
+                ),
+
+                // Categories
+                _Field(
+                  label:  'Categories',
+                  ctrl:   categoriesCtrl,
+                  hint:   'accommodation, dining, wellness',
+                  helper: 'Comma-separated category slugs.',
+                  icon:   Icons.label_rounded,
+                  error:  fieldErrors['categories'],
+                ),
+
+                // Tags
+                _Field(
+                  label:  'Tags',
+                  ctrl:   tagsCtrl,
+                  hint:   'luxury, budget-friendly, family',
+                  helper: 'Comma-separated tags.',
+                  icon:   Icons.tag_rounded,
+                  error:  fieldErrors['tags'],
+                ),
+              ]),
+            ),
           ),
-          _Field(
-            label:   'Excerpt',
-            ctrl:    excerptCtrl,
-            maxLines: 3,
-            hint:    'Short teaser shown in post listings…',
-            helper:  'Optional — auto-generated if left empty.',
-            error:   fieldErrors['excerpt'],
-          ),
-          _Field(
-            label:  'Categories',
-            ctrl:   categoriesCtrl,
-            hint:   'accommodation, dining, wellness',
-            helper: 'Comma-separated category slugs.',
-            icon:   Icons.label_rounded,
-            error:  fieldErrors['categories'],
-          ),
-          _Field(
-            label:  'Tags',
-            ctrl:   tagsCtrl,
-            hint:   'luxury, budget-friendly, family',
-            helper: 'Comma-separated tags.',
-            icon:   Icons.tag_rounded,
-            error:  fieldErrors['tags'],
-          ),
-        ]),
-      );
+        ],
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -527,7 +886,7 @@ class _MetaTab extends StatelessWidget {
   final TextEditingController metaTitleCtrl;
   final TextEditingController metaDescCtrl;
   final TextEditingController featuredImageCtrl;
-  final Map<String, String> fieldErrors;
+  final Map<String, String>   fieldErrors;
 
   const _MetaTab({
     required this.metaTitleCtrl,
@@ -542,7 +901,7 @@ class _MetaTab extends StatelessWidget {
         child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-          // ── Live SEO preview ─────────────────────────────────────────────
+          // ── Live SEO preview ───────────────────────────────────────────
           Container(
             padding: const EdgeInsets.all(16),
             margin: const EdgeInsets.only(bottom: 24),
@@ -606,12 +965,12 @@ class _MetaTab extends StatelessWidget {
             error:  fieldErrors['metaTitle'],
           ),
           _Field(
-            label:   'Meta Description',
-            ctrl:    metaDescCtrl,
+            label:    'Meta Description',
+            ctrl:     metaDescCtrl,
             maxLines: 3,
-            hint:    'Compelling description for search engines…',
-            helper:  'Recommended: 150–160 characters.',
-            error:   fieldErrors['metaDescription'],
+            hint:     'Compelling description for search engines…',
+            helper:   'Recommended: 150–160 characters.',
+            error:    fieldErrors['metaDescription'],
           ),
           _Field(
             label:        'Featured Image URL',
@@ -648,8 +1007,7 @@ class _MetaTab extends StatelessWidget {
                     child: const Text(
                         'Could not load image preview',
                         style: TextStyle(
-                            color: Colors.white38,
-                            fontSize: 12)),
+                            color: Colors.white38, fontSize: 12)),
                   ),
                 ),
               );
@@ -664,13 +1022,13 @@ class _MetaTab extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _SettingsTab extends StatelessWidget {
-  final String status;
-  final ValueChanged<String> onStatusChanged;
+  final String                status;
+  final ValueChanged<String>  onStatusChanged;
   final TextEditingController cityIdCtrl;
   final TextEditingController scheduledCtrl;
-  final String? scheduledError;
-  final VoidCallback onSchedule;
-  final bool saving;
+  final String?               scheduledError;
+  final VoidCallback          onSchedule;
+  final bool                  saving;
 
   const _SettingsTab({
     required this.status,
@@ -690,8 +1048,8 @@ class _SettingsTab extends StatelessWidget {
       onTap: () => onChange(value),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(
-            horizontal: 16, vertical: 10),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: selected
               ? color.withValues(alpha: 0.15)
@@ -705,16 +1063,14 @@ class _SettingsTab extends StatelessWidget {
           ),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 14,
-              color: selected ? color : Colors.white38),
+          Icon(icon, size: 14, color: selected ? color : Colors.white38),
           const SizedBox(width: 8),
           Text(value,
               style: TextStyle(
                 color: selected ? color : Colors.white38,
                 fontSize: 13,
-                fontWeight: selected
-                    ? FontWeight.w600
-                    : FontWeight.normal,
+                fontWeight:
+                    selected ? FontWeight.w600 : FontWeight.normal,
               )),
         ]),
       ),
@@ -727,7 +1083,7 @@ class _SettingsTab extends StatelessWidget {
         child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-          // ── Status picker ────────────────────────────────────────────────
+          // ── Status picker ────────────────────────────────────────────
           const Text('Post Status',
               style: TextStyle(
                   color: Colors.white70,
@@ -735,16 +1091,16 @@ class _SettingsTab extends StatelessWidget {
                   fontWeight: FontWeight.w500)),
           const SizedBox(height: 12),
           Wrap(spacing: 10, runSpacing: 10, children: [
-            _statusOption('DRAFT',
-                Icons.drafts_rounded,   Colors.white38,     onStatusChanged),
-            _statusOption('PUBLISHED',
-                Icons.public_rounded,   Colors.greenAccent, onStatusChanged),
-            _statusOption('SCHEDULED',
-                Icons.schedule_rounded, Colors.blueAccent,  onStatusChanged),
+            _statusOption('DRAFT', Icons.drafts_rounded,
+                Colors.white38, onStatusChanged),
+            _statusOption('PUBLISHED', Icons.public_rounded,
+                Colors.greenAccent, onStatusChanged),
+            _statusOption('SCHEDULED', Icons.schedule_rounded,
+                Colors.blueAccent, onStatusChanged),
           ]),
           const SizedBox(height: 24),
 
-          // ── Scheduled fields (visible only when SCHEDULED) ───────────────
+          // ── Scheduled fields ─────────────────────────────────────────
           if (status == 'SCHEDULED') ...[
             _Field(
               label:  'Publish Date & Time (ISO 8601)',
@@ -783,7 +1139,7 @@ class _SettingsTab extends StatelessWidget {
             const SizedBox(height: 24),
           ],
 
-          // ── City association ─────────────────────────────────────────────
+          // ── City association ─────────────────────────────────────────
           _Field(
             label:  'City ID (optional)',
             ctrl:   cityIdCtrl,
@@ -793,7 +1149,7 @@ class _SettingsTab extends StatelessWidget {
           ),
           const SizedBox(height: 8),
 
-          // ── Info card ────────────────────────────────────────────────────
+          // ── Info card ────────────────────────────────────────────────
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -822,9 +1178,7 @@ class _SettingsTab extends StatelessWidget {
                 '• PUBLISHED — live immediately on the user app.\n'
                 '• SCHEDULED — goes live at the specified date & time.',
                 style: TextStyle(
-                    color: Colors.white38,
-                    fontSize: 12,
-                    height: 1.6),
+                    color: Colors.white38, fontSize: 12, height: 1.6),
               ),
             ]),
           ),

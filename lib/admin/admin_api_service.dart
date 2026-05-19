@@ -11,13 +11,13 @@ import 'package:palmnazi/models/place_model.dart';
 // authPut — identical implementation but with method: 'PATCH'.
 //
 // NOTE v2.0: unlinkPlaceCategories uses DELETE with a JSON body.
-// Ensure ApiClient.authDelete accepts an optional `body` parameter, e.g.:
+// Ensure ApiClient.authDelete accepts an optional `body` parameter, e.g.
 //
 //   static Future<http.Response> authDelete(String path,
 //       {Map<String, dynamic>? body}) async { ... }
 //
-// If authDelete doesn't support body yet, add it alongside the existing
-// authPut implementation (change method to 'DELETE' and include body encoding).
+// NOTE v3.0 (Blog): authGetWithParams already handles query params as a Map.
+// All new blog filter/search params are passed via queryParams.
 // ─────────────────────────────────────────────────────────────────────────────
 
 final Logger _adminLog = Logger(
@@ -38,7 +38,7 @@ abstract class _Ep {
   static const String cities = '/api/cities';
   static String cityById(String id) => '/api/cities/$id';
 
-  // Categories  (replaces channels — global, no city scope)
+  // Categories  (global, no city scope)
   static const String categories = '/api/categories';
   static String categoryById(String id) => '/api/categories/$id';
   static String deleteCategory(String id, {bool cascade = false}) =>
@@ -80,13 +80,24 @@ abstract class _Ep {
   static String placeArtifacts(String placeId) =>
       '/api/places/$placeId/artifacts';
 
-  // Dashboard  — stats API lives at /api/stats, not /api/admin/stats
+  // Dashboard
   static const String adminStats = '/api/stats';
 
-  // Blog
-  static const String blog = '/api/blog';
-  static String blogBySlug(String slug) => '/api/blog/$slug';
+  // ── Blog ─────────────────────────────────────────────────────────────────
+  static const String blog       = '/api/blog';
+  static const String blogSearch = '/api/blog/search';
   static const String blogDrafts = '/api/blog/drafts';
+
+  static String blogBySlug(String slug)        => '/api/blog/$slug';
+  static String blogHardDelete(String slug)    => '/api/blog/$slug?hard=true';
+  static String blogViews(String slug)         => '/api/blog/$slug/views';
+  static String blogLike(String slug)          => '/api/blog/$slug/like';
+  static String blogComments(String slug)      => '/api/blog/$slug/comments';
+
+  // Filter endpoints (public-facing but also useful for admin)
+  static const String blogByCategory = '/api/blog/categories';
+  static const String blogByTag      = '/api/blog/tags';
+  static String blogByAuthor(String authorId) => '/api/blog/author/$authorId';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -104,8 +115,7 @@ class AdminApiException implements Exception {
   });
 
   String? fieldError(String field) {
-    // ── Format 1: POST 400 — Zod-style nested errors
-    // Backend shape: { "_errors": [], "name": { "_errors": ["Required"] } }
+    // Format 1: POST 400 — Zod-style nested errors
     final v = errors?[field];
     if (v is List && v.isNotEmpty) return v.first.toString();
     if (v is Map) {
@@ -114,11 +124,7 @@ class AdminApiException implements Exception {
     }
     if (v is String) return v;
 
-    // ── Format 2: PUT 400 — flat fieldErrors wrapper
-    // Backend shape: { "fieldErrors": { "slug": ["msg"] }, "formErrors": [] }
-    // Field errors are nested one level deeper under "fieldErrors", not at the
-    // root of `errors`. Without this fallback every PUT 400 validation error
-    // is silently swallowed and never shown in the form.
+    // Format 2: PUT 400 — flat fieldErrors wrapper
     final fieldErrors = errors?['fieldErrors'];
     if (fieldErrors is Map) {
       final fe = fieldErrors[field];
@@ -160,18 +166,16 @@ class AdminApiService {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final data = body['data'];
       if (data is List) return data;
-      // Some list responses wrap in {places:[...], pagination:{...}}
-      // NOTE: keep this list in sync with every list endpoint the backend exposes.
       for (final key in [
         'places', 'categories', 'rooms',
-        'posts', 'drafts',               // blog endpoints
+        'posts', 'drafts',
+        'comments',
         'shows', 'performances',
         'exhibitions', 'artifacts',
-        'menuSections', 'menuItems',   // v2.0 — Dining endpoints
+        'menuSections', 'menuItems',
       ]) {
-        if (data is Map && data.containsKey(key)) {
-          return data[key] as List;
-        }
+        if (data is Map && data.containsKey(key)) return data[key] as List;
+        if (body.containsKey(key)) return body[key] as List;
       }
       return [];
     }
@@ -188,15 +192,7 @@ class AdminApiService {
 
   Never _throwFromBody(Map<String, dynamic> body, int statusCode,
       String method, String endpoint) {
-    // The backend returns two distinct error shapes:
-    //   • { status: "error", message: "..." }            — general errors (4xx/5xx)
-    //   • { status: "error", errors: { field: [...] } }  — field-validation (400)
-    //
-    // In the validation case there is NO "message" key in the body.
-    // Extract the errors first so they can inform the fallback message string,
-    // preventing the unhelpful "Request failed (400)" from showing in the
-    // snackbar when the form dialog's _fieldErrors map somehow ends up empty.
-    final errors = body['errors'] as Map<String, dynamic>?;
+    final errors  = body['errors'] as Map<String, dynamic>?;
     final message = body['message'] as String? ??
         body['error'] as String? ??
         (errors != null
@@ -212,7 +208,7 @@ class AdminApiService {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // RESORT CITIES  —  confirmed endpoints unchanged
+  // RESORT CITIES
   // ══════════════════════════════════════════════════════════════════════════
 
   Future<List<CityModel>> getCities({Map<String, String>? filters}) async {
@@ -251,19 +247,9 @@ class AdminApiService {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // CATEGORIES  (previously "Channels")
-  //
-  // Categories are GLOBAL — not scoped to a city.
-  // The hierarchy is: Parent Category → Child Categories (subcategories).
-  // Example: "Accommodation" (parent) → "Hotels", "Resorts" (children).
-  //
-  // Linking a place to a category is done via PUT /api/places/:id/categories.
+  // CATEGORIES
   // ══════════════════════════════════════════════════════════════════════════
 
-  /// Fetch all categories. Use filters to control what's returned:
-  ///   isActive:        true/false
-  ///   parentId:        specific parent's id — or "null" for root-only
-  ///   includeChildren: true  → each parent includes its children array
   Future<List<CategoryModel>> getCategories({
     bool? isActive,
     String? parentId,
@@ -285,15 +271,11 @@ class AdminApiService {
         .toList();
   }
 
-  /// Get all root categories with their children in one call.
   Future<List<CategoryModel>> getCategoryTree() async {
     final all = await getCategories(includeChildren: true);
-    // Filter to only root categories — children are embedded inside them
     return all.where((c) => c.isRoot).toList();
   }
 
-  /// Create a root-level category.
-  /// Required: name, slug. Optional: icon, description, sortOrder, isActive.
   Future<CategoryModel> createCategory(Map<String, dynamic> payload) async {
     _adminLog.i('➕ [AdminApiService] POST createCategory  payload=$payload');
     final response = await ApiClient.authPost(_Ep.categories, body: payload);
@@ -301,7 +283,6 @@ class AdminApiService {
         _unwrapObject(response, 'POST', _Ep.categories));
   }
 
-  /// Create a subcategory by including parentId in the payload.
   Future<CategoryModel> createSubcategory(
       String parentId, Map<String, dynamic> payload) async {
     _adminLog.i('➕ [AdminApiService] POST createSubcategory  parentId=$parentId');
@@ -311,7 +292,6 @@ class AdminApiService {
         _unwrapObject(response, 'POST', _Ep.categories));
   }
 
-  /// Partial update of a category. Only provided fields are changed.
   Future<CategoryModel> updateCategory(
       String id, Map<String, dynamic> payload) async {
     _adminLog.i('✏️  [AdminApiService] PUT updateCategory  id=$id');
@@ -320,8 +300,6 @@ class AdminApiService {
     return CategoryModel.fromJson(_unwrapObject(response, 'PUT', ep));
   }
 
-  /// Delete a category.
-  /// Set cascade=true to also delete all child subcategories.
   Future<void> deleteCategory(String id, {bool cascade = false}) async {
     final ep = _Ep.deleteCategory(id, cascade: cascade);
     _adminLog.i('🗑️  [AdminApiService] DELETE category  id=$id  cascade=$cascade');
@@ -329,29 +307,9 @@ class AdminApiService {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // PLACES — core 11-step progressive creation workflow
-  //
-  // The flow:
-  //   Step 1  POST /api/places                   → createPlaceDraft()
-  //   Step 2  PATCH /api/places/:id              → updatePlaceBasicInfo()
-  //   Step 3  PATCH /api/places/:id/location     → updatePlaceLocation()
-  //   Step 4  PATCH /api/places/:id/contact      → updatePlaceContact()
-  //   Step 5  PATCH /api/places/:id/attributes   → updatePlaceAttributes()
-  //   Step 6  (category-specific nested data)
-  //   Step 7  PATCH /api/places/:id/media        → updatePlaceMedia()
-  //   Step 8  PATCH /api/places/:id/booking      → updatePlaceBooking()
-  //   Step 9  PUT   /api/places/:id/categories   → linkPlaceCategories()
-  //   Step 10 GET   /api/places/:id/submit       → validatePlace()
-  //   Step 11 POST  /api/places/:id/submit       → submitPlace()
+  // PLACES — 11-step progressive creation workflow
   // ══════════════════════════════════════════════════════════════════════════
 
-  /// Fetch places with optional filtering.
-  ///
-  /// [includeAttributes] — v2.0 opt-in flag.  When true the API adds
-  /// `attributes`, `contact`, `images`, `description`, `bookingSettings`,
-  /// and `searchKeywords` to every list item (heavier payload).
-  /// Omit (default false) for lean list screens; use [getPlaceById] for
-  /// full detail in the edit wizard.
   Future<List<PlaceModel>> getPlaces({
     String? cityId,
     String? categoryId,
@@ -359,11 +317,11 @@ class AdminApiService {
     String? search,
     String? taxonomy,
     bool? isBookable,
-    bool includeAttributes = false,   // v2.0 opt-in
+    bool includeAttributes = false,
     int page = 1,
     int limit = 20,
   }) async {
-    _adminLog.i('📍 [AdminApiService] GET places  cityId=$cityId  categoryId=$categoryId  includeAttributes=$includeAttributes');
+    _adminLog.i('📍 [AdminApiService] GET places  cityId=$cityId');
     final params = <String, String>{};
     if (cityId != null) params['cityId'] = cityId;
     if (categoryId != null) params['categoryId'] = categoryId;
@@ -379,7 +337,6 @@ class AdminApiService {
       _Ep.places,
       queryParams: params,
     );
-    // Backend wraps list as data.places[...]
     final body = ApiClient.parseBody(response);
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final data = body['data'];
@@ -404,8 +361,6 @@ class AdminApiService {
     return PlaceModel.fromJson(_unwrapObject(response, 'GET', ep));
   }
 
-  /// STEP 1 — Create a minimal draft place record.
-  /// Returns the new PlaceModel with status=PENDING and the server-assigned id.
   Future<PlaceModel> createPlaceDraft({
     required String name,
     required String cityId,
@@ -423,51 +378,40 @@ class AdminApiService {
     return PlaceModel.fromJson(_unwrapObject(response, 'POST', _Ep.places));
   }
 
-  /// STEP 2 — Update basic descriptive info.
   Future<PlaceModel> updatePlaceBasicInfo(
       String id, Map<String, dynamic> payload) async {
-    _adminLog.i('✏️  [AdminApiService] PATCH placeBasicInfo  id=$id');
     final ep = _Ep.placeById(id);
     final response = await ApiClient.authPatch(ep, body: payload);
     return PlaceModel.fromJson(_unwrapObject(response, 'PATCH', ep));
   }
 
-  /// STEP 3 — Update address and GPS coordinates.
   Future<PlaceModel> updatePlaceLocation(
       String id, Map<String, dynamic> payload) async {
-    _adminLog.i('✏️  [AdminApiService] PATCH placeLocation  id=$id');
     final ep = _Ep.placeLocation(id);
     final response = await ApiClient.authPatch(ep, body: payload);
     return PlaceModel.fromJson(_unwrapObject(response, 'PATCH', ep));
   }
 
-  /// STEP 4 — Update phone, email, website.
   Future<PlaceModel> updatePlaceContact(
       String id, Map<String, dynamic> payload) async {
-    _adminLog.i('✏️  [AdminApiService] PATCH placeContact  id=$id');
     final ep = _Ep.placeContact(id);
     final response = await ApiClient.authPatch(ep, body: payload);
     return PlaceModel.fromJson(_unwrapObject(response, 'PATCH', ep));
   }
 
-  /// STEP 5 — Update the flexible JSONB attributes blob.
-  /// The attributes object varies by category type (see Place API docs).
   Future<PlaceModel> updatePlaceAttributes(
       String id, Map<String, dynamic> attributes) async {
-    _adminLog.i('✏️  [AdminApiService] PATCH placeAttributes  id=$id');
     final ep = _Ep.placeAttributes(id);
     final response =
         await ApiClient.authPatch(ep, body: {'attributes': attributes});
     return PlaceModel.fromJson(_unwrapObject(response, 'PATCH', ep));
   }
 
-  /// STEP 7 — Update cover image and image gallery.
   Future<PlaceModel> updatePlaceMedia(
       String id, {
       required String? coverImage,
       required List<Map<String, dynamic>> images,
     }) async {
-    _adminLog.i('✏️  [AdminApiService] PATCH placeMedia  id=$id');
     final ep = _Ep.placeMedia(id);
     final payload = <String, dynamic>{
       if (coverImage != null && coverImage.isNotEmpty) 'coverImage': coverImage,
@@ -477,34 +421,18 @@ class AdminApiService {
     return PlaceModel.fromJson(_unwrapObject(response, 'PATCH', ep));
   }
 
-  /// STEP 8 — Configure booking availability and pricing.
   Future<PlaceModel> updatePlaceBooking(
       String id, Map<String, dynamic> payload) async {
-    _adminLog.i('✏️  [AdminApiService] PATCH placeBooking  id=$id');
     final ep = _Ep.placeBooking(id);
     final response = await ApiClient.authPatch(ep, body: payload);
     return PlaceModel.fromJson(_unwrapObject(response, 'PATCH', ep));
   }
 
-  /// STEP 9 — Link this place to one or more categories.
-  ///
-  /// **v2.0 behaviour change — READ THIS.**
-  /// The API is now ADDITIVE by default: only the provided categoryIds are
-  /// linked; existing links not in the list are left untouched.
-  ///
-  /// Set [replaceMode] = true to use `?mode=replace` and replicate the old
-  /// v1.0 "replace all" behaviour.  You almost always want this when editing
-  /// an existing place so that removed categories are properly unlinked.
-  ///
-  /// For the initial creation wizard pass [replaceMode] = false (additive is
-  /// fine — there are no pre-existing links to worry about).
   Future<PlaceModel> linkPlaceCategories(
       String id,
       List<String> categoryIds, {
       bool replaceMode = false,
   }) async {
-    _adminLog.i(
-        '🔗 [AdminApiService] PUT placeCategories  id=$id  categories=${categoryIds.length}  replaceMode=$replaceMode');
     final ep = replaceMode
         ? '${_Ep.placeCategories(id)}?mode=replace'
         : _Ep.placeCategories(id);
@@ -513,48 +441,31 @@ class AdminApiService {
     return PlaceModel.fromJson(_unwrapObject(response, 'PUT', ep));
   }
 
-  /// Unlink specific categories from a place without touching other links.
-  ///
-  /// Uses `DELETE /api/places/:id/categories` — new in v2.0.
-  /// Returns the updated place after removal.
-  ///
-  /// Requires ApiClient.authDelete to accept an optional `body` parameter —
-  /// see the note at the top of this file.
   Future<PlaceModel> unlinkPlaceCategories(
       String id, List<String> categoryIds) async {
-    _adminLog.i(
-        '🔓 [AdminApiService] DELETE placeCategories  id=$id  categories=${categoryIds.length}');
     final ep = _Ep.placeCategories(id);
     final response = await ApiClient.authDelete(ep, body: {'categoryIds': categoryIds});
     return PlaceModel.fromJson(_unwrapObject(response, 'DELETE', ep));
   }
 
-  /// STEP 10 — Check if the place has all required fields for submission.
   Future<PlaceValidationResult> validatePlace(String id) async {
-    _adminLog.i('🔍 [AdminApiService] GET validatePlace  id=$id');
     final ep = _Ep.placeValidate(id);
     final response = await ApiClient.authGet(ep);
     return PlaceValidationResult.fromJson(_unwrapObject(response, 'GET', ep));
   }
 
-  /// STEP 11 — Submit the place for activation (PENDING → ACTIVE).
   Future<PlaceModel> submitPlace(String id) async {
-    _adminLog.i('🚀 [AdminApiService] POST submitPlace  id=$id');
     final ep = _Ep.placeSubmit(id);
     final response = await ApiClient.authPost(ep, body: {});
     return PlaceModel.fromJson(_unwrapObject(response, 'POST', ep));
   }
 
-  /// Permanently delete a place. Will fail if the place has bookings.
   Future<void> deletePlaceById(String id) async {
     final ep = _Ep.placeById(id);
-    _adminLog.i('🗑️  [AdminApiService] DELETE place  id=$id');
     _unwrapDelete(await ApiClient.authDelete(ep), 'DELETE', ep);
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // ACCOMMODATION — Rooms (Step 6 for accommodation-type places)
-  // ──────────────────────────────────────────────────────────────────────────
+  // ── Accommodation ──────────────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> getRooms(String placeId) async {
     final ep = _Ep.placeRooms(placeId);
@@ -562,13 +473,10 @@ class AdminApiService {
     return list.cast<Map<String, dynamic>>();
   }
 
-  /// Creates (or replaces) all rooms for a place.
   Future<List<Map<String, dynamic>>> createRooms(
       String placeId, List<Map<String, dynamic>> rooms) async {
-    _adminLog.i('➕ [AdminApiService] POST createRooms  placeId=$placeId  count=${rooms.length}');
     final ep = _Ep.placeRooms(placeId);
-    final response =
-        await ApiClient.authPost(ep, body: {'rooms': rooms});
+    final response = await ApiClient.authPost(ep, body: {'rooms': rooms});
     final list = _unwrapList(response, 'POST', ep);
     return list.cast<Map<String, dynamic>>();
   }
@@ -585,9 +493,7 @@ class AdminApiService {
     _unwrapDelete(await ApiClient.authDelete(ep), 'DELETE', ep);
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // DINING — Menu sections & items (Step 6 for dining-type places)
-  // ──────────────────────────────────────────────────────────────────────────
+  // ── Dining ─────────────────────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> getMenuSections(String placeId) async {
     final ep = _Ep.placeMenuSections(placeId);
@@ -597,7 +503,6 @@ class AdminApiService {
 
   Future<void> createMenuSections(
       String placeId, List<Map<String, dynamic>> sections) async {
-    _adminLog.i('➕ [AdminApiService] POST createMenuSections  placeId=$placeId');
     final ep = _Ep.placeMenuSections(placeId);
     await ApiClient.authPost(ep, body: {'sections': sections});
   }
@@ -610,7 +515,6 @@ class AdminApiService {
 
   Future<void> createMenuItems(
       String placeId, List<Map<String, dynamic>> items) async {
-    _adminLog.i('➕ [AdminApiService] POST createMenuItems  placeId=$placeId  count=${items.length}');
     final ep = _Ep.placeMenuItems(placeId);
     await ApiClient.authPost(ep, body: {'menuItems': items});
   }
@@ -627,9 +531,7 @@ class AdminApiService {
     _unwrapDelete(await ApiClient.authDelete(ep), 'DELETE', ep);
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // ENTERTAINMENT — Shows & performances (Step 6 for entertainment places)
-  // ──────────────────────────────────────────────────────────────────────────
+  // ── Entertainment ──────────────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> getShows(String placeId) async {
     final ep = _Ep.placeShows(placeId);
@@ -662,9 +564,7 @@ class AdminApiService {
         await ApiClient.authPatch(ep, body: payload), 'PATCH', ep);
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // CULTURAL — Exhibitions & artifacts (Step 6 for cultural places)
-  // ──────────────────────────────────────────────────────────────────────────
+  // ── Cultural ───────────────────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> getExhibitions(String placeId) async {
     final ep = _Ep.placeExhibitions(placeId);
@@ -690,25 +590,9 @@ class AdminApiService {
     await ApiClient.authPost(ep, body: {'artifacts': artifacts});
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
   // DASHBOARD STATS
-  //
-  // The stats API lives at GET /api/stats and uses a ?keys= query param to
-  // select exactly which resolvers run.  The response shape is:
-  //   { stats: [{ key, label, value, group, meta? }, ...], meta: {...} }
-  // There is no "data" envelope, so _unwrapObject must NOT be used here.
-  //
-  // Keys used for the home dashboard:
-  //   cities_total  — total resort cities
-  //   places_total  — total places
-  //   places_active — active / published places
-  //   places_pending — pending / draft places
-  //   users_total   — registered users (replaces the old totalCategories key
-  //                   which has no equivalent in the stats API)
-  //
-  // Returns a Map<String, dynamic> keyed by stat key, e.g.:
-  //   { 'cities_total': 12, 'places_total': 340, ... }
-  // ──────────────────────────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
 
   Future<Map<String, dynamic>> getDashboardStats() async {
     _adminLog.i('📊 [AdminApiService] GET adminStats');
@@ -724,73 +608,204 @@ class AdminApiService {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final statsList = body['stats'];
       if (statsList is List) {
-        // Flatten the array into { key: value } so the dashboard can do
-        // stats['cities_total'] rather than iterating the list each time.
         return {
           for (final item in statsList)
             if (item is Map<String, dynamic> && item['key'] is String)
               item['key'] as String: item['value'],
         };
       }
-      _adminLog.w(
-          '⚠️ [AdminApiService] getDashboardStats: '
-          '"stats" field missing or not a list — body: $body');
       return {};
     }
     _throwFromBody(body, response.statusCode, 'GET', _Ep.adminStats);
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // BLOG
+  // ══════════════════════════════════════════════════════════════════════════
+  // BLOG — Full implementation
   //
-  // getBlogPosts — returns { posts, page, total, totalPages }
-  //   The API response shape: { posts: [...], pagination: { page, limit, total, totalPages } }
-  //
-  // createBlogPost  POST  /api/blog
-  // updateBlogPost  PATCH /api/blog/:slug
-  // deleteBlogPost  DELETE /api/blog/:slug        (soft delete by default)
-  // getBlogDrafts   GET   /api/blog/drafts        (current admin's drafts)
-  // ──────────────────────────────────────────────────────────────────────────
+  // Implemented endpoints:
+  //   GET    /api/blog                      getBlogPosts()
+  //   GET    /api/blog/search?q=            searchBlogPosts()
+  //   GET    /api/blog/{slug}               getBlogPostBySlug()
+  //   POST   /api/blog                      createBlogPost()
+  //   PATCH  /api/blog/{slug}               updateBlogPost()
+  //   DELETE /api/blog/{slug}               deleteBlogPost()      (soft)
+  //   DELETE /api/blog/{slug}?hard=true     deleteBlogPostHard()  (permanent)
+  //   GET    /api/blog/drafts               getBlogDrafts()
+  //   POST   /api/blog/{slug}/views         trackBlogView()
+  //   POST   /api/blog/{slug}/like          likeBlogPost()
+  //   GET    /api/blog/{slug}/comments      getBlogComments()
+  //   POST   /api/blog/{slug}/comments      addBlogComment()
+  //   GET    /api/blog/categories?slug=     getBlogPostsByCategory()
+  //   GET    /api/blog/tags?slug=           getBlogPostsByTag()
+  //   GET    /api/blog/author/{authorId}    getBlogPostsByAuthor()
+  // ══════════════════════════════════════════════════════════════════════════
 
+  // ── List / Search ──────────────────────────────────────────────────────────
+
+  /// List posts with full filter support.
+  /// When [query] is provided the search endpoint is used instead of the
+  /// list endpoint, and status/category/tag filters are ignored by the server
+  /// (the search API only accepts page/limit).
   Future<Map<String, dynamic>> getBlogPosts({
-    int page = 1,
-    int limit = 20,
+    int    page    = 1,
+    int    limit   = 20,
     String? status,
+    String? category,
+    String? tag,
+    String? cityId,
+    String? authorId,
+    bool?   featured,
+    String? sortBy,   // publishedAt | title | updatedAt
+    String? order,    // asc | desc
   }) async {
-    _adminLog.i('📰 [AdminApiService] GET blog  page=$page  status=$status');
+    _adminLog.i('📰 [AdminApiService] GET blog  page=$page  status=$status  '
+        'category=$category  tag=$tag');
     final params = <String, String>{
-      'page': '$page',
+      'page':  '$page',
       'limit': '$limit',
-      if (status != null) 'status': status,
+      if (status   != null) 'status':   status,
+      if (category != null) 'category': category,
+      if (tag      != null) 'tag':      tag,
+      if (cityId   != null) 'cityId':   cityId,
+      if (authorId != null) 'authorId': authorId,
+      if (featured != null) 'featured': featured.toString(),
+      if (sortBy   != null) 'sortBy':   sortBy,
+      if (order    != null) 'order':    order,
     };
     final response = await ApiClient.authGetWithParams(
       _Ep.blog,
       queryParams: params,
     );
+    return _parseBlogListResponse(response, 'GET', _Ep.blog, page);
+  }
+
+  /// Full-text search across posts.
+  /// Returns the same shape as [getBlogPosts] for easy interop.
+  Future<Map<String, dynamic>> searchBlogPosts(
+    String query, {
+    int page  = 1,
+    int limit = 20,
+  }) async {
+    _adminLog.i('🔍 [AdminApiService] GET blog/search  q=$query  page=$page');
+    final response = await ApiClient.authGetWithParams(
+      _Ep.blogSearch,
+      queryParams: {
+        'q':     Uri.encodeQueryComponent(query),
+        'page':  '$page',
+        'limit': '$limit',
+      },
+    );
+    return _parseBlogListResponse(response, 'GET', _Ep.blogSearch, page);
+  }
+
+  /// Shared response parser for all blog list/search endpoints.
+  Map<String, dynamic> _parseBlogListResponse(
+      http.Response response, String method, String ep, int page) {
     final body = ApiClient.parseBody(response);
-    _adminLog.d('   ↳ GET ${_Ep.blog}  →  ${response.statusCode}');
+    _adminLog.d('   ↳ $method $ep  →  ${response.statusCode}');
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      final posts = (body['posts'] as List? ?? []).cast<Map<String, dynamic>>();
+      final posts      = (body['posts'] as List? ?? []).cast<Map<String, dynamic>>();
       final pagination = body['pagination'] as Map<String, dynamic>? ?? {};
       return {
-        'posts': posts,
-        'page': pagination['page'] ?? page,
-        'total': pagination['total'] ?? posts.length,
+        'posts':      posts,
+        'page':       pagination['page']       ?? page,
+        'total':      pagination['total']      ?? posts.length,
+        'totalPages': pagination['totalPages'] ?? 1,
+        'query':      body['query'],   // present on search responses only
+      };
+    }
+    _throwFromBody(body, response.statusCode, method, ep);
+  }
+
+  // ── Filter endpoints ───────────────────────────────────────────────────────
+
+  /// Posts filtered by category slug  —  GET /api/blog/categories?slug=…
+  Future<Map<String, dynamic>> getBlogPostsByCategory(
+    String categorySlug, {
+    int page  = 1,
+    int limit = 20,
+  }) async {
+    _adminLog.i('📂 [AdminApiService] GET blog/categories  slug=$categorySlug');
+    final response = await ApiClient.authGetWithParams(
+      _Ep.blogByCategory,
+      queryParams: {'slug': categorySlug, 'page': '$page', 'limit': '$limit'},
+    );
+    return _parseBlogListResponse(
+        response, 'GET', _Ep.blogByCategory, page);
+  }
+
+  /// Posts filtered by tag slug  —  GET /api/blog/tags?slug=…
+  Future<Map<String, dynamic>> getBlogPostsByTag(
+    String tagSlug, {
+    int page  = 1,
+    int limit = 20,
+  }) async {
+    _adminLog.i('🏷️  [AdminApiService] GET blog/tags  slug=$tagSlug');
+    final response = await ApiClient.authGetWithParams(
+      _Ep.blogByTag,
+      queryParams: {'slug': tagSlug, 'page': '$page', 'limit': '$limit'},
+    );
+    return _parseBlogListResponse(response, 'GET', _Ep.blogByTag, page);
+  }
+
+  /// Posts by a specific author  —  GET /api/blog/author/{authorId}
+  /// Returns { author: {...}, posts: [...], pagination: {...} }
+  Future<Map<String, dynamic>> getBlogPostsByAuthor(
+    String authorId, {
+    int page  = 1,
+    int limit = 20,
+  }) async {
+    _adminLog.i('👤 [AdminApiService] GET blog/author  authorId=$authorId');
+    final ep = _Ep.blogByAuthor(authorId);
+    final response = await ApiClient.authGetWithParams(
+      ep,
+      queryParams: {'page': '$page', 'limit': '$limit'},
+    );
+    final body = ApiClient.parseBody(response);
+    _adminLog.d('   ↳ GET $ep  →  ${response.statusCode}');
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final posts      = (body['posts'] as List? ?? []).cast<Map<String, dynamic>>();
+      final pagination = body['pagination'] as Map<String, dynamic>? ?? {};
+      return {
+        'author':     body['author'],
+        'posts':      posts,
+        'page':       pagination['page']       ?? page,
+        'total':      pagination['total']      ?? posts.length,
         'totalPages': pagination['totalPages'] ?? 1,
       };
     }
-    _throwFromBody(body, response.statusCode, 'GET', _Ep.blog);
+    _throwFromBody(body, response.statusCode, 'GET', ep);
   }
+
+  // ── Single post ────────────────────────────────────────────────────────────
+
+  /// Fetch a single post's full detail (content, meta, comments, etc.).
+  /// Always call this before opening the edit compose screen so the full
+  /// HTML content is available — the list endpoint omits the content field.
+  Future<Map<String, dynamic>> getBlogPostBySlug(String slug) async {
+    _adminLog.i('📄 [AdminApiService] GET blog/$slug');
+    final ep       = _Ep.blogBySlug(slug);
+    final response = await ApiClient.authGet(ep);
+    final body     = ApiClient.parseBody(response);
+    _adminLog.d('   ↳ GET $ep  →  ${response.statusCode}');
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      // Response shape: { post: {...}, relatedPlaces: [...], similarPosts: [...] }
+      final post = body['post'] ?? body['data'] ?? body;
+      return post as Map<String, dynamic>;
+    }
+    _throwFromBody(body, response.statusCode, 'GET', ep);
+  }
+
+  // ── Create / Update / Delete ───────────────────────────────────────────────
 
   Future<Map<String, dynamic>> createBlogPost(
       Map<String, dynamic> payload) async {
     _adminLog.i('➕ [AdminApiService] POST createBlogPost  title=${payload['title']}');
-    const ep = _Ep.blog;
+    const ep       = _Ep.blog;
     final response = await ApiClient.authPost(ep, body: payload);
-    final body = ApiClient.parseBody(response);
+    final body     = ApiClient.parseBody(response);
     _adminLog.d('   ↳ POST $ep  →  ${response.statusCode}');
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      // API wraps in { post: {...} } or { data: {...} }
       final post = body['post'] ?? body['data'] ?? body;
       return post as Map<String, dynamic>;
     }
@@ -800,9 +815,9 @@ class AdminApiService {
   Future<Map<String, dynamic>> updateBlogPost(
       String slug, Map<String, dynamic> payload) async {
     _adminLog.i('✏️ [AdminApiService] PATCH updateBlogPost  slug=$slug');
-    final ep = _Ep.blogBySlug(slug);
+    final ep       = _Ep.blogBySlug(slug);
     final response = await ApiClient.authPatch(ep, body: payload);
-    final body = ApiClient.parseBody(response);
+    final body     = ApiClient.parseBody(response);
     _adminLog.d('   ↳ PATCH $ep  →  ${response.statusCode}');
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final post = body['post'] ?? body['data'] ?? body;
@@ -811,21 +826,115 @@ class AdminApiService {
     _throwFromBody(body, response.statusCode, 'PATCH', ep);
   }
 
+  /// Soft delete — the post is archived and can be restored by the backend team.
   Future<void> deleteBlogPost(String slug) async {
-    _adminLog.i('🗑️ [AdminApiService] DELETE blog  slug=$slug');
+    _adminLog.i('🗑️ [AdminApiService] DELETE blog (soft)  slug=$slug');
     final ep = _Ep.blogBySlug(slug);
     _unwrapDelete(await ApiClient.authDelete(ep), 'DELETE', ep);
   }
 
+  /// Hard (permanent) delete — irreversible. Admin only.
+  Future<void> deleteBlogPostHard(String slug) async {
+    _adminLog.i('💥 [AdminApiService] DELETE blog (hard)  slug=$slug');
+    final ep = _Ep.blogHardDelete(slug);
+    _unwrapDelete(await ApiClient.authDelete(ep), 'DELETE', ep);
+  }
+
+  // ── Drafts ─────────────────────────────────────────────────────────────────
+
+  /// Returns the current admin user's own drafts only.
+  /// Useful for a personal "My Drafts" section distinct from the global list.
   Future<List<Map<String, dynamic>>> getBlogDrafts() async {
     _adminLog.i('📝 [AdminApiService] GET blog drafts');
-    const ep = _Ep.blogDrafts;
+    const ep       = _Ep.blogDrafts;
     final response = await ApiClient.authGet(ep);
-    final body = ApiClient.parseBody(response);
+    final body     = ApiClient.parseBody(response);
     _adminLog.d('   ↳ GET $ep  →  ${response.statusCode}');
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return (body['drafts'] as List? ?? []).cast<Map<String, dynamic>>();
     }
     _throwFromBody(body, response.statusCode, 'GET', ep);
+  }
+
+  // ── Engagement ─────────────────────────────────────────────────────────────
+
+  /// Track a page view. Call this when a post detail screen opens.
+  /// Returns the new total view count.
+  Future<int> trackBlogView(String slug) async {
+    _adminLog.d('👁️  [AdminApiService] POST blog/views  slug=$slug');
+    final ep       = _Ep.blogViews(slug);
+    final response = await ApiClient.authPost(ep, body: {});
+    final body     = ApiClient.parseBody(response);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return (body['views'] as num?)?.toInt() ?? 0;
+    }
+    _throwFromBody(body, response.statusCode, 'POST', ep);
+  }
+
+  /// Toggle a like on a post. Returns the new total like count.
+  Future<int> likeBlogPost(String slug) async {
+    _adminLog.i('❤️  [AdminApiService] POST blog/like  slug=$slug');
+    final ep       = _Ep.blogLike(slug);
+    final response = await ApiClient.authPost(ep, body: {});
+    final body     = ApiClient.parseBody(response);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return (body['likes'] as num?)?.toInt() ?? 0;
+    }
+    _throwFromBody(body, response.statusCode, 'POST', ep);
+  }
+
+  // ── Comments ───────────────────────────────────────────────────────────────
+
+  /// Fetch paginated comments for a post, including nested replies.
+  /// Returns { comments: [...], page, total, totalPages }.
+  Future<Map<String, dynamic>> getBlogComments(
+    String slug, {
+    int page  = 1,
+    int limit = 20,
+  }) async {
+    _adminLog.i('💬 [AdminApiService] GET blog/comments  slug=$slug  page=$page');
+    final ep       = _Ep.blogComments(slug);
+    final response = await ApiClient.authGetWithParams(
+      ep,
+      queryParams: {'page': '$page', 'limit': '$limit'},
+    );
+    final body = ApiClient.parseBody(response);
+    _adminLog.d('   ↳ GET $ep  →  ${response.statusCode}');
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final comments   = (body['comments'] as List? ?? []).cast<Map<String, dynamic>>();
+      final pagination = body['pagination'] as Map<String, dynamic>? ?? {};
+      return {
+        'comments':   comments,
+        'page':       pagination['page']       ?? page,
+        'total':      pagination['total']      ?? comments.length,
+        'totalPages': pagination['totalPages'] ?? 1,
+      };
+    }
+    _throwFromBody(body, response.statusCode, 'GET', ep);
+  }
+
+  /// Add a top-level comment or reply to an existing comment.
+  /// [parentId] — provide to make this a reply; omit for a root comment.
+  /// Returns the newly created comment object.
+  Future<Map<String, dynamic>> addBlogComment(
+    String slug,
+    String content, {
+    String? parentId,
+  }) async {
+    _adminLog.i('💬 [AdminApiService] POST blog/comments  slug=$slug  '
+        'isReply=${parentId != null}');
+    final ep      = _Ep.blogComments(slug);
+    final payload = <String, dynamic>{
+      'content': content,
+      if (parentId != null) 'parentId': parentId,
+    };
+    final response = await ApiClient.authPost(ep, body: payload);
+    final body     = ApiClient.parseBody(response);
+    _adminLog.d('   ↳ POST $ep  →  ${response.statusCode}');
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return (body['comment'] ?? body['data'] ?? body)
+          as Map<String, dynamic>;
+    }
+    _throwFromBody(body, response.statusCode, 'POST', ep);
   }
 }

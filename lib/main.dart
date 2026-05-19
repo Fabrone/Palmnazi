@@ -1,15 +1,31 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_quill/flutter_quill.dart' show FlutterQuillLocalizations;
 import 'package:palmnazi/firebase_options.dart';
+import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/landing_page.dart';
+import 'package:palmnazi/services/api_client.dart';
 
-/// Entry point.
-///
-/// Firebase MUST be fully initialised before runApp() — any call to
-/// FirebaseStorage, FirebaseFirestore, etc. will throw:
-///   "type 'FirebaseException' is not a subtype of type 'JavaScriptObject'"
-/// if this is missing or if `await` is omitted.
+// ─────────────────────────────────────────────────────────────────────────────
+// NAVIGATOR KEY
+//
+// A single, app-wide GlobalKey<NavigatorState> that lets non-widget code
+// (specifically ApiClient._handleSessionExpired) push routes without needing
+// a BuildContext.
+//
+// Rules:
+//  • Declared here at the top level so it is accessible from both main() and
+//    PalmnaziApp.build().
+//  • Passed to MaterialApp.navigatorKey so Flutter's navigator is bound to it.
+//  • Never re-created after startup (it is a top-level `final`).
+// ─────────────────────────────────────────────────────────────────────────────
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENTRY POINT
+// ─────────────────────────────────────────────────────────────────────────────
 void main() async {
   // Required before any plugin (including Firebase) is used.
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +37,37 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Set system UI overlay style
+  // ── Session-Expired Hook ───────────────────────────────────────────────────
+  //
+  // WHY THIS IS HERE
+  // When an authenticated HTTP call receives a 401 and the stored refresh token
+  // is either absent or rejected, ApiClient._handleSessionExpired() is invoked.
+  // That method calls this callback to redirect the user back to the login
+  // screen.  Without this registration the callback is null and the following
+  // warning is emitted in the logs while the user is left on whatever screen
+  // they were on with no feedback:
+  //
+  //   ⚠️ ApiClient._handleSessionExpired: onSessionExpired is null.
+  //      Register it in main.dart to enable automatic redirect: ...
+  //
+  // HOW IT WORKS
+  // pushAndRemoveUntil with a (route) => false predicate clears the entire
+  // navigation stack first, then pushes AuthScreen.  This prevents the user
+  // from pressing the back button to return to a screen that requires a valid
+  // session after being logged out automatically.
+  //
+  // The navigatorKey is used instead of a BuildContext because this callback
+  // is fired from deep inside ApiClient (a static utility class with no
+  // BuildContext of its own).
+  // ──────────────────────────────────────────────────────────────────────────
+  ApiClient.onSessionExpired = () {
+    navigatorKey.currentState?.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AuthScreen(isLogin: true)),
+      (route) => false,
+    );
+  };
+
+  // Set system UI overlay style.
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -32,6 +78,9 @@ void main() async {
   runApp(const PalmnaziApp());
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ROOT WIDGET
+// ─────────────────────────────────────────────────────────────────────────────
 class PalmnaziApp extends StatelessWidget {
   const PalmnaziApp({super.key});
 
@@ -40,6 +89,49 @@ class PalmnaziApp extends StatelessWidget {
     return MaterialApp(
       title: 'Palmnazi Resort Cities',
       debugShowCheckedModeBanner: false,
+
+      // ── Navigator key ──────────────────────────────────────────────────────
+      // Binds the app's Navigator to the top-level navigatorKey so that
+      // ApiClient.onSessionExpired (and any other non-widget code) can push
+      // routes without a BuildContext.
+      navigatorKey: navigatorKey,
+
+      // ── Localisation delegates ─────────────────────────────────────────────
+      //
+      // WHY THESE ARE NEEDED
+      //
+      // 1. FlutterQuillLocalizations.delegate
+      //    flutter_quill v11+ resolves every toolbar button tooltip and ARIA
+      //    label via Flutter's standard Localizations mechanism.  Without this
+      //    delegate every QuillSimpleToolbar and QuillEditor widget throws
+      //    MissingFlutterQuillLocalizationException at build time, which is
+      //    the cascade of exceptions that appeared in the earlier error logs.
+      //    The local Localizations.override() fix in AdminBlogComposeScreen is
+      //    belt-and-suspenders; this global registration ensures the delegate
+      //    is available everywhere in the tree.
+      //
+      // 2. GlobalMaterialLocalizations.delegate
+      //    GlobalWidgetsLocalizations.delegate
+      //    GlobalCupertinoLocalizations.delegate
+      //    Required alongside any custom delegate to keep Flutter's own
+      //    Material / Cupertino / Widgets localisation strings functional.
+      //    Omitting them causes an assertion error when the app runs on a
+      //    non-English device locale.
+      localizationsDelegates: const [
+        FlutterQuillLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+
+      // Declare every locale the app formally supports.
+      // Flutter will fall back to the first entry (en-US) for any device
+      // locale not listed here.
+      supportedLocales: const [
+        Locale('en', 'US'),
+      ],
+
+      // ── Theme ──────────────────────────────────────────────────────────────
       theme: ThemeData(
         primarySwatch: Colors.teal,
         primaryColor: const Color(0xFF00897B),
@@ -86,6 +178,7 @@ class PalmnaziApp extends StatelessWidget {
           ),
         ),
       ),
+
       home: const LandingPage(),
     );
   }
