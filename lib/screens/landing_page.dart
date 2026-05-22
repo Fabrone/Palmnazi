@@ -8,6 +8,7 @@ import 'package:palmnazi/screens/resort_city_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/admin/admin_dashboard.dart';
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Design tokens  (unchanged from v1 — kept in one place)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -672,17 +673,97 @@ class _LandingPageState extends State<LandingPage>
         dense: true,
       );
 
+  // ── Auth-gated admin navigation ──────────────────────────────────────────
+  Future<void> _goToAdminWithAuthCheck() async {
+    // Check whether the user has an active session via the API token stored
+    // by ApiClient (flutter_secure_storage). This is the sole auth source —
+    // no Firebase Auth dependency needed here.
+    final accessToken = await ApiClient.getAccessToken();
+    final isLoggedIn = accessToken != null && accessToken.isNotEmpty;
+
+    if (isLoggedIn) {
+      // Already authenticated — navigate directly.
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (_, anim, __) => const AdminDashboard(),
+          transitionsBuilder: (_, anim, __, child) =>
+              FadeTransition(opacity: anim, child: child),
+          transitionDuration: const Duration(milliseconds: 320),
+        ),
+      );
+    } else {
+      // Not logged in — show login screen, no snackbar yet.
+      if (!mounted) return;
+      final result = await Navigator.push<AuthResult>(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (_, anim, __) => const AuthScreen(isLogin: true),
+          transitionsBuilder: (_, anim, __, child) =>
+              FadeTransition(opacity: anim, child: child),
+          transitionDuration: const Duration(milliseconds: 320),
+        ),
+      );
+
+      if (!mounted) return;
+
+      if (result != null && result.isSuccess) {
+        // Login succeeded — show success snackbar then go to admin.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.message),
+            backgroundColor: RC.emerald,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        Navigator.push(
+          context,
+          PageRouteBuilder(
+            pageBuilder: (_, anim, __) => const AdminDashboard(),
+            transitionsBuilder: (_, anim, __, child) =>
+                FadeTransition(opacity: anim, child: child),
+            transitionDuration: const Duration(milliseconds: 320),
+          ),
+        );
+      } else if (result != null && !result.isSuccess) {
+        // Login failed — show failure snackbar, stay on landing.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.message),
+            backgroundColor: RC.coral,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+      // If result is null the user dismissed the screen — do nothing.
+    }
+  }
+
   Widget _brand() => Row(mainAxisSize: MainAxisSize.min, children: [
         GestureDetector(
-          onTap: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const AdminDashboard())),
-          child: Container(
-            width: 34,
-            height: 34,
-            decoration: const BoxDecoration(
-                gradient: RC.tealGrad, shape: BoxShape.circle),
-            child: const Icon(Icons.travel_explore_rounded,
-                color: Colors.white, size: 18),
+          onTap: _goToAdminWithAuthCheck,
+          child: ClipOval(
+            child: Image.asset(
+              'assets/images/logo.png',
+              width: 34,
+              height: 34,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                width: 34,
+                height: 34,
+                decoration: const BoxDecoration(
+                    gradient: RC.tealGrad, shape: BoxShape.circle),
+                child: const Icon(Icons.travel_explore_rounded,
+                    color: Colors.white, size: 18),
+              ),
+            ),
           ),
         ),
         const SizedBox(width: 10),
@@ -691,7 +772,7 @@ class _LandingPageState extends State<LandingPage>
               const LinearGradient(colors: [RC.teal, Colors.white])
                   .createShader(b),
           child: const Text(
-            'PALMNAZI',
+            'PALMNAZI RC',
             style: TextStyle(
                 color: Colors.white,
                 fontSize: 17,
