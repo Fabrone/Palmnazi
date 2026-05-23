@@ -21,20 +21,6 @@ final Logger _log = Logger(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // APP USER MODEL
-//
-// Represents the authenticated user as returned by the backend after login.
-//
-// API shape (from /api/auth/login and /api/auth/google):
-// {
-//   "user": {
-//     "id":    "user_id_here",
-//     "email": "user@example.com",
-//     "roles": ["tourist"]
-//   }
-// }
-//
-// NOTE: The backend does NOT return name or phone at login time.
-//       Those fields, if needed, must be fetched separately via GET /api/auth/me.
 // ─────────────────────────────────────────────────────────────────────────────
 class AppUser {
   final String       id;
@@ -47,7 +33,6 @@ class AppUser {
     required this.roles,
   });
 
-  /// Parse from the nested "user" object in the login / Google-auth response.
   factory AppUser.fromJson(Map<String, dynamic> json) {
     return AppUser(
       id:    json['id']    as String? ?? '',
@@ -58,7 +43,6 @@ class AppUser {
     );
   }
 
-  /// Convenience: primary role (first entry) or "user" if none.
   String get primaryRole => roles.isNotEmpty ? roles.first : 'user';
 
   @override
@@ -84,26 +68,33 @@ class AuthResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// LOGIN RESULT MODEL
+// ─────────────────────────────────────────────────────────────────────────────
+class LoginResult {
+  final bool     isSuccess;
+  final String   message;
+  final AppUser? user;
+
+  LoginResult._({
+    required this.isSuccess,
+    required this.message,
+    this.user,
+  });
+
+  factory LoginResult.success({required String message, AppUser? user}) =>
+      LoginResult._(isSuccess: true, message: message, user: user);
+
+  factory LoginResult.failure(String message) =>
+      LoginResult._(isSuccess: false, message: message);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AUTH SERVICE
-//
-// All methods are static. HTTP calls go through ApiClient so that
-// base-URL changes only ever require editing api_client.dart.
-//
-// Firebase mirrors are called after every successful API operation so that
-// Firebase Auth + Firestore stay in sync.  Firebase failures are non-blocking.
 // ─────────────────────────────────────────────────────────────────────────────
 class AuthService {
 
   // ══════════════════════════════════════════════════════════════════════════
   // REGISTER
-  //
-  // POST /api/auth/register
-  // Body    : { email, password }
-  // 200 OK  : { success: true }
-  // 400     : { error: "Missing fields" }
-  // 409     : { error: "Email already in use" }
-  //
-  // Firebase mirror: creates a Firebase Auth account + Firestore document.
   // ══════════════════════════════════════════════════════════════════════════
   static Future<AuthResult> register({
     required String email,
@@ -112,8 +103,6 @@ class AuthService {
     _log.i('🔐 AuthService.register: ━━━ START ━━━');
     _log.d('🔐 AuthService.register: Email → $email | Password len → ${password.length} chars');
 
-    // ── Step 1: Send request ───────────────────────────────────────────────
-    _log.i('🔐 AuthService.register: Step 1 — Sending POST to ${ApiEndpoints.url(ApiEndpoints.register)}');
     dynamic response;
     try {
       response = await ApiClient.post(
@@ -123,10 +112,10 @@ class AuthService {
           'password': password,
         },
       );
-      _log.i('🔐 AuthService.register: Step 1 ✓ — Response received');
+      _log.i('🔐 AuthService.register: ✓ Response received | status: ${response.statusCode}');
     } on Exception catch (e, st) {
       _log.e(
-        '❌ AuthService.register: Step 1 FAILED — Network exception\n'
+        '❌ AuthService.register: Network exception\n'
         '   Type    : ${e.runtimeType}\n'
         '   Message : $e',
         error: e, stackTrace: st,
@@ -134,21 +123,13 @@ class AuthService {
       return AuthResult.failure(ApiClient.friendlyNetworkError(e));
     }
 
-    // ── Step 2: Log raw response ───────────────────────────────────────────
-    _log.d('🔐 AuthService.register: Step 2 — Raw response:');
-    _log.d('🔐 AuthService.register:   Status : ${response.statusCode}');
-    _log.d('🔐 AuthService.register:   Body   : ${response.body}');
-
     final body = ApiClient.parseBody(response);
-    _log.d('🔐 AuthService.register: Step 2 ✓ — Parsed body: $body');
+    _log.d('🔐 AuthService.register: Parsed body: $body');
 
-    // ── Step 3: Handle status codes ────────────────────────────────────────
-    _log.d('🔐 AuthService.register: Step 3 — Handling status ${response.statusCode}');
     switch (response.statusCode) {
       case 200:
       case 201:
-        // ── Firebase mirror (non-blocking) ─────────────────────────────────
-        _log.i('🔐 AuthService.register: Step 4 — Mirroring to Firebase');
+        _log.i('🔐 AuthService.register: Mirroring to Firebase (non-blocking)');
         FirebaseService.registerMirror(
           email:    email.trim(),
           password: password,
@@ -157,18 +138,16 @@ class AuthService {
         });
 
         _log.i('✅ AuthService.register: ━━━ REGISTRATION COMPLETE ━━━');
-        return AuthResult.success(
-          message: 'Account created! Please log in.',
-        );
+        return AuthResult.success(message: 'Account created! Please log in.');
 
       case 400:
         final msg = body['error'] ?? body['message'] ?? 'Missing required fields.';
-        _log.w('⚠️ AuthService.register: 400 Bad Request — $msg | full body: $body');
+        _log.w('⚠️ AuthService.register: 400 Bad Request — $msg');
         return AuthResult.failure('Please fill in all required fields correctly.');
 
       case 409:
         final msg = body['error'] ?? body['message'] ?? 'Email conflict.';
-        _log.w('⚠️ AuthService.register: 409 Conflict — $msg | full body: $body');
+        _log.w('⚠️ AuthService.register: 409 Conflict — $msg');
         return AuthResult.failure('This email is already registered. Try logging in.');
 
       case 500:
@@ -176,22 +155,13 @@ class AuthService {
         return AuthResult.failure('Server error. Please try again later.');
 
       default:
-        _log.e(
-          '❌ AuthService.register: Unhandled status ${response.statusCode} | body: $body',
-        );
+        _log.e('❌ AuthService.register: Unhandled status ${response.statusCode} | body: $body');
         return AuthResult.failure('Something went wrong. Please try again.');
     }
   }
 
   // ══════════════════════════════════════════════════════════════════════════
   // LOGIN
-  //
-  // POST /api/auth/login
-  // Body    : { email, password }
-  // 200 OK  : { accessToken, refreshToken, user: { id, email, roles[] } }
-  //
-  // Firebase mirror: signs into Firebase Auth; returns MfaResult which the
-  // caller (auth screen) uses to decide whether to show the MFA OTP dialog.
   // ══════════════════════════════════════════════════════════════════════════
   static Future<LoginResult> login({
     required String email,
@@ -200,7 +170,6 @@ class AuthService {
     _log.i('🔑 AuthService.login: ━━━ START ━━━');
     _log.d('🔑 AuthService.login: Email → $email | Password len → ${password.length} chars');
 
-    // ── Step 1: API call ───────────────────────────────────────────────────
     dynamic response;
     try {
       response = await ApiClient.post(
@@ -220,8 +189,8 @@ class AuthService {
       return LoginResult.failure(ApiClient.friendlyNetworkError(e));
     }
 
-    _log.d('🔑 AuthService.login:   Status : ${response.statusCode}');
-    _log.d('🔑 AuthService.login:   Body   : ${response.body}');
+    _log.d('🔑 AuthService.login: Status → ${response.statusCode}');
+    _log.d('🔑 AuthService.login: Body   → ${response.body}');
 
     final body = ApiClient.parseBody(response);
 
@@ -238,9 +207,8 @@ class AuthService {
         }
 
         final user = AppUser.fromJson(userJson);
-        _log.i('✅ AuthService.login: Parsed user: $user');
+        _log.i('✅ AuthService.login: API user parsed: $user');
 
-        // Persist API session
         await ApiClient.saveSession(
           accessToken:  accessToken,
           refreshToken: refreshToken,
@@ -249,34 +217,32 @@ class AuthService {
           roles:        user.roles,
         );
 
-        // ── Firebase mirror ─────────────────────────────────────────────────
-        _log.i('🔑 AuthService.login: Mirroring to Firebase');
-        final mfaResult = await FirebaseService.loginMirror(
+        // ── Firebase mirror (non-blocking, independent log path) ────────────
+        _log.i('🔑 AuthService.login [Firebase path]: Mirroring login to Firebase');
+        FirebaseService.loginMirror(
           email:    email.trim(),
           password: password,
-        );
+        ).catchError((e) {
+          _log.w('⚠️ AuthService.login [Firebase path]: Mirror failed (non-blocking): $e');
+        });
 
         _log.i('✅ AuthService.login: ━━━ LOGIN COMPLETE ━━━');
-        return LoginResult.success(
-          message:   'Welcome back!',
-          user:      user,
-          mfaResult: mfaResult,
-        );
+        return LoginResult.success(message: 'Welcome back!', user: user);
 
       case 400:
-        _log.w('⚠️ AuthService.login: 400 — ${body['error'] ?? body['message']} | body: $body');
+        _log.w('⚠️ AuthService.login: 400 — ${body['error'] ?? body['message']}');
         return LoginResult.failure('Please enter both email and password.');
 
       case 401:
-        _log.w('⚠️ AuthService.login: 401 — ${body['error'] ?? body['message']} | body: $body');
+        _log.w('⚠️ AuthService.login: 401 — ${body['error'] ?? body['message']}');
         return LoginResult.failure('Incorrect email or password. Please try again.');
 
       case 403:
-        _log.w('⚠️ AuthService.login: 403 — ${body['error'] ?? body['message']} | body: $body');
+        _log.w('⚠️ AuthService.login: 403 — ${body['error'] ?? body['message']}');
         return LoginResult.failure('Your account is inactive. Please contact support.');
 
       case 404:
-        _log.w('⚠️ AuthService.login: 404 — ${body['error'] ?? body['message']} | body: $body');
+        _log.w('⚠️ AuthService.login: 404 — ${body['error'] ?? body['message']}');
         return LoginResult.failure('No account found with this email address.');
 
       case 500:
@@ -292,11 +258,11 @@ class AuthService {
   // ══════════════════════════════════════════════════════════════════════════
   // GOOGLE SIGN-IN
   //
-  // Firebase mirror: signs into Firebase with the same Google idToken so we
-  // don't trigger a second account picker.
+  // Dual-path: API path and Firebase mirror path each have independent
+  // log prefixes so they can be traced separately in the console.
   // ══════════════════════════════════════════════════════════════════════════
   static Future<AuthResult> googleSignIn() async {
-    _log.i('🌐 AuthService.googleSignIn: ━━━ START ━━━');
+    _log.i('🌐 AuthService.googleSignIn [API path]: ━━━ START ━━━');
 
     try {
       // ── Step 1–4: Google native flow ──────────────────────────────────────
@@ -304,6 +270,7 @@ class AuthService {
       await gsi.initialize(serverClientId: AppConfig.googleWebClientId);
 
       if (!gsi.supportsAuthenticate()) {
+        _log.e('❌ AuthService.googleSignIn [API path]: platform does not support authenticate()');
         return AuthResult.failure('Google Sign-In is not supported on this platform.');
       }
 
@@ -314,10 +281,10 @@ class AuthService {
       final String? idToken = googleAuth.idToken;
 
       if (idToken == null) {
-        _log.e('❌ AuthService.googleSignIn: idToken is null');
+        _log.e('❌ AuthService.googleSignIn [API path]: idToken is null');
         return AuthResult.failure('Could not retrieve Google credentials. Please try again.');
       }
-      _log.i('🌐 AuthService.googleSignIn: idToken obtained (${idToken.length} chars)');
+      _log.i('🌐 AuthService.googleSignIn [API path]: idToken obtained (${idToken.length} chars)');
 
       // ── Step 5: POST idToken to backend ──────────────────────────────────
       dynamic response;
@@ -328,14 +295,14 @@ class AuthService {
         );
       } on Exception catch (e, st) {
         _log.e(
-          '❌ AuthService.googleSignIn: HTTP exception',
+          '❌ AuthService.googleSignIn [API path]: HTTP exception',
           error: e, stackTrace: st,
         );
         return AuthResult.failure(ApiClient.friendlyNetworkError(e));
       }
 
-      _log.d('🌐 AuthService.googleSignIn:   Status : ${response.statusCode}');
-      _log.d('🌐 AuthService.googleSignIn:   Body   : ${response.body}');
+      _log.d('🌐 AuthService.googleSignIn [API path]: Status → ${response.statusCode}');
+      _log.d('🌐 AuthService.googleSignIn [API path]: Body   → ${response.body}');
 
       final body = ApiClient.parseBody(response);
 
@@ -347,11 +314,12 @@ class AuthService {
           final userJson     = body['user']          as Map<String, dynamic>?;
 
           if (accessToken == null || refreshToken == null || userJson == null) {
-            _log.e('❌ AuthService.googleSignIn: Missing fields in 200 response | body: $body');
+            _log.e('❌ AuthService.googleSignIn [API path]: Missing fields in 200 response | body: $body');
             return AuthResult.failure('Google Sign-In failed. Please try again.');
           }
 
           final user = AppUser.fromJson(userJson);
+          _log.i('✅ AuthService.googleSignIn [API path]: User parsed: $user');
 
           await ApiClient.saveSession(
             accessToken:  accessToken,
@@ -360,39 +328,46 @@ class AuthService {
             email:        user.email,
             roles:        user.roles,
           );
+          _log.i('✅ AuthService.googleSignIn [API path]: Session saved');
 
-          // ── Firebase mirror (non-blocking) ──────────────────────────────
-          FirebaseService.googleSignInMirror(idToken: idToken).catchError((e) {
-            _log.w('⚠️ AuthService.googleSignIn: Firebase mirror failed (non-blocking): $e');
+          // ── Firebase mirror (independent log path) ───────────────────────
+          _log.i('🌐 AuthService.googleSignIn [Firebase path]: Starting mirror with idToken');
+          FirebaseService.googleSignInMirror(idToken: idToken).then((_) {
+            _log.i('✅ AuthService.googleSignIn [Firebase path]: Mirror completed successfully');
+          }).catchError((e) {
+            _log.w('⚠️ AuthService.googleSignIn [Firebase path]: Mirror failed (non-blocking): $e');
           });
 
-          _log.i('✅ AuthService.googleSignIn: ━━━ GOOGLE AUTH COMPLETE ━━━');
+          _log.i('✅ AuthService.googleSignIn [API path]: ━━━ GOOGLE AUTH COMPLETE ━━━');
           return AuthResult.success(
             message: 'Signed in with Google successfully!',
             user:    user,
           );
 
         case 400:
+          _log.w('⚠️ AuthService.googleSignIn [API path]: 400 | body: $body');
           return AuthResult.failure('Google Sign-In failed. Please try again.');
 
         case 401:
+          _log.w('⚠️ AuthService.googleSignIn [API path]: 401 | body: $body');
           return AuthResult.failure('Google credentials are invalid. Please try again.');
 
         case 402:
         case 403:
           final errMsg = (body['error'] ?? body['message'] ?? '').toString().toLowerCase();
+          _log.w('⚠️ AuthService.googleSignIn [API path]: ${response.statusCode} | $errMsg');
           if (errMsg.contains('inactive')) {
             return AuthResult.failure('Your account is inactive. Please contact support.');
           }
           return AuthResult.failure('Google email not verified. Please verify your Google account first.');
 
         default:
-          _log.e('❌ AuthService.googleSignIn: Unhandled ${response.statusCode} | body: $body');
+          _log.e('❌ AuthService.googleSignIn [API path]: Unhandled ${response.statusCode} | body: $body');
           return AuthResult.failure('Something went wrong. Please try again.');
       }
     } on GoogleSignInException catch (e, st) {
       _log.e(
-        '❌ AuthService.googleSignIn: GoogleSignInException | code: ${e.code.name}',
+        '❌ AuthService.googleSignIn [API path]: GoogleSignInException | code: ${e.code.name}',
         error: e, stackTrace: st,
       );
       if (e.code == GoogleSignInExceptionCode.canceled ||
@@ -401,7 +376,7 @@ class AuthService {
       }
       return AuthResult.failure('Google Sign-In failed. Please try again.');
     } catch (e, st) {
-      _log.e('❌ AuthService.googleSignIn: Unexpected exception', error: e, stackTrace: st);
+      _log.e('❌ AuthService.googleSignIn [API path]: Unexpected exception', error: e, stackTrace: st);
       return AuthResult.failure(ApiClient.friendlyNetworkError(e));
     }
   }
@@ -428,7 +403,6 @@ class AuthService {
 
     await ApiClient.clearSession();
 
-    // ── Firebase sign-out (non-blocking) ────────────────────────────────────
     FirebaseService.signOut().catchError((e) {
       _log.w('⚠️ AuthService.logout: Firebase signOut failed (non-blocking): $e');
     });
@@ -466,52 +440,85 @@ class AuthService {
     switch (response.statusCode) {
       case 400:
         return AuthResult.failure('Please enter a valid email address.');
-
       case 404:
         return AuthResult.success(
           message: 'If that email is registered, a reset link has been sent. '
                    'Check your inbox and spam folder.',
         );
-
       case 429:
         return AuthResult.failure('Too many attempts. Please wait a few minutes and try again.');
-
-      case 500:
-        return AuthResult.failure('Something went wrong. Please try again later.');
-
       default:
         return AuthResult.failure('Something went wrong. Please try again later.');
     }
   }
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LOGIN RESULT MODEL
-//
-// Extends AuthResult with the Firebase MfaResult so the UI can decide
-// whether to show the MFA OTP dialog immediately after login.
-// ─────────────────────────────────────────────────────────────────────────────
-class LoginResult {
-  final bool      isSuccess;
-  final String    message;
-  final AppUser?  user;
-  final MfaResult? mfaResult;
+  // ══════════════════════════════════════════════════════════════════════════
+  // MFA — SEND EMAIL OTP
+  //
+  // Calls the API to send a one-time code to the authenticated user's email.
+  // POST /api/auth/mfa/send-otp   Body: { email }   Auth: Bearer required
+  // ══════════════════════════════════════════════════════════════════════════
+  static Future<AuthResult> mfaSendOtp({required String email}) async {
+    _log.i('🔐 AuthService.mfaSendOtp: ━━━ START ━━━ | email=$email');
+    try {
+      final response = await ApiClient.authPost(
+        ApiEndpoints.mfaSendOtp,
+        body: {'email': email.trim()},
+      );
+      _log.d('🔐 AuthService.mfaSendOtp: Status → ${response.statusCode}');
+      final body = ApiClient.parseBody(response);
 
-  LoginResult._({
-    required this.isSuccess,
-    required this.message,
-    this.user,
-    this.mfaResult,
-  });
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _log.i('✅ AuthService.mfaSendOtp: OTP dispatched');
+        return AuthResult.success(message: 'A verification code has been sent to $email.');
+      }
+      if (response.statusCode == 429) {
+        return AuthResult.failure('Too many requests. Please wait a moment and try again.');
+      }
+      final msg = body['error'] ?? body['message'] ?? 'Could not send code.';
+      _log.w('⚠️ AuthService.mfaSendOtp: ${response.statusCode} — $msg');
+      return AuthResult.failure('Could not send verification code. Please try again.');
+    } on Exception catch (e, st) {
+      _log.e('❌ AuthService.mfaSendOtp: Exception', error: e, stackTrace: st);
+      return AuthResult.failure(ApiClient.friendlyNetworkError(e));
+    }
+  }
 
-  factory LoginResult.success({
-    required String    message,
-    AppUser?           user,
-    required MfaResult mfaResult,
-  }) => LoginResult._(isSuccess: true,  message: message, user: user, mfaResult: mfaResult);
+  // ══════════════════════════════════════════════════════════════════════════
+  // MFA — VERIFY EMAIL OTP
+  //
+  // Verifies the OTP entered by the user and enables MFA on their account.
+  // POST /api/auth/mfa/verify-otp   Body: { email, otp }   Auth: Bearer required
+  // ══════════════════════════════════════════════════════════════════════════
+  static Future<AuthResult> mfaVerifyOtp({
+    required String email,
+    required String otp,
+  }) async {
+    _log.i('🔐 AuthService.mfaVerifyOtp: ━━━ START ━━━');
+    try {
+      final response = await ApiClient.authPost(
+        ApiEndpoints.mfaVerifyOtp,
+        body: {'email': email.trim(), 'otp': otp.trim()},
+      );
+      _log.d('🔐 AuthService.mfaVerifyOtp: Status → ${response.statusCode}');
+      final body = ApiClient.parseBody(response);
 
-  factory LoginResult.failure(String message) =>
-      LoginResult._(isSuccess: false, message: message);
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _log.i('✅ AuthService.mfaVerifyOtp: OTP verified — MFA enabled');
+        return AuthResult.success(message: '🔒 MFA enabled! Your account is now more secure.');
+      }
+      if (response.statusCode == 400 || response.statusCode == 401) {
+        _log.w('⚠️ AuthService.mfaVerifyOtp: Invalid/expired OTP');
+        return AuthResult.failure('Incorrect or expired code. Please try again.');
+      }
+      final msg = body['error'] ?? body['message'] ?? 'Verification failed.';
+      _log.w('⚠️ AuthService.mfaVerifyOtp: ${response.statusCode} — $msg');
+      return AuthResult.failure('Verification failed. Please try again.');
+    } on Exception catch (e, st) {
+      _log.e('❌ AuthService.mfaVerifyOtp: Exception', error: e, stackTrace: st);
+      return AuthResult.failure(ApiClient.friendlyNetworkError(e));
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -527,12 +534,11 @@ class AuthScreen extends StatefulWidget {
 
 class _AuthScreenState extends State<AuthScreen>
     with SingleTickerProviderStateMixin {
-  // Tab controller: 0=Login, 1=Sign Up, 2=Email Link
+  // Tab controller: 0=Login, 1=Sign Up  (email-link tab removed)
   late TabController _tabController;
 
   final _loginFormKey  = GlobalKey<FormState>();
   final _signUpFormKey = GlobalKey<FormState>();
-  final _emailLinkFormKey = GlobalKey<FormState>();
 
   // ── Login controllers ─────────────────────────────────────────────────────
   final _loginEmailController    = TextEditingController();
@@ -543,23 +549,17 @@ class _AuthScreenState extends State<AuthScreen>
   final _signUpPasswordController        = TextEditingController();
   final _signUpConfirmPasswordController = TextEditingController();
 
-  // ── Email Link controller ─────────────────────────────────────────────────
-  final _emailLinkController = TextEditingController();
-
   bool _obscureLoginPassword   = true;
   bool _obscureSignUpPassword  = true;
   bool _obscureConfirmPassword = true;
   bool _isLoading              = false;
-
-  // Email Link state
-  bool _emailLinkSent = false;
 
   @override
   void initState() {
     super.initState();
     _log.i('🖥️ AuthScreen: ━━━ SCREEN INITIALIZED ━━━');
     _tabController = TabController(
-      length: 3,
+      length: 2,
       vsync: this,
       initialIndex: widget.isLogin ? 0 : 1,
     );
@@ -577,7 +577,6 @@ class _AuthScreenState extends State<AuthScreen>
     _signUpEmailController.dispose();
     _signUpPasswordController.dispose();
     _signUpConfirmPasswordController.dispose();
-    _emailLinkController.dispose();
     super.dispose();
   }
 
@@ -607,27 +606,9 @@ class _AuthScreenState extends State<AuthScreen>
       return;
     }
 
-    // ── Check if Firebase MFA is required ────────────────────────────────────
-    final mfa = result.mfaResult;
-    if (mfa != null && mfa.requiresMfa && mfa.resolver != null) {
-      _log.i('🖥️ AuthScreen._handleLogin: MFA required — showing OTP dialog');
-      await _showMfaVerificationDialog(resolver: mfa.resolver!);
-      return; // Navigation handled inside the dialog
-    }
-
-    // ── Offer optional MFA enrollment ────────────────────────────────────────
-    final fbUser = FirebaseService.currentUser;
-    if (fbUser != null && !(await FirebaseService.isMfaEnrolled())) {
-      _log.i('🖥️ AuthScreen._handleLogin: User has no MFA — showing enrollment offer');
-      _navigateToLanding();
-      // Show enrollment offer after navigation so the user lands first
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _showMfaEnrollmentOffer();
-      });
-      return;
-    }
-
-    _navigateToLanding();
+    // ── Offer optional email OTP MFA enrollment ──────────────────────────────
+    await _showMfaEnrollmentOffer();
+    if (mounted) _navigateToLanding();
   }
 
   Future<void> _handleRegister() async {
@@ -663,35 +644,11 @@ class _AuthScreenState extends State<AuthScreen>
     setState(() => _isLoading = false);
 
     if (result.isSuccess) {
-      _log.i('🖥️ AuthScreen._handleGoogleSignIn: ✅ Google sign-in succeeded');
+      _log.i('🖥️ AuthScreen._handleGoogleSignIn: ✅ Google sign-in succeeded — navigating');
       _navigateToLanding();
     } else {
+      _log.w('🖥️ AuthScreen._handleGoogleSignIn: ✗ ${result.message}');
       _showMessage(result);
-    }
-  }
-
-  Future<void> _handleEmailLinkSend() async {
-    if (!_emailLinkFormKey.currentState!.validate()) return;
-
-    setState(() => _isLoading = true);
-
-    final email = _emailLinkController.text.trim();
-    _log.i('🖥️ AuthScreen._handleEmailLinkSend: Sending link to $email');
-
-    final result = await FirebaseService.sendSignInLink(email: email);
-
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-
-    if (result.isSent) {
-      setState(() => _emailLinkSent = true);
-      _showMessage(AuthResult.success(
-        message: 'Sign-in link sent! Check your inbox and tap the link.',
-      ));
-    } else {
-      _showMessage(AuthResult.failure(
-        result.errorMessage ?? 'Could not send link. Please try again.',
-      ));
     }
   }
 
@@ -709,149 +666,16 @@ class _AuthScreenState extends State<AuthScreen>
     }
   }
 
-  // ── MFA Verification Dialog (shown when Firebase requires OTP at login) ────
+  // ── MFA Enrollment Offer ──────────────────────────────────────────────────
+  //
+  // Shown once after login. If the user accepts, opens the email OTP
+  // enrollment sheet.  Always awaited before navigating so the caller can
+  // safely navigate away afterwards.
 
-  Future<void> _showMfaVerificationDialog({
-    required dynamic resolver, // MultiFactorResolver
-  }) async {
-    _log.i('🖥️ AuthScreen._showMfaVerificationDialog: Opening');
-
-    // Step 1: start MFA verification → sends SMS
-    final session = BuildableMfaSession();
-    setState(() => _isLoading = true);
-
-    final startResult = await FirebaseService.startMfaVerification(
-      resolver: resolver,
-      session:  session,
-    );
-
+  Future<void> _showMfaEnrollmentOffer() async {
     if (!mounted) return;
-    setState(() => _isLoading = false);
 
-    if (!startResult.isSuccess) {
-      _showMessage(AuthResult.failure(startResult.errorMessage ?? 'Could not send SMS.'));
-      return;
-    }
-
-    // Step 2: collect OTP from user
-    final otpController  = TextEditingController();
-    final otpFormKey     = GlobalKey<FormState>();
-    bool  dialogLoading  = false;
-    String? verificationId = startResult.verificationId;
-
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogCtx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF1E3A5F),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: [
-              const Icon(Icons.shield_outlined, color: Color(0xFF14FFEC)),
-              const SizedBox(width: 10),
-              const Text(
-                'Two-Factor Auth',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          content: Form(
-            key: otpFormKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'A verification code was sent to ${startResult.maskedPhoneNumber}.',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13, height: 1.4),
-                ),
-                const SizedBox(height: 20),
-                TextFormField(
-                  controller: otpController,
-                  keyboardType: TextInputType.number,
-                  maxLength: 6,
-                  enabled: !dialogLoading,
-                  style: const TextStyle(color: Colors.white, fontSize: 20, letterSpacing: 8),
-                  textAlign: TextAlign.center,
-                  decoration: InputDecoration(
-                    counterText: '',
-                    hintText: '------',
-                    hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3), letterSpacing: 8),
-                    filled: true,
-                    fillColor: Colors.white.withValues(alpha: 0.08),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF14FFEC), width: 2),
-                    ),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.length < 4) return 'Enter the code from your SMS';
-                    return null;
-                  },
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: dialogLoading ? null : () => Navigator.pop(dialogCtx),
-              child: Text('Cancel', style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
-            ),
-            ElevatedButton(
-              onPressed: dialogLoading
-                  ? null
-                  : () async {
-                      if (!otpFormKey.currentState!.validate()) return;
-                      setDialogState(() => dialogLoading = true);
-
-                      final verifyResult = await FirebaseService.completeMfaVerification(
-                        resolver:       resolver,
-                        verificationId: verificationId!,
-                        otpCode:        otpController.text.trim(),
-                      );
-
-                      if (!ctx.mounted) return;
-                      setDialogState(() => dialogLoading = false);
-
-                      if (verifyResult.isSuccess) {
-                        Navigator.pop(dialogCtx);
-                        if (mounted) _navigateToLanding();
-                      } else {
-                        Navigator.pop(dialogCtx);
-                        if (mounted) {
-                          _showMessage(AuthResult.failure(
-                            verifyResult.errorMessage ?? 'Verification failed.',
-                          ));
-                        }
-                      }
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF14FFEC),
-                foregroundColor: const Color(0xFF1E3A5F),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              child: dialogLoading
-                  ? const SizedBox(
-                      height: 18, width: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1E3A5F)),
-                    )
-                  : const Text('Verify', style: TextStyle(fontWeight: FontWeight.w600)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── MFA Enrollment Offer (shown once after login if not enrolled) ──────────
-
-  void _showMfaEnrollmentOffer() {
-    showDialog(
+    final wantsToEnroll = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1E3A5F),
@@ -867,20 +691,17 @@ class _AuthScreenState extends State<AuthScreen>
           ],
         ),
         content: Text(
-          'Enable two-factor authentication (SMS) for extra security. '
+          'Enable two-factor authentication (email OTP) for extra security. '
           'You can set this up now or later in your account settings.',
           style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13, height: 1.5),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () => Navigator.pop(ctx, false),
             child: Text('Maybe Later', style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _showMfaEnrollmentSheet();
-            },
+            onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF14FFEC),
               foregroundColor: const Color(0xFF1E3A5F),
@@ -891,20 +712,28 @@ class _AuthScreenState extends State<AuthScreen>
         ],
       ),
     );
+
+    if (wantsToEnroll == true && mounted) {
+      await _showMfaEnrollmentSheet();
+    }
   }
 
-  // ── MFA Enrollment Bottom Sheet ───────────────────────────────────────────
+  // ── Email OTP MFA Enrollment Sheet ───────────────────────────────────────
+  //
+  // Flutter-native, API-backed two-phase flow:
+  //   Phase 1 — sends the OTP to the user's email via the API.
+  //   Phase 2 — user enters the code; the API verifies and enables MFA.
 
-  void _showMfaEnrollmentSheet() {
+  Future<void> _showMfaEnrollmentSheet() async {
     _log.i('🖥️ AuthScreen._showMfaEnrollmentSheet: Opening');
-    final phoneController  = TextEditingController();
-    final otpController    = TextEditingController();
-    final phoneFormKey     = GlobalKey<FormState>();
-    final otpFormKey       = GlobalKey<FormState>();
-    bool  sheetLoading     = false;
-    String? verificationId;
 
-    showModalBottomSheet(
+    final email = _loginEmailController.text.trim();
+    final otpController  = TextEditingController();
+    final otpFormKey     = GlobalKey<FormState>();
+    bool  sheetLoading   = false;
+    bool  otpSent        = false; // false = phase 1, true = phase 2
+
+    await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -930,70 +759,73 @@ class _AuthScreenState extends State<AuthScreen>
                 Center(
                   child: Container(
                     width: 44, height: 4,
-                    decoration: BoxDecoration(color: Colors.white30, borderRadius: BorderRadius.circular(2)),
+                    decoration: BoxDecoration(
+                      color: Colors.white30,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 24),
 
-                const Row(
+                Row(
                   children: [
-                    Icon(Icons.phone_android_outlined, color: Color(0xFF14FFEC), size: 28),
-                    SizedBox(width: 12),
+                    const Icon(Icons.email_outlined, color: Color(0xFF14FFEC), size: 28),
+                    const SizedBox(width: 12),
                     Text(
-                      'Enable SMS Verification',
-                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                      otpSent ? 'Enter Verification Code' : 'Enable Email MFA',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
+
                 Text(
-                  'Enter your phone number to receive a one-time code.',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 13),
+                  otpSent
+                      ? 'Enter the 6-digit code sent to $email'
+                      : 'We will send a one-time code to $email to confirm.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.65),
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
                 ),
                 const SizedBox(height: 24),
 
-                // Phase 1: phone input
-                if (verificationId == null) ...[
-                  Form(
-                    key: phoneFormKey,
-                    child: _buildTextField(
-                      controller: phoneController,
-                      label: 'Phone Number (e.g. +254712345678)',
-                      icon: Icons.phone_outlined,
-                      keyboardType: TextInputType.phone,
-                      validator: (v) {
-                        if (v == null || v.isEmpty) return 'Enter your phone number';
-                        if (!v.trim().startsWith('+')) return 'Include country code e.g. +254…';
-                        return null;
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 20),
+                // ── Phase 1: Send OTP button ─────────────────────────────────
+                if (!otpSent) ...[
                   SizedBox(
                     width: double.infinity,
-                    child: ElevatedButton(
+                    child: ElevatedButton.icon(
+                      icon: sheetLoading
+                          ? const SizedBox(
+                              width: 18, height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF1E3A5F),
+                              ),
+                            )
+                          : const Icon(Icons.send_rounded, size: 18),
+                      label: Text(sheetLoading ? 'Sending…' : 'Send Code to Email'),
                       onPressed: sheetLoading
                           ? null
                           : () async {
-                              if (!phoneFormKey.currentState!.validate()) return;
                               setSheetState(() => sheetLoading = true);
+                              _log.i('🖥️ MfaEnrollmentSheet: Sending OTP to $email');
 
-                              final session = BuildableMfaSession();
-                              final result = await FirebaseService.startMfaEnrollment(
-                                phoneNumber: phoneController.text.trim(),
-                                session:     session,
-                              );
-
+                              final result = await AuthService.mfaSendOtp(email: email);
                               setSheetState(() => sheetLoading = false);
 
-                              if (result.isSuccess && result.verificationId != null) {
-                                setSheetState(() => verificationId = result.verificationId);
+                              if (result.isSuccess) {
+                                _log.i('🖥️ MfaEnrollmentSheet: OTP sent — advancing to phase 2');
+                                setSheetState(() => otpSent = true);
                               } else {
-                                if (!sheetCtx.mounted) return;
-                                Navigator.pop(sheetCtx);
-                                _showMessage(AuthResult.failure(
-                                  result.errorMessage ?? 'Could not send SMS.',
-                                ));
+                                _log.w('🖥️ MfaEnrollmentSheet: OTP send failed — ${result.message}');
+                                if (sheetCtx.mounted) Navigator.pop(sheetCtx);
+                                if (mounted) _showMessage(AuthResult.failure(result.message));
                               }
                             },
                       style: ElevatedButton.styleFrom(
@@ -1002,50 +834,57 @@ class _AuthScreenState extends State<AuthScreen>
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                      child: sheetLoading
-                          ? const SizedBox(
-                              height: 20, width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1E3A5F)),
-                            )
-                          : const Text('Send Code', style: TextStyle(fontWeight: FontWeight.w600)),
                     ),
                   ),
                 ],
 
-                // Phase 2: OTP input
-                if (verificationId != null) ...[
-                  Text(
-                    'Enter the 6-digit code sent to ${phoneController.text.trim()}',
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13),
-                  ),
-                  const SizedBox(height: 16),
+                // ── Phase 2: OTP input + verify ──────────────────────────────
+                if (otpSent) ...[
                   Form(
                     key: otpFormKey,
                     child: TextFormField(
                       controller: otpController,
                       keyboardType: TextInputType.number,
                       maxLength: 6,
-                      style: const TextStyle(color: Colors.white, fontSize: 22, letterSpacing: 10),
+                      enabled: !sheetLoading,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        letterSpacing: 10,
+                      ),
                       textAlign: TextAlign.center,
                       decoration: InputDecoration(
                         counterText: '',
                         hintText: '------',
-                        hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3), letterSpacing: 8),
+                        hintStyle: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.3),
+                          letterSpacing: 8,
+                        ),
                         filled: true,
                         fillColor: Colors.white.withValues(alpha: 0.08),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
+                        ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: const BorderSide(color: Color(0xFF14FFEC), width: 2),
                         ),
+                        errorBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFCF6679), width: 1.5),
+                        ),
+                        errorStyle: const TextStyle(color: Color(0xFFCF6679)),
                       ),
                       validator: (v) {
-                        if (v == null || v.length < 4) return 'Enter the verification code';
+                        if (v == null || v.trim().length < 4) return 'Enter the code from your email';
                         return null;
                       },
                     ),
                   ),
                   const SizedBox(height: 20),
+
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -1054,19 +893,22 @@ class _AuthScreenState extends State<AuthScreen>
                           : () async {
                               if (!otpFormKey.currentState!.validate()) return;
                               setSheetState(() => sheetLoading = true);
+                              _log.i('🖥️ MfaEnrollmentSheet: Verifying OTP');
 
-                              final result = await FirebaseService.completeMfaEnrollment(
-                                verificationId: verificationId!,
-                                otpCode:        otpController.text.trim(),
+                              final result = await AuthService.mfaVerifyOtp(
+                                email: email,
+                                otp:   otpController.text.trim(),
                               );
 
                               if (!sheetCtx.mounted) return;
                               setSheetState(() => sheetLoading = false);
                               Navigator.pop(sheetCtx);
+                              if (!mounted) return;
 
+                              _log.i('🖥️ MfaEnrollmentSheet: Verify result — isSuccess=${result.isSuccess}');
                               _showMessage(result.isSuccess
-                                  ? AuthResult.success(message: '🔒 MFA enabled! Your account is now more secure.')
-                                  : AuthResult.failure(result.errorMessage ?? 'MFA setup failed.'));
+                                  ? AuthResult.success(message: result.message)
+                                  : AuthResult.failure(result.message));
                             },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF14FFEC),
@@ -1077,9 +919,40 @@ class _AuthScreenState extends State<AuthScreen>
                       child: sheetLoading
                           ? const SizedBox(
                               height: 20, width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1E3A5F)),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF1E3A5F),
+                              ),
                             )
-                          : const Text('Confirm & Enable MFA', style: TextStyle(fontWeight: FontWeight.w600)),
+                          : const Text(
+                              'Confirm & Enable MFA',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Resend link
+                  Center(
+                    child: TextButton.icon(
+                      onPressed: sheetLoading
+                          ? null
+                          : () async {
+                              setSheetState(() => sheetLoading = true);
+                              _log.i('🖥️ MfaEnrollmentSheet: Re-sending OTP');
+                              await AuthService.mfaSendOtp(email: email);
+                              setSheetState(() => sheetLoading = false);
+                              if (mounted) {
+                                _showMessage(AuthResult.success(
+                                  message: 'A new code has been sent to $email.',
+                                ));
+                              }
+                            },
+                      icon: const Icon(Icons.refresh_rounded, color: Color(0xFF14FFEC), size: 16),
+                      label: const Text(
+                        'Resend code',
+                        style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13),
+                      ),
                     ),
                   ),
                 ],
@@ -1088,7 +961,13 @@ class _AuthScreenState extends State<AuthScreen>
                 Center(
                   child: TextButton(
                     onPressed: sheetLoading ? null : () => Navigator.pop(sheetCtx),
-                    child: Text('Skip for now', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
+                    child: Text(
+                      'Skip for now',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 13,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -1202,15 +1081,11 @@ class _AuthScreenState extends State<AuthScreen>
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            // Logo
                             Container(
                               width: 80,
                               height: 80,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                gradient: const LinearGradient(
-                                  colors: [Color(0xFF14FFEC), Color(0xFF0D7377)],
-                                ),
                                 boxShadow: [
                                   BoxShadow(
                                     color: const Color(0xFF14FFEC).withValues(alpha: 0.5),
@@ -1219,11 +1094,33 @@ class _AuthScreenState extends State<AuthScreen>
                                   ),
                                 ],
                               ),
-                              child: const Icon(Icons.landscape, size: 40, color: Colors.white),
+                              child: ClipOval(
+                                child: Image.asset(
+                                  'assets/images/logo.png',
+                                  width: 80,
+                                  height: 80,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    width: 80,
+                                    height: 80,
+                                    decoration: const BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [Color(0xFF14FFEC), Color(0xFF0D7377)],
+                                      ),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.travel_explore_rounded,
+                                      size: 40,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
                             const SizedBox(height: 24),
 
-                            // ── Brand name: PALMNAZI RC ──────────────────────
+                            // ── Brand name ───────────────────────────────────
                             Text(
                               'PALMNAZI RC',
                               style: Theme.of(context)
@@ -1247,7 +1144,7 @@ class _AuthScreenState extends State<AuthScreen>
                             ),
                             const SizedBox(height: 32),
 
-                            // Tab bar — 3 tabs
+                            // Tab bar — 2 tabs (Login / Sign Up)
                             Container(
                               decoration: BoxDecoration(
                                 color: Colors.white.withValues(alpha: 0.1),
@@ -1265,11 +1162,10 @@ class _AuthScreenState extends State<AuthScreen>
                                 dividerColor: Colors.transparent,
                                 labelColor: Colors.white,
                                 unselectedLabelColor: Colors.white70,
-                                labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                                 tabs: const [
                                   Tab(text: 'Login'),
                                   Tab(text: 'Sign Up'),
-                                  Tab(text: 'Link'),
                                 ],
                               ),
                             ),
@@ -1277,13 +1173,12 @@ class _AuthScreenState extends State<AuthScreen>
 
                             // Tab views
                             SizedBox(
-                              height: 480,
+                              height: 420,
                               child: TabBarView(
                                 controller: _tabController,
                                 children: [
                                   _buildLoginForm(),
                                   _buildSignUpForm(),
-                                  _buildEmailLinkForm(),
                                 ],
                               ),
                             ),
@@ -1332,11 +1227,9 @@ class _AuthScreenState extends State<AuthScreen>
           ),
           const SizedBox(height: 24),
 
-          // Login button
           _buildPrimaryButton(label: 'Login', onPressed: _handleLogin),
           const SizedBox(height: 12),
 
-          // Forgot password
           TextButton(
             onPressed: _isLoading ? null : _showForgotPasswordSheet,
             child: Text(
@@ -1424,100 +1317,6 @@ class _AuthScreenState extends State<AuthScreen>
             _buildGoogleButton(label: 'Sign up with Google'),
           ],
         ),
-      ),
-    );
-  }
-
-  // ── Email Link (Passwordless) Form ────────────────────────────────────────
-
-  Widget _buildEmailLinkForm() {
-    if (_emailLinkSent) {
-      return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(colors: [Color(0xFF14FFEC), Color(0xFF0D7377)]),
-            ),
-            child: const Icon(Icons.mark_email_read_outlined, color: Colors.white, size: 36),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'Check Your Inbox',
-            style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'A sign-in link has been sent to\n${_emailLinkController.text.trim()}\n\n'
-            'Tap the link in your email to sign in instantly — no password needed.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13, height: 1.5),
-          ),
-          const SizedBox(height: 24),
-          TextButton.icon(
-            onPressed: () => setState(() => _emailLinkSent = false),
-            icon: const Icon(Icons.refresh, color: Color(0xFF14FFEC), size: 18),
-            label: const Text('Send to a different email', style: TextStyle(color: Color(0xFF14FFEC))),
-          ),
-        ],
-      );
-    }
-
-    return Form(
-      key: _emailLinkFormKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Info banner
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFF14FFEC).withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF14FFEC).withValues(alpha: 0.25)),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(Icons.link_outlined, color: Color(0xFF14FFEC), size: 18),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'No password needed. Enter your email and we\'ll send a magic sign-in link.',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.75),
-                      fontSize: 12,
-                      height: 1.4,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          _buildTextField(
-            controller: _emailLinkController,
-            label: 'Email Address',
-            icon: Icons.email_outlined,
-            keyboardType: TextInputType.emailAddress,
-            validator: _emailValidator,
-          ),
-          const SizedBox(height: 24),
-
-          _buildPrimaryButton(
-            label: 'Send Sign-In Link',
-            onPressed: _handleEmailLinkSend,
-            icon: Icons.send_outlined,
-          ),
-          const SizedBox(height: 20),
-          _buildDivider(),
-          const SizedBox(height: 16),
-          _buildGoogleButton(label: 'Continue with Google'),
-        ],
       ),
     );
   }
@@ -1677,7 +1476,6 @@ class _AuthScreenState extends State<AuthScreen>
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Handle bar
                       Center(
                         child: Container(
                           width: 44, height: 4,

@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
+import 'package:palmnazi/screens/account_screen.dart';
 import 'package:palmnazi/screens/resort_city_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/admin/admin_dashboard.dart';
@@ -100,7 +101,6 @@ class BlogPost {
 
   String get cityName => (city?['name'] as String?) ?? '';
 
-  /// Returns a short human-readable date string, e.g. "Feb 15, 2026".
   String get formattedDate {
     if (publishedAt == null) return '';
     try {
@@ -324,7 +324,10 @@ class LandingPage extends StatefulWidget {
 }
 
 class _LandingPageState extends State<LandingPage>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
+  // ── Auth state (drives navbar button) ─────────────────────────────────────
+  bool _isLoggedIn = false;
+
   // ── Data ──────────────────────────────────────────────────────────────────
   List<CityModel> _cities = [];
   List<BlogPost> _blogPosts = [];
@@ -357,6 +360,7 @@ class _LandingPageState extends State<LandingPage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); // for didChangeAppLifecycleState
     _scrollCtrl.addListener(() {
       if (mounted) setState(() => _scrollOffset = _scrollCtrl.offset);
     });
@@ -379,6 +383,12 @@ class _LandingPageState extends State<LandingPage>
     _loadCities();
     _loadBlog();
     _loadCategories(); // background pre-fetch so the overlay opens instantly
+    _loadAuthState();  // check whether a session token exists
+  }
+
+  Future<void> _loadAuthState() async {
+    final token = await ApiClient.getAccessToken();
+    if (mounted) setState(() => _isLoggedIn = token != null && token.isNotEmpty);
   }
 
   /// Pre-fetches the category tree in the background. The result is cached and
@@ -505,10 +515,21 @@ class _LandingPageState extends State<LandingPage>
   // ─────────────────────────────────────────────────────────────────────────
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _scrollCtrl.dispose();
     _heroCtrl.dispose();
     _revealCtrl.dispose();
     super.dispose();
+  }
+
+  /// Refreshes auth state whenever the app returns to the foreground.
+  /// This covers edge cases where zone crashes or background tab-switches
+  /// prevent the normal post-navigation _loadAuthState() call from running.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _loadAuthState();
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -538,17 +559,6 @@ class _LandingPageState extends State<LandingPage>
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // NAV BAR
-  // Two breakpoints driven purely by width:
-  //   < 600 px  — mobile portrait  → brand + spacer + menu icon
-  //   ≥ 600 px  — mobile landscape, tablet, desktop
-  //             → brand + spacer + nav links + Sign In
-  //
-  // A phone in landscape is typically 667–900 px wide, so it comfortably
-  // clears the 600 px threshold and keeps the full link row.
-  // All tablet widths (portrait and landscape) are ≥ 600 px.
-  // ─────────────────────────────────────────────────────────────────────────
   Widget _navBar(double w, double opacity, bool isMobile) {
     return Positioned(
       top: 0,
@@ -579,8 +589,12 @@ class _LandingPageState extends State<LandingPage>
                 const SizedBox(width: 8),
                 _signInButton(),
               ],
-              // ── Hamburger (< 600 px — mobile portrait) ────────────────────
-              if (isMobile) _menuIconButton(),
+              // ── Mobile: always show the account/sign-in icon + hamburger ──
+              if (isMobile) ...[
+                _signInButtonMobile(),
+                const SizedBox(width: 4),
+                _menuIconButton(),
+              ],
             ]),
           ),
         ),
@@ -588,14 +602,55 @@ class _LandingPageState extends State<LandingPage>
     );
   }
 
-  Widget _signInButton() => TextButton(
-        onPressed: _goToSignIn,
-        style: TextButton.styleFrom(
-          foregroundColor: RC.textSec,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+  Widget _signInButton() {
+    if (_isLoggedIn) {
+      return GestureDetector(
+        onTap: _goToAccount,
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: const LinearGradient(
+                colors: [Color(0xFF14FFEC), Color(0xFF0D7377)]),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF14FFEC).withValues(alpha: 0.28),
+                blurRadius: 10,
+              )
+            ],
+          ),
+          child: const Icon(Icons.person_rounded,
+              color: Colors.white, size: 18),
         ),
-        child: const Text('Sign In', style: TextStyle(fontSize: 13)),
       );
+    }
+    return TextButton(
+      onPressed: _goToSignIn,
+      style: TextButton.styleFrom(
+        foregroundColor: RC.textSec,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      ),
+      child: const Text('Sign In', style: TextStyle(fontSize: 13)),
+    );
+  }
+
+  /// Compact account/sign-in widget for the mobile navbar.
+  /// Always visible so the user can see their auth state at a glance.
+  /// • Logged in  → same teal circle avatar as the desktop button.
+  /// • Logged out → a login icon button (no text, saves space next to hamburger).
+  Widget _signInButtonMobile() {
+    if (_isLoggedIn) {
+      // Reuse the full desktop account button — it's already icon-sized.
+      return _signInButton();
+    }
+    return IconButton(
+      icon: const Icon(Icons.login_rounded, color: RC.textSec, size: 22),
+      onPressed: _goToSignIn,
+      splashRadius: 20,
+      tooltip: 'Sign In',
+    );
+  }
 
   Widget _menuIconButton() => IconButton(
         icon: const Icon(Icons.menu_rounded, color: RC.textSec, size: 22),
@@ -604,8 +659,8 @@ class _LandingPageState extends State<LandingPage>
         tooltip: 'Menu',
       );
 
-  void _goToSignIn() {
-    Navigator.push(
+  Future<void> _goToSignIn() async {
+    await Navigator.push(
       context,
       PageRouteBuilder(
         pageBuilder: (_, anim, __) => const AuthScreen(isLogin: true),
@@ -614,6 +669,24 @@ class _LandingPageState extends State<LandingPage>
         transitionDuration: const Duration(milliseconds: 320),
       ),
     );
+    // Re-check login state when returning from AuthScreen
+    // (user may have just signed in).
+    if (mounted) _loadAuthState();
+  }
+
+  void _goToAccount() async {
+    await Navigator.push(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, anim, __) => const AccountScreen(),
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 320),
+      ),
+    );
+    // Re-check login state when returning from AccountScreen
+    // (user may have signed out while there).
+    if (mounted) _loadAuthState();
   }
 
   void _showMobileMenu() {
@@ -653,10 +726,16 @@ class _LandingPageState extends State<LandingPage>
                 _openSearchDialog();
               }),
               const Divider(color: Color(0xFF1A3550), height: 24),
-              _mobileMenuItem(Icons.login_rounded, 'Sign In', () {
-                Navigator.pop(context);
-                _goToSignIn();
-              }),
+              if (_isLoggedIn)
+                _mobileMenuItem(Icons.person_rounded, 'My Account', () {
+                  Navigator.pop(context);
+                  _goToAccount();
+                })
+              else
+                _mobileMenuItem(Icons.login_rounded, 'Sign In', () {
+                  Navigator.pop(context);
+                  _goToSignIn();
+                }),
             ],
           ),
         ),
@@ -675,16 +754,13 @@ class _LandingPageState extends State<LandingPage>
 
   // ── Auth-gated admin navigation ──────────────────────────────────────────
   Future<void> _goToAdminWithAuthCheck() async {
-    // Check whether the user has an active session via the API token stored
-    // by ApiClient (flutter_secure_storage). This is the sole auth source —
-    // no Firebase Auth dependency needed here.
     final accessToken = await ApiClient.getAccessToken();
     final isLoggedIn = accessToken != null && accessToken.isNotEmpty;
 
     if (isLoggedIn) {
       // Already authenticated — navigate directly.
       if (!mounted) return;
-      Navigator.push(
+      await Navigator.push(
         context,
         PageRouteBuilder(
           pageBuilder: (_, anim, __) => const AdminDashboard(),
@@ -693,10 +769,16 @@ class _LandingPageState extends State<LandingPage>
           transitionDuration: const Duration(milliseconds: 320),
         ),
       );
+      // Refresh auth state in case admin session changed while away.
+      if (mounted) _loadAuthState();
     } else {
-      // Not logged in — show login screen, no snackbar yet.
+      // Not logged in — show login screen.
+      // NOTE: _navigateToLanding() in AuthScreen calls Navigator.pop(context)
+      // which does NOT pass an AuthResult back, so we cannot rely on the return
+      // value here to detect a successful login.  Instead we simply re-read the
+      // token after the push returns.
       if (!mounted) return;
-      final result = await Navigator.push<AuthResult>(
+      await Navigator.push(
         context,
         PageRouteBuilder(
           pageBuilder: (_, anim, __) => const AuthScreen(isLogin: true),
@@ -708,18 +790,13 @@ class _LandingPageState extends State<LandingPage>
 
       if (!mounted) return;
 
-      if (result != null && result.isSuccess) {
-        // Login succeeded — show success snackbar then go to admin.
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.message),
-            backgroundColor: RC.emerald,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            duration: const Duration(seconds: 3),
-          ),
-        );
+      // Re-read the token — if the user just logged in, it will now be present.
+      final newToken = await ApiClient.getAccessToken();
+      if (!mounted) return;
+      _loadAuthState(); // update the navbar icon regardless
+
+      if (newToken != null && newToken.isNotEmpty) {
+        // Login succeeded while on AuthScreen — go to admin.
         Navigator.push(
           context,
           PageRouteBuilder(
@@ -729,20 +806,8 @@ class _LandingPageState extends State<LandingPage>
             transitionDuration: const Duration(milliseconds: 320),
           ),
         );
-      } else if (result != null && !result.isSuccess) {
-        // Login failed — show failure snackbar, stay on landing.
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.message),
-            backgroundColor: RC.coral,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            duration: const Duration(seconds: 4),
-          ),
-        );
       }
-      // If result is null the user dismissed the screen — do nothing.
+      // If the user dismissed AuthScreen without logging in — nothing to do.
     }
   }
 
@@ -2022,9 +2087,6 @@ class _SearchDialogState extends State<_SearchDialog> {
 // _PublicCategoriesOverlay  — full-screen categories listing from backend
 // ─────────────────────────────────────────────────────────────────────────────
 class _PublicCategoriesOverlay extends StatefulWidget {
-  /// Pre-fetched category tree from LandingPage. When non-empty the overlay
-  /// renders immediately without a network call. Fallback fetch still runs if
-  /// this list is empty (e.g. first open before pre-fetch finished).
   final List<CategoryModel> preloaded;
   const _PublicCategoriesOverlay({this.preloaded = const []});
 

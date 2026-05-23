@@ -71,6 +71,32 @@ class ApiEndpoints {
   /// POST  Body: { newPassword }  Auth: Bearer required
   static const String changePassword = '/api/auth/resetpassword';
 
+  // ── MFA (Email OTP) ──────────────────────────────────────────────────────
+
+  /// Send a one-time passcode to the authenticated user's email address.
+  /// POST  Auth: Bearer required
+  /// Body: { email }
+  /// 200 OK: { message: "OTP sent" }
+  static const String mfaSendOtp = '/api/auth/mfa/send-otp';
+
+  /// Verify the OTP the user received and enable / confirm MFA.
+  /// POST  Auth: Bearer required
+  /// Body: { email, otp }
+  /// 200 OK: { message: "MFA verified", mfaEnabled: true }
+  static const String mfaVerifyOtp = '/api/auth/mfa/verify-otp';
+
+  /// Verify an OTP as the second factor during login (step-up auth).
+  /// POST  Auth: Bearer required
+  /// Body: { email, otp }
+  /// 200 OK: { accessToken, refreshToken, user }
+  static const String mfaLoginVerify = '/api/auth/mfa/login-verify';
+
+  /// Disable MFA for the authenticated user.
+  /// POST  Auth: Bearer required
+  /// Body: { email }
+  /// 200 OK: { message: "MFA disabled", mfaEnabled: false }
+  static const String mfaDisable = '/api/auth/mfa/disable';
+
   // ── Resort Cities ────────────────────────────────────────────────────────
 
   /// List all cities, or filter with query params e.g. ?country=Kenya&isActive=true
@@ -181,12 +207,20 @@ class ApiClient {
   static Future<String?> getUserEmail()    async =>
       _storage.read(key: StorageKeys.userEmail);
 
+  /// Alias for [getUserEmail] — used by AccountScreen and other callers
+  /// that refer to the session email as `getEmail()`.
+  static Future<String?> getEmail() => getUserEmail();
+
   /// Returns roles as a List.  Empty list when no session exists.
   static Future<List<String>> getUserRoles() async {
     final raw = await _storage.read(key: StorageKeys.userRoles);
     if (raw == null || raw.isEmpty) return [];
     return raw.split(',');
   }
+
+  /// Alias for [getUserRoles] — used by AccountScreen and other callers
+  /// that refer to the session roles as `getRoles()`.
+  static Future<List<String>> getRoles() => getUserRoles();
 
   /// True when a valid access token is currently stored.
   static Future<bool> get isLoggedIn async =>

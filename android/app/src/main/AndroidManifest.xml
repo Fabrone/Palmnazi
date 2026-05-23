@@ -24,6 +24,46 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+
+            <!-- ──────────────────────────────────────────────────────────────
+                 App Links — Firebase Authentication email actions
+                 (email verification, magic link sign-in, password reset)
+
+                 Firebase sends links whose host is palmnazi-5259e.web.app.
+                 This filter tells Android to open those links directly in the
+                 app instead of a browser, completing the auth flow in-app.
+
+                 android:autoVerify="true" triggers Android App Link
+                 verification at install time.  Firebase Hosting automatically
+                 serves the required /.well-known/assetlinks.json file for
+                 palmnazi-5259e.web.app so verification passes without any
+                 extra hosting configuration on your part.
+            ─────────────────────────────────────────────────────────────── -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <!-- Primary Firebase Hosting domain (already in Authorized Domains) -->
+                <data
+                    android:scheme="https"
+                    android:host="palmnazi-5259e.web.app"/>
+            </intent-filter>
+
+            <!-- ──────────────────────────────────────────────────────────────
+                 App Links — secondary Firebase Hosting domain
+                 Firebase also uses the firebaseapp.com subdomain in some
+                 out-of-band email actions (password reset, email change).
+                 Catching both domains ensures every auth email opens in-app.
+            ─────────────────────────────────────────────────────────────── -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <!-- Secondary Firebase Hosting domain (already in Authorized Domains) -->
+                <data
+                    android:scheme="https"
+                    android:host="palmnazi-5259e.firebaseapp.com"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

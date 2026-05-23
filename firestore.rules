@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Anonymous / authenticated session backup ──────────────────────────────
+    // Only the Firebase user whose uid matches the document id can access it.
+    // This covers both anonymous and signed-in sessions.
+    match /_pnrc_sessions/{uid} {
+      allow read, write, delete:
+        if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ── User profiles (created by FirebaseService._writeUserDocument) ─────────
+    //
+    // On registration / first login the app writes a Firestore document at
+    // Users/{uid} containing { email, role:"Tourist", createdAt, … }.
+    // Rules:
+    //   • A newly-registered Firebase user must be able to CREATE their own doc.
+    //   • Only the owning user can READ or UPDATE their own document.
+    //   • Role elevation is intentionally NOT allowed from the client — roles are
+    //     changed by a top-level admin through a separate, server-side flow.
+    //     The "role" field is protected: clients may not promote themselves.
+    //
+    // Note: merge: true in _writeUserDocument means a write on an existing doc
+    // won't reset the role, but the rule below makes it impossible for a client
+    // to write a "role" field other than "Tourist" on creation regardless.
+    match /Users/{uid} {
+      // Any authenticated user can read their own profile.
+      allow read: if request.auth != null && request.auth.uid == uid;
+
+      // CREATE — allowed when the user is writing their own document for the
+      // first time, and is not trying to set a privileged role.
+      allow create: if request.auth != null
+                    && request.auth.uid == uid
+                    && (!('role' in request.resource.data)
+                        || request.resource.data.role == 'Tourist');
+
+      // UPDATE — allowed for own document; the "role" field must not change.
+      // Role changes are performed server-side only (Cloud Function / admin SDK).
+      allow update: if request.auth != null
+                    && request.auth.uid == uid
+                    && (!('role' in request.resource.data)
+                        || request.resource.data.role == resource.data.role);
+
+      // DELETE — not permitted from the client.
+      allow delete: if false;
+    }
+
+    // ── Blog posts mirror ─────────────────────────────────────────────────────
+    // Any authenticated Firebase user can read blog posts.
+    // Write access is kept open for now; lock it to custom claims
+    // (e.g. request.auth.token.role == 'Admin') once custom claims are wired up.
+    match /blog_posts/{slug} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null;
+    }
+  }
+}
