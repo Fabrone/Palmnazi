@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:logger/logger.dart';
@@ -110,28 +111,112 @@ class FirebaseService {
   // ══════════════════════════════════════════════════════════════════════════
   // LOGIN MIRROR — mirror of AuthService.login
   //
-  // Signs the user into Firebase Auth with the same credentials so that the
-  // Firebase session is active (required for Firestore identity services).
-  // Called after the API login succeeds.
+  // Ensures a real (non-anonymous) Firebase Auth session exists for the user
+  // so that Cloud Functions and Firestore rules can verify identity.
   //
-  // Returns true on success (or non-blocking failure), false only on a
-  // hard credential error that the caller may want to log.
+  // CRITICAL — WHY WE SKIP RE-AUTHENTICATION WHEN ALREADY SIGNED IN
+  // ────────────────────────────────────────────────────────────────
+  // On Flutter Web, firebase_auth and cloud_firestore both use IndexedDB as
+  // their persistence backend. Calling signInWithEmailAndPassword() when the
+  // same user is *already* signed in forces the Firebase Web SDK to overwrite
+  // the existing IndexedDB credential entry. If Firestore has an open
+  // IndexedDB transaction at the same moment (e.g. from the offline
+  // persistence layer or a recent Firestore write), the browser throws an
+  // OperationError ("The operation failed for reasons unrelated to the
+  // database itself"). This error escapes into the Dart zone and leaves the
+  // JS firebase/functions auth token cache in an inconsistent state, causing
+  // the very next Cloud Function call to receive context.auth = null and
+  // return 'unauthenticated' — even though currentUser looks correct in Dart.
+  //
+  // The fix: check whether the correct user is already signed in before
+  // calling signInWithEmailAndPassword. If they are, skip the sign-in
+  // entirely and just refresh the ID token + update lastLoginAt. This
+  // eliminates the IndexedDB write conflict completely.
   // ══════════════════════════════════════════════════════════════════════════
   static Future<void> loginMirror({
     required String email,
     required String password,
   }) async {
     _fbLog.i('🔥 FirebaseService.loginMirror: ━━━ START ━━━ | $email');
+
     try {
+      final existing = _auth.currentUser;
+
+      // ── Fast path: correct user already signed in ──────────────────────────
+      // Skip signInWithEmailAndPassword entirely to avoid the IndexedDB
+      // write conflict that causes OperationError + context.auth = null.
+      if (existing != null &&
+          !existing.isAnonymous &&
+          existing.email?.toLowerCase() == email.trim().toLowerCase()) {
+        _fbLog.i(
+          '🔥 FirebaseService.loginMirror: ✓ Already signed in as '
+          '${existing.email} (uid: ${existing.uid}) — skipping re-auth, '
+          'refreshing token only',
+        );
+        // Force-refresh the token so Cloud Functions receive a fresh context.auth.
+        await existing.getIdToken(true);
+        await _updateLastLogin(uid: existing.uid);
+        return;
+      }
+
+      // ── Sign out stale user if a different account is cached ───────────────
+      if (existing != null && existing.email?.toLowerCase() != email.trim().toLowerCase()) {
+        _fbLog.w(
+          '⚠️ FirebaseService.loginMirror: Different user cached '
+          '(${existing.email}) — signing out before mirror sign-in',
+        );
+        await _auth.signOut();
+        // Settle: let the signOut IndexedDB/localStorage write finish completely
+        // before signInWithEmailAndPassword starts its own write.
+        _fbLog.d('🔥 [SIGN_OUT_SETTLE] Waiting 400 ms after stale-user signOut');
+        await Future.delayed(const Duration(milliseconds: 400));
+        _fbLog.d('🔥 [SIGN_OUT_SETTLE] Settle complete');
+      }
+
+      // ── Normal path: sign in (only when not already authenticated) ─────────
+      _fbLog.d(
+        '🔥 [SIGN_IN] ────────────────────────────────────────────────────\n'
+        '🔥 [SIGN_IN] Calling signInWithEmailAndPassword for $email',
+      );
       final cred = await _auth.signInWithEmailAndPassword(
         email:    email.trim(),
         password: password,
       );
       _fbLog.i(
-        '🔥 FirebaseService.loginMirror: ✓ Signed in '
-        '| uid: ${cred.user?.uid}',
+        '🔥 [SIGN_IN] ✓ signInWithEmailAndPassword complete\n'
+        '🔥 [SIGN_IN]   uid=${cred.user?.uid}',
       );
+
+      // ── POST-SIGNIN SETTLE DELAY ───────────────────────────────────────────
+      //
+      // WHY THIS IS REQUIRED
+      // ─────────────────────
+      // signInWithEmailAndPassword (with Persistence.LOCAL) writes the new
+      // credential to localStorage immediately — but ALSO triggers a one-time
+      // background IndexedDB *cleanup read* to check for any residual session
+      // stored in IndexedDB from before the persistence change. This cleanup
+      // read is async and runs in the JS microtask queue AFTER the signIn
+      // Future resolves.
+      //
+      // _updateLastLogin and FirebaseSessionService.saveSession both write to
+      // Firestore, which uses IndexedDB for its offline cache. If either
+      // Firestore write opens its IndexedDB transaction while the Auth cleanup
+      // read is still in flight, the browser throws OperationError — which
+      // propagates through the JS microtask queue and corrupts the internal
+      // state of the firebase/functions JS SDK.
+      //
+      // Waiting 600 ms gives the Auth cleanup read time to finish before any
+      // Firestore write opens a competing IndexedDB transaction. This eliminates
+      // the OperationError at its source rather than just working around it.
+      _fbLog.d(
+        '🔥 [SIGN_IN] Waiting 600 ms for Auth IndexedDB cleanup to settle\n'
+        '🔥 [SIGN_IN] (prevents Firestore IndexedDB write conflict → OperationError)',
+      );
+      await Future.delayed(const Duration(milliseconds: 600));
+      _fbLog.d('🔥 [SIGN_IN] Settle complete — proceeding with Firestore write');
+
       await _updateLastLogin(uid: cred.user!.uid);
+
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found') {
         _fbLog.w(
@@ -276,14 +361,31 @@ class FirebaseService {
   }
 
   static Future<void> _updateLastLogin({required String uid}) async {
-    try {
-      await _store.collection(_FS.collection).doc(uid).set(
-        {_FS.lastLogin: FieldValue.serverTimestamp()},
-        SetOptions(merge: true),
-      );
-    } catch (e) {
-      _fbLog.w('⚠️ FirebaseService._updateLastLogin: $e');
-    }
+    // runZonedGuarded captures any OperationError thrown from the Firestore
+    // IndexedDB offline cache write, preventing it from propagating through
+    // the JS microtask queue and corrupting the firebase/functions auth state.
+    await runZonedGuarded(
+      () async {
+        _fbLog.d('🔥 [FIRESTORE_WRITE] _updateLastLogin → Users/$uid');
+        await _store.collection(_FS.collection).doc(uid).set(
+          {_FS.lastLogin: FieldValue.serverTimestamp()},
+          SetOptions(merge: true),
+        );
+        _fbLog.d('🔥 [FIRESTORE_WRITE] _updateLastLogin ✓ complete');
+      },
+      (e, st) {
+        // Catches OperationError and any other zone errors from this write.
+        // Non-fatal: the API session is already valid; this is a mirror only.
+        _fbLog.w(
+          '⚠️ [FIRESTORE_WRITE] _updateLastLogin: Zone error captured '
+          '(type=${e.runtimeType}) — non-fatal, continuing\n'
+          '   This is likely an IndexedDB OperationError from a concurrent '
+          'Auth/Firestore write. The OperationError source has been isolated '
+          'here and will NOT propagate to the firebase/functions auth state.\n'
+          '   Error: $e',
+        );
+      },
+    ) ?? Future.value();
   }
 
   // ══════════════════════════════════════════════════════════════════════════

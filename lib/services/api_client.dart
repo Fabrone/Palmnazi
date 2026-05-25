@@ -656,6 +656,21 @@ class ApiClient {
   static String friendlyNetworkError(Object e) {
     final msg = e.toString().toLowerCase();
 
+    // Flutter Web (DDC runtime) CORS / XMLHttpRequest failure.
+    // Manifests as DartError wrapping DOMException("NetworkError") — appears
+    // in logs as "OperationError" or "failed to fetch".
+    if (msg.contains('operationerror')) {
+      _apiLog.e(
+        '🌐 ApiClient: OperationError on web — almost certainly a CORS issue.\n'
+        '   The backend must return Access-Control-Allow-Origin headers for '
+        '${AppConfig.baseUrl}\n'
+        '   Check DevTools → Network → look for a blocked OPTIONS preflight.',
+      );
+      return 'Request blocked by browser security policy. '
+          'The server may need CORS headers configured. '
+          'Please contact support or try the mobile app.';
+    }
+
     if (kIsWeb && msg.contains('failed to fetch')) {
       _apiLog.e(
         '🌐 ApiClient: CORS or network error on web.'

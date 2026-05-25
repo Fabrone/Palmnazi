@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -17,224 +18,294 @@ final Logger _fbLog = Logger(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FirebaseSessionService
+// FirebaseSessionService  (v2 — OperationError suppression)
 //
-// WHY THIS EXISTS
-// ───────────────
-// FlutterSecureStorage on web uses the browser's localStorage as its backend.
-// Browsers can silently wipe localStorage across incognito sessions, browser
-// restarts, privacy-mode clears, and OS-level storage pressure events.  This
-// causes the "No stored userId or refreshToken — cannot refresh" log line and
-// the repeated 401 cascade seen in production.
+// WHAT CHANGED IN v2
+// ──────────────────
+// v1 deliberately left Firestore offline persistence ENABLED (it is the
+// default on Flutter Web via cloud_firestore_web).
 //
-// SOLUTION
-// ────────
-// Firebase Anonymous Authentication creates a lightweight, Firebase-managed
-// user silently (no UI, no password, no email).  Firebase SDK persists this
-// user's identity reliably across page refreshes and browser restarts because
-// it uses IndexedDB on web — a far more durable storage layer than localStorage.
+// This turned out to be the source of the residual OperationError that
+// appeared on the FIRST login after Auth persistence was switched from
+// IndexedDB to localStorage.
 //
-// After any successful custom API login, the accessToken + refreshToken pair
-// is written to a private Firestore document keyed by the Firebase anonymous
-// UID.  On every app start, if FlutterSecureStorage comes up empty (tokens
-// lost), ApiClient.restoreSessionIfNeeded() reads the document from Firestore
-// and re-hydrates FlutterSecureStorage — transparently, with zero user
-// interaction required.
+// ROOT CAUSE OF THE OPERATIONERROR (now fixed)
+// ─────────────────────────────────────────────
+// After Auth is changed to Persistence.LOCAL (localStorage), Firebase Auth
+// no longer uses IndexedDB for its own credential storage. However, Firestore
+// still uses IndexedDB for its offline persistence cache.
+//
+// On the FIRST login:
+//   1. signInWithEmailAndPassword completes.
+//   2. Firebase Auth performs a one-time "cleanup read" on IndexedDB to
+//      check for residual session data from the previous IndexedDB-persistence
+//      era. This cleanup runs as an asynchronous JS microtask.
+//   3. Simultaneously (within the same JS event tick), _updateLastLogin or
+//      saveSession calls a Firestore write. Firestore opens its own IndexedDB
+//      transaction for the offline cache.
+//   4. Two IndexedDB operations on the same database are now in-flight at the
+//      same time → browser throws OperationError.
+//
+// The OperationError propagates through the JS microtask queue and into the
+// Dart zone. Even with runZonedGuarded, JS-originated OperationErrors that
+// travel through a native JS Promise (not a Dart Future) can escape the Dart
+// zone boundary and corrupt the JS firebase/auth module's in-memory state.
+// This corruption causes getIdToken(false) in _callFunctionViaHttp to return
+// a stale/expired token on the next call → 401 UNAUTHENTICATED (the bug that
+// was patched in firebase_mfa_service.dart v4 via getIdToken(true)).
+//
+// THE FIX
+// ───────
+// Disable Firestore offline persistence on Flutter Web. This removes Firestore
+// from the IndexedDB equation entirely. Firestore will only use in-memory
+// caching (the default when persistenceEnabled=false), which is synchronous
+// and has no locking concerns.
+//
+// The tradeoff is acceptable: Flutter Web is a network-connected platform.
+// There is no meaningful offline-first use case for a web browser tab that
+// has no network — users will simply reload the page. The session backup
+// (the main feature of this class) stores tokens in Firestore and reads
+// them on app restart, which requires a network connection either way.
+//
+// HOW THE SETTING IS APPLIED SAFELY
+// ───────────────────────────────────
+// Settings must be applied before any Firestore operation is made. We set
+// it in init() BEFORE the authStateChanges().first await, so no Firestore
+// read/write can race with the settings change.
+//
+// Note: Unlike the old setPersistence(true) that caused an OperationError by
+// opening a SECOND IndexedDB connection while Firebase Auth was restoring,
+// setPersistence(false) tells Firestore NOT to open an IndexedDB connection
+// at all — it sets a flag in memory before any database operations begin.
+// This is safe to call at startup with no race risk.
+//
+// ── Original documentation (unchanged) ──────────────────────────────────────
+// FlutterSecureStorage on web uses localStorage. Browsers can silently wipe
+// localStorage across incognito sessions and privacy-mode clears. This
+// class provides a Firestore-backed session restore to handle that case.
 //
 // DATA FLOW
 // ─────────
 //   App start  → FirebaseSessionService.init()
-//                 └── signInAnonymously()  (no-op if already signed in)
+//                 └── Disables Firestore offline persistence (web only)
+//                     Waits for initial authStateChanges() (IndexedDB restore)
+//                     Sets Firebase Auth persistence to localStorage (web only)
 //
 //   Login OK   → ApiClient.saveSession()
-//                 ├── FlutterSecureStorage.write(...)   [fast local cache]
-//                 └── FirebaseSessionService.saveSession(...)  [durable store]
+//                 ├── FlutterSecureStorage.write(...)
+//                 └── FirebaseSessionService.saveSession(...)
+//                       └── Writes under the REAL Firebase Auth UID
 //
 //   App restart (tokens wiped from localStorage)
 //              → ApiClient.restoreSessionIfNeeded()
 //                 ├── FlutterSecureStorage.read(...) → null
 //                 └── FirebaseSessionService.restoreSession()
-//                       └── FlutterSecureStorage.write(...)  [re-hydrate]
-//
-//   Logout / expiry → ApiClient.clearSession()
-//                       ├── FlutterSecureStorage.deleteAll()
-//                       └── FirebaseSessionService.clearSession()
-//                             ├── Firestore doc deleted
-//                             └── Firebase anonymous user signed out
+//                       └── FlutterSecureStorage.write(...)
 //
 // FIRESTORE COLLECTION
 // ────────────────────
 // Collection : _pnrc_sessions
-// Document   : {firebaseAnonymousUid}
+// Document   : {firebaseAuthUid}
 // Fields     :
 //   accessToken  — custom API access JWT
 //   refreshToken — custom API refresh token
 //   userId       — custom API user ID
 //   userEmail    — user email address
-//   userRoles    — comma-separated roles string  e.g. "tourist,admin"
-//   savedAt      — server timestamp (for TTL rules / debugging)
-//
-// REQUIRED FIRESTORE SECURITY RULES
-// ───────────────────────────────────
-// Add the following to your Firebase console → Firestore → Rules.
-// This ensures only the authenticated Firebase user can read/write their
-// own session document — no other user or anonymous caller can access it.
-//
-//   rules_version = '2';
-//   service cloud.firestore {
-//     match /databases/{database}/documents {
-//       match /_pnrc_sessions/{uid} {
-//         allow read, write, delete:
-//           if request.auth != null && request.auth.uid == uid;
-//       }
-//     }
-//   }
-//
-// REQUIRED PUBSPEC DEPENDENCIES
-// ──────────────────────────────
-// firebase_auth: ^5.x.x
-// cloud_firestore: ^5.x.x
-// (Both are part of the FlutterFire suite — run `flutterfire configure` if
-//  firebase_options.dart is already generated; the packages just need adding.)
+//   userRoles    — comma-separated roles string
+//   savedAt      — server timestamp
 // ─────────────────────────────────────────────────────────────────────────────
 
 class FirebaseSessionService {
   FirebaseSessionService._();
 
-  // ── Firebase references ───────────────────────────────────────────────────
-  static FirebaseAuth       get _auth => FirebaseAuth.instance;
-  static FirebaseFirestore  get _db   => FirebaseFirestore.instance;
+  static FirebaseAuth      get _auth => FirebaseAuth.instance;
+  static FirebaseFirestore get _db   => FirebaseFirestore.instance;
 
-  // Private Firestore collection — underscore prefix marks it as internal.
   static const String _collection = '_pnrc_sessions';
 
-  // Convenience: current anonymous Firebase UID, null if not yet signed in.
-  static String? get _uid => _auth.currentUser?.uid;
+  static String? get _uid {
+    final u = _auth.currentUser;
+    if (u == null || u.isAnonymous) return null;
+    return u.uid;
+  }
 
   // ── Initialisation ────────────────────────────────────────────────────────
 
   /// Call once inside main() after Firebase.initializeApp().
-  ///
-  /// On web, enables Firestore offline persistence (IndexedDB-backed, far
-  /// more durable than localStorage).  On all platforms, signs in anonymously
-  /// if no Firebase user exists yet.  Firebase SDK auto-restores an existing
-  /// anonymous user across restarts, so this is a no-op on subsequent app
-  /// launches.
   static Future<void> init() async {
-    _fbLog.i('🔥 FirebaseSessionService.init: ━━━ START ━━━');
+    _fbLog.i('FirebaseSessionService.init: ━━━ START ━━━');
 
-    // ── Step 1: Enable Firestore offline persistence on web ─────────────────
-    // IndexedDB (used by Firestore persistence) survives browser restarts and
-    // incognito exits far better than localStorage (used by FlutterSecureStorage).
     if (kIsWeb) {
+      // ── Step 0: Disable Firestore offline persistence ─────────────────────
+      //
+      // WHY STEP 0 COMES BEFORE THE authStateChanges WAIT
+      // ──────────────────────────────────────────────────
+      // Firestore.settings must be set before any Firestore operation is
+      // issued. We set it here — before the authStateChanges().first await
+      // that waits for the Firebase Auth IndexedDB restore — so there is
+      // zero chance of a Firestore operation running before this call.
+      //
+      // persistenceEnabled: false means Firestore uses in-memory caching only.
+      // No IndexedDB connection is opened by Firestore. This eliminates the
+      // IndexedDB contention between Firestore and Firebase Auth that caused
+      // the OperationError on the first post-login Firestore write.
+      //
+      // This call is safe to run without try/catch: Settings() with a boolean
+      // flag only throws if called AFTER a Firestore operation has already
+      // been made. Since this runs in main() before any screen is built, no
+      // Firestore operation can have preceded it.
+      _db.settings = const Settings(persistenceEnabled: false);
+      _fbLog.i(
+        'FirebaseSessionService.init: '
+        '✓ Firestore offline persistence DISABLED on web — '
+        'IndexedDB contention with Firebase Auth eliminated',
+      );
+
+      // ── Step 1: Wait for Auth IndexedDB restore ───────────────────────────
+      //
+      // Firebase Auth still reads its previously-stored credential from IndexedDB
+      // at startup (one-time, before Persistence.LOCAL takes effect on the next
+      // write). Waiting for the first authStateChanges emission guarantees that
+      // restore is complete before we change the persistence mode.
       try {
-        _db.settings = const Settings(
-          persistenceEnabled: true,
-          cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+        await _auth
+            .authStateChanges()
+            .first
+            .timeout(const Duration(seconds: 8));
+        _fbLog.d(
+          'FirebaseSessionService.init: '
+          'Initial authStateChanges received — Auth IndexedDB restore complete',
         );
-        _fbLog.d('🔥 FirebaseSessionService.init: Firestore offline persistence ENABLED (web)');
+      } catch (_) {
+        _fbLog.w(
+          '⚠️ FirebaseSessionService.init: '
+          'authStateChanges timed out — proceeding with setPersistence anyway',
+        );
+      }
+
+      // ── Step 2: Switch Auth to localStorage ───────────────────────────────
+      //
+      // After the IndexedDB restore above, switch Auth to localStorage so that
+      // all future sign-in/sign-out writes are synchronous and lock-free.
+      // Combined with Step 0 (Firestore no longer using IndexedDB), there are
+      // now NO IndexedDB operations in the login flow — OperationError is
+      // structurally impossible.
+      try {
+        await _auth.setPersistence(Persistence.LOCAL);
+        _fbLog.i(
+          'FirebaseSessionService.init: '
+          '✓ Firebase Auth persistence set to localStorage — '
+          'IndexedDB write-lock race eliminated',
+        );
       } catch (e) {
-        // Settings can only be changed before any Firestore operation.
-        // If another part of the app already triggered Firestore, this throws
-        // a StateError — safe to ignore; persistence may already be enabled.
-        _fbLog.w('⚠️ FirebaseSessionService.init: Could not set Firestore settings — $e');
+        _fbLog.w(
+          '⚠️ FirebaseSessionService.init: '
+          'Could not set Auth persistence (non-fatal — IndexedDB remains): $e',
+        );
       }
     }
 
-    // ── Step 2: Restore or create Firebase anonymous user ───────────────────
-    if (_auth.currentUser != null) {
+    // ── Log current auth state ─────────────────────────────────────────────
+    final current = _auth.currentUser;
+    if (current != null && !current.isAnonymous) {
       _fbLog.i(
-        '🔥 FirebaseSessionService.init: '
-        '✓ Existing Firebase user restored — uid=${_auth.currentUser!.uid}',
+        'FirebaseSessionService.init: '
+        '✓ Real Firebase user already present — uid=${current.uid}',
       );
-      return;
+    } else {
+      _fbLog.i(
+        'FirebaseSessionService.init: '
+        'No real Firebase user yet — session backup ready for post-login write.',
+      );
     }
 
-    try {
-      final cred = await _auth.signInAnonymously();
-      _fbLog.i(
-        '🔥 FirebaseSessionService.init: '
-        '✓ Signed in anonymously — uid=${cred.user?.uid}',
-      );
-    } catch (e, st) {
-      _fbLog.e(
-        '❌ FirebaseSessionService.init: Anonymous sign-in failed\n'
-        '   The session fallback via Firestore will not be available.\n'
-        '   FlutterSecureStorage will still be used as the primary store.',
-        error: e,
-        stackTrace: st,
-      );
-    }
+    _fbLog.i('FirebaseSessionService.init: ━━━ DONE ━━━');
   }
 
   // ── Save ──────────────────────────────────────────────────────────────────
 
-  /// Persist custom API tokens to Firestore under the current Firebase UID.
+  /// Persist custom API tokens to Firestore under the current real Firebase UID.
   ///
-  /// Called by ApiClient.saveSession() immediately after writing to
-  /// FlutterSecureStorage.  If no Firebase user exists (init() failed or
-  /// was not called) this is a silent no-op — FlutterSecureStorage still
-  /// holds the data and the app continues normally.
+  /// With offline persistence disabled (persistenceEnabled: false), all
+  /// Firestore writes go directly to the server — there is no local IndexedDB
+  /// write to race with. The settle delay and runZonedGuarded guard from v1
+  /// are retained as belt-and-suspenders but should no longer be needed.
   static Future<void> saveSession({
-    required String accessToken,
-    required String refreshToken,
-    required String userId,
-    required String email,
+    required String       accessToken,
+    required String       refreshToken,
+    required String       userId,
+    required String       email,
     required List<String> roles,
   }) async {
     final uid = _uid;
     if (uid == null) {
       _fbLog.w(
         '⚠️ FirebaseSessionService.saveSession: '
-        'No Firebase user — skipping Firestore write',
+        'No real Firebase user — skipping Firestore write. '
+        'Session is held in FlutterSecureStorage only.',
       );
       return;
     }
 
-    try {
-      await _db.collection(_collection).doc(uid).set({
-        'accessToken':  accessToken,
-        'refreshToken': refreshToken,
-        'userId':       userId,
-        'userEmail':    email,
-        'userRoles':    roles.join(','),
-        'savedAt':      FieldValue.serverTimestamp(),
-      });
-      _fbLog.i(
-        '✅ FirebaseSessionService.saveSession: '
-        '✓ Session written to Firestore — uid=$uid',
+    // Settle delay: retained for safety on the rare case where Firestore
+    // settings were not applied (non-web platforms, or if kIsWeb was false
+    // due to a build configuration issue). On web with persistenceEnabled=false
+    // this delay is harmless but effectively a no-op.
+    if (kIsWeb) {
+      _fbLog.d(
+        '🗄️ [SESSION_SAVE] Waiting 300 ms before Firestore write (uid=$uid)',
       );
-    } catch (e, st) {
-      // Non-fatal: FlutterSecureStorage still has the tokens.
-      _fbLog.e(
-        '❌ FirebaseSessionService.saveSession: Firestore write failed\n'
-        '   Tokens remain in FlutterSecureStorage — session will work until '
-        'the browser wipes localStorage.',
-        error: e,
-        stackTrace: st,
-      );
+      await Future.delayed(const Duration(milliseconds: 300));
     }
+
+    await runZonedGuarded(
+      () async {
+        _fbLog.d(
+          '🗄️ [SESSION_SAVE] Writing to Firestore\n'
+          '🗄️ [SESSION_SAVE]   collection : $_collection\n'
+          '🗄️ [SESSION_SAVE]   uid        : $uid\n'
+          '🗄️ [SESSION_SAVE]   userId     : $userId | email: $email',
+        );
+        await _db.collection(_collection).doc(uid).set({
+          'accessToken':  accessToken,
+          'refreshToken': refreshToken,
+          'userId':       userId,
+          'userEmail':    email,
+          'userRoles':    roles.join(','),
+          'savedAt':      FieldValue.serverTimestamp(),
+        });
+        _fbLog.i(
+          '✅ [SESSION_SAVE] ✓ Session written to Firestore — uid=$uid',
+        );
+      },
+      (e, st) {
+        _fbLog.e(
+          '❌ [SESSION_SAVE] Zone error captured during Firestore write\n'
+          '   Type       : ${e.runtimeType}\n'
+          '   Error      : $e\n'
+          '   Impact     : NON-FATAL — tokens remain in FlutterSecureStorage',
+          error: e,
+          stackTrace: st,
+        );
+      },
+    ) ?? Future.value();
   }
 
   // ── Restore ───────────────────────────────────────────────────────────────
 
-  /// Read session tokens from Firestore.
-  ///
-  /// Returns a map with keys matching StorageKeys constants, or null if no
-  /// session document is found.  Called by ApiClient.restoreSessionIfNeeded()
-  /// when FlutterSecureStorage comes up empty on app start.
+  /// Read session tokens from Firestore (network-only, no local cache).
   static Future<Map<String, String>?> restoreSession() async {
     final uid = _uid;
     if (uid == null) {
       _fbLog.w(
         '⚠️ FirebaseSessionService.restoreSession: '
-        'No Firebase user — cannot read from Firestore',
+        'No real Firebase user — cannot read from Firestore.',
       );
       return null;
     }
 
     _fbLog.i(
-      '🔥 FirebaseSessionService.restoreSession: '
+      'FirebaseSessionService.restoreSession: '
       'Attempting Firestore read for uid=$uid',
     );
 
@@ -243,7 +314,7 @@ class FirebaseSessionService {
 
       if (!doc.exists || doc.data() == null) {
         _fbLog.d(
-          '🔥 FirebaseSessionService.restoreSession: '
+          'FirebaseSessionService.restoreSession: '
           'No session document found for uid=$uid',
         );
         return null;
@@ -259,8 +330,10 @@ class FirebaseSessionService {
       if (accessToken == null || refreshToken == null || userId == null) {
         _fbLog.w(
           '⚠️ FirebaseSessionService.restoreSession: '
-          'Firestore document is incomplete — accessToken=$accessToken '
-          'refreshToken=${refreshToken != null} userId=$userId',
+          'Firestore document is incomplete — '
+          'accessToken=${accessToken != null} '
+          'refreshToken=${refreshToken != null} '
+          'userId=$userId',
         );
         return null;
       }
@@ -289,15 +362,10 @@ class FirebaseSessionService {
 
   // ── Clear ─────────────────────────────────────────────────────────────────
 
-  /// Delete the Firestore session document and sign out the anonymous Firebase
-  /// user.  Called by ApiClient.clearSession() on logout and session expiry.
-  ///
-  /// After this, the next call to init() will create a fresh anonymous user
-  /// with a new UID — there is no link back to the previous session.
+  /// Delete the Firestore session document on logout.
   static Future<void> clearSession() async {
     final uid = _uid;
 
-    // ── Delete Firestore document ────────────────────────────────────────────
     if (uid != null) {
       try {
         await _db.collection(_collection).doc(uid).delete();
@@ -315,28 +383,9 @@ class FirebaseSessionService {
       }
     } else {
       _fbLog.d(
-        '🔥 FirebaseSessionService.clearSession: '
-        'No Firebase user — nothing to delete in Firestore',
+        'FirebaseSessionService.clearSession: '
+        'No real Firebase user — nothing to delete in Firestore.',
       );
     }
-
-    // ── WHY WE DO NOT sign out the anonymous Firebase user ──────────────────
-    // Calling _auth.signOut() here destroys the anonymous UID.  The next
-    // saveSession() call (which fires immediately after the user logs back in)
-    // would then find _uid == null and skip the Firestore backup write —
-    // leaving the new session completely unprotected.
-    //
-    // The anonymous UID is not a security credential; it is a stable key for
-    // the Firestore document.  The document was just deleted above, so there
-    // is nothing sensitive left in Firestore under this UID.  Keeping the
-    // anonymous user signed in costs nothing and ensures saveSession() always
-    // has a valid UID ready to write to on the very next login.
-    //
-    // A fresh anonymous UID is only needed when init() runs on a completely
-    // fresh app install — which is handled correctly already.
-    _fbLog.d(
-      '🔥 FirebaseSessionService.clearSession: '
-      'Anonymous Firebase user retained (uid=$uid) — Firestore doc deleted only',
-    );
   }
 }

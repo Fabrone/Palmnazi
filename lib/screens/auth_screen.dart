@@ -1,9 +1,12 @@
+import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:logger/logger.dart';
 import 'package:palmnazi/screens/landing_page.dart';
 import 'package:palmnazi/screens/reset_password_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/services/firebase_mfa_service.dart';
 import 'package:palmnazi/services/firebase_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -217,14 +220,38 @@ class AuthService {
           roles:        user.roles,
         );
 
-        // ── Firebase mirror (non-blocking, independent log path) ────────────
-        _log.i('🔑 AuthService.login [Firebase path]: Mirroring login to Firebase');
-        FirebaseService.loginMirror(
-          email:    email.trim(),
-          password: password,
-        ).catchError((e) {
-          _log.w('⚠️ AuthService.login [Firebase path]: Mirror failed (non-blocking): $e');
-        });
+        // ── Firebase mirror (awaited, zone-guarded) ──────────────────────────
+        // loginMirror now detects when the correct user is already signed in
+        // and skips signInWithEmailAndPassword entirely — eliminating the
+        // IndexedDB write conflict (OperationError) that caused context.auth
+        // to arrive as null at Cloud Functions.
+        //
+        // runZonedGuarded is retained to absorb any residual JS zone errors
+        // without crashing the app. We await via Completer so login only
+        // returns after Firebase auth is fully settled.
+        _log.i('🔑 AuthService.login [Firebase path]: Awaiting Firebase mirror…');
+        final mirrorCompleter = Completer<void>();
+        runZonedGuarded(
+          () {
+            FirebaseService.loginMirror(
+              email:    email.trim(),
+              password: password,
+            ).then((_) {
+              if (!mirrorCompleter.isCompleted) mirrorCompleter.complete();
+            }).catchError((e) {
+              _log.w('⚠️ AuthService.login [Firebase path]: Mirror failed (non-blocking): $e');
+              if (!mirrorCompleter.isCompleted) mirrorCompleter.complete();
+            });
+          },
+          (e, st) {
+            _log.w('⚠️ AuthService.login [Firebase path]: Zone error (non-blocking): $e');
+            if (!mirrorCompleter.isCompleted) mirrorCompleter.complete();
+          },
+        );
+        await mirrorCompleter.future.timeout(
+          const Duration(seconds: 10),
+          onTimeout: () => _log.w('⚠️ AuthService.login [Firebase path]: Mirror timed out — continuing'),
+        );
 
         _log.i('✅ AuthService.login: ━━━ LOGIN COMPLETE ━━━');
         return LoginResult.success(message: 'Welcome back!', user: user);
@@ -403,9 +430,28 @@ class AuthService {
 
     await ApiClient.clearSession();
 
-    FirebaseService.signOut().catchError((e) {
+    // ── FIX: Await Firebase signOut before returning ─────────────────────────
+    //
+    // PREVIOUSLY this was fire-and-forget (.catchError only). That left the
+    // Firebase Auth JS module's IndexedDB delete running in the background
+    // AFTER logout() returned. When the user immediately logged in again,
+    // signInWithEmailAndPassword() tried to write a new credential to the
+    // same IndexedDB database while the delete was still in flight → OperationError.
+    //
+    // The OperationError causes the Firebase Auth JS module to revert its
+    // in-memory auth state. The firebase/functions module's auth-token
+    // provider then sees no user and sends Cloud Function requests without
+    // an Authorization header → context.auth = null → 'unauthenticated'.
+    //
+    // Fix: await signOut() (with a timeout so a network stall cannot block
+    // logout indefinitely). With Persistence.LOCAL set in FirebaseSessionService
+    // .init(), signOut() now writes to localStorage (synchronous) rather than
+    // IndexedDB, so this await is nearly instantaneous and eliminates the race.
+    try {
+      await FirebaseService.signOut().timeout(const Duration(seconds: 5));
+    } catch (e) {
       _log.w('⚠️ AuthService.logout: Firebase signOut failed (non-blocking): $e');
-    });
+    }
 
     _log.i('🚪 AuthService.logout: ━━━ LOGOUT COMPLETE ━━━');
   }
@@ -478,10 +524,24 @@ class AuthService {
       final msg = body['error'] ?? body['message'] ?? 'Could not send code.';
       _log.w('⚠️ AuthService.mfaSendOtp: ${response.statusCode} — $msg');
       return AuthResult.failure('Could not send verification code. Please try again.');
-    } on Exception catch (e, st) {
-      _log.e('❌ AuthService.mfaSendOtp: Exception', error: e, stackTrace: st);
-      return AuthResult.failure(ApiClient.friendlyNetworkError(e));
+    } catch (e, st) {
+      // Catches both Exception and Error subclasses — including Flutter Web's
+      // OperationError (CORS / network failure from dart:html / DDC runtime).
+      _log.e('❌ AuthService.mfaSendOtp: Caught error (type: ${e.runtimeType})', error: e, stackTrace: st);
+      final msg = e is Exception ? ApiClient.friendlyNetworkError(e) : _webFriendlyError(e);
+      return AuthResult.failure(msg);
     }
+  }
+
+  /// Converts a non-Exception throwable (e.g. Flutter Web's OperationError)
+  /// into a user-facing message without losing type safety.
+  static String _webFriendlyError(Object e) {
+    final s = e.toString().toLowerCase();
+    if (s.contains('operationerror') || s.contains('failed to fetch') || s.contains('networkerror')) {
+      return 'Network request blocked. This is likely a CORS issue on the server — '
+             'please check that the API allows requests from this origin.';
+    }
+    return 'Something went wrong. Please try again.';
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -514,9 +574,11 @@ class AuthService {
       final msg = body['error'] ?? body['message'] ?? 'Verification failed.';
       _log.w('⚠️ AuthService.mfaVerifyOtp: ${response.statusCode} — $msg');
       return AuthResult.failure('Verification failed. Please try again.');
-    } on Exception catch (e, st) {
-      _log.e('❌ AuthService.mfaVerifyOtp: Exception', error: e, stackTrace: st);
-      return AuthResult.failure(ApiClient.friendlyNetworkError(e));
+    } catch (e, st) {
+      // Catches both Exception and Error — including Flutter Web OperationError.
+      _log.e('❌ AuthService.mfaVerifyOtp: Caught error (type: ${e.runtimeType})', error: e, stackTrace: st);
+      final msg = e is Exception ? ApiClient.friendlyNetworkError(e) : _webFriendlyError(e);
+      return AuthResult.failure(msg);
     }
   }
 }
@@ -603,6 +665,39 @@ class _AuthScreenState extends State<AuthScreen>
 
     if (!result.isSuccess) {
       _showMessage(AuthResult.failure(result.message));
+      return;
+    }
+
+    // ── Wait for Firebase Auth mirror to complete ────────────────────────────
+    // authStateChanges() is the event-driven, stream-based way to detect the
+    // sign-in completion — it's guaranteed to fire only after BOTH the Dart
+    // firebase_auth layer AND the underlying JS firebase/auth module have
+    // updated, which is exactly what we need before calling Cloud Functions.
+    // The old currentUser snapshot poll could exit while the JS layer was still
+    // mid-transition, causing context.auth to arrive as null at the function.
+    _log.i('🖥️ AuthScreen._handleLogin: Waiting for Firebase email-auth to be ready');
+    fb.User? fbUser;
+    try {
+      fbUser = await fb.FirebaseAuth.instance
+          .authStateChanges()
+          .where((u) => u != null && !u.isAnonymous)
+          .first
+          .timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      fbUser = null;
+    } catch (e) {
+      _log.w('⚠️ AuthScreen._handleLogin: authStateChanges error: $e');
+      fbUser = null;
+    }
+
+    if (fbUser != null) {
+      _log.i('✅ AuthScreen._handleLogin: Firebase auth ready (uid: ${fbUser.uid}) — opening MFA offer');
+    } else {
+      _log.w(
+        '⚠️ AuthScreen._handleLogin: Firebase email-auth not ready after 10 s — '
+        'skipping MFA offer (user can enable from Account screen)',
+      );
+      if (mounted) _navigateToLanding();
       return;
     }
 
@@ -815,17 +910,24 @@ class _AuthScreenState extends State<AuthScreen>
                           : () async {
                               setSheetState(() => sheetLoading = true);
                               _log.i('🖥️ MfaEnrollmentSheet: Sending OTP to $email');
+                              try {
+                                final result = await FirebaseMfaService.sendOtp(email: email);
+                                if (!sheetCtx.mounted) return;
+                                setSheetState(() => sheetLoading = false);
 
-                              final result = await AuthService.mfaSendOtp(email: email);
-                              setSheetState(() => sheetLoading = false);
-
-                              if (result.isSuccess) {
-                                _log.i('🖥️ MfaEnrollmentSheet: OTP sent — advancing to phase 2');
-                                setSheetState(() => otpSent = true);
-                              } else {
-                                _log.w('🖥️ MfaEnrollmentSheet: OTP send failed — ${result.message}');
+                                if (result.isSuccess) {
+                                  _log.i('🖥️ MfaEnrollmentSheet: OTP sent — advancing to phase 2');
+                                  setSheetState(() => otpSent = true);
+                                } else {
+                                  _log.w('🖥️ MfaEnrollmentSheet: OTP send failed — ${result.message}');
+                                  if (sheetCtx.mounted) Navigator.pop(sheetCtx);
+                                  if (mounted) _showMessage(AuthResult.failure(result.message));
+                                }
+                              } catch (e, st) {
+                                _log.e('🖥️ MfaEnrollmentSheet: Unexpected error sending OTP', error: e, stackTrace: st);
+                                if (sheetCtx.mounted) setSheetState(() => sheetLoading = false);
                                 if (sheetCtx.mounted) Navigator.pop(sheetCtx);
-                                if (mounted) _showMessage(AuthResult.failure(result.message));
+                                if (mounted) _showMessage(AuthResult.failure('Could not send code. Please try again.'));
                               }
                             },
                       style: ElevatedButton.styleFrom(
@@ -894,21 +996,28 @@ class _AuthScreenState extends State<AuthScreen>
                               if (!otpFormKey.currentState!.validate()) return;
                               setSheetState(() => sheetLoading = true);
                               _log.i('🖥️ MfaEnrollmentSheet: Verifying OTP');
+                              try {
+                                final result = await FirebaseMfaService.verifyOtp(
+                                  otp: otpController.text.trim(),
+                                );
 
-                              final result = await AuthService.mfaVerifyOtp(
-                                email: email,
-                                otp:   otpController.text.trim(),
-                              );
+                                if (!sheetCtx.mounted) return;
+                                setSheetState(() => sheetLoading = false);
+                                Navigator.pop(sheetCtx);
+                                if (!mounted) return;
 
-                              if (!sheetCtx.mounted) return;
-                              setSheetState(() => sheetLoading = false);
-                              Navigator.pop(sheetCtx);
-                              if (!mounted) return;
-
-                              _log.i('🖥️ MfaEnrollmentSheet: Verify result — isSuccess=${result.isSuccess}');
-                              _showMessage(result.isSuccess
-                                  ? AuthResult.success(message: result.message)
-                                  : AuthResult.failure(result.message));
+                                _log.i('🖥️ MfaEnrollmentSheet: Verify result — isSuccess=${result.isSuccess}');
+                                _showMessage(result.isSuccess
+                                    ? AuthResult.success(message: result.message)
+                                    : AuthResult.failure(result.message));
+                              } catch (e, st) {
+                                _log.e('🖥️ MfaEnrollmentSheet: Unexpected error verifying OTP', error: e, stackTrace: st);
+                                if (sheetCtx.mounted) {
+                                  setSheetState(() => sheetLoading = false);
+                                  Navigator.pop(sheetCtx);
+                                }
+                                if (mounted) _showMessage(AuthResult.failure('Verification failed. Please try again.'));
+                              }
                             },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF14FFEC),
@@ -940,7 +1049,7 @@ class _AuthScreenState extends State<AuthScreen>
                           : () async {
                               setSheetState(() => sheetLoading = true);
                               _log.i('🖥️ MfaEnrollmentSheet: Re-sending OTP');
-                              await AuthService.mfaSendOtp(email: email);
+                              await FirebaseMfaService.sendOtp(email: email);
                               setSheetState(() => sheetLoading = false);
                               if (mounted) {
                                 _showMessage(AuthResult.success(

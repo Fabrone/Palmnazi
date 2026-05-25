@@ -4,6 +4,7 @@ import 'package:logger/logger.dart';
 import 'package:palmnazi/screens/auth_screen.dart';   // AppUser, AuthService
 import 'package:palmnazi/screens/landing_page.dart';  // RC colour tokens + LandingPage
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/services/firebase_mfa_service.dart';
 import 'package:palmnazi/services/firebase_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -133,28 +134,23 @@ class _AccountScreenState extends State<AccountScreen> {
     _log.i('📱 AccountScreen._handleDisableMfa: Calling mfaDisable endpoint');
 
     try {
-      final response = await ApiClient.authPost(
-        ApiEndpoints.mfaDisable,
-        body: {'email': _email ?? ''},
-      );
-      final body = ApiClient.parseBody(response);
+      final result = await FirebaseMfaService.disableMfa();
 
       if (!mounted) return;
       setState(() => _actionLoading = false);
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
+      if (result.isSuccess) {
         _log.i('✅ AccountScreen._handleDisableMfa: MFA disabled');
         _snack('Email MFA has been disabled.', ok: true);
         await _loadUserInfo();
       } else {
-        final msg = body['error'] ?? body['message'] ?? 'Could not disable MFA.';
-        _log.w('⚠️ AccountScreen._handleDisableMfa: ${response.statusCode} — $msg');
-        _snack('Could not disable MFA. Please try again.', ok: false);
+        _log.w('⚠️ AccountScreen._handleDisableMfa: ${result.message}');
+        _snack(result.message, ok: false);
       }
     } catch (e) {
       if (mounted) setState(() => _actionLoading = false);
       _log.e('❌ AccountScreen._handleDisableMfa: Exception — $e');
-      _snack(ApiClient.friendlyNetworkError(e), ok: false);
+      _snack('Could not disable MFA. Please try again.', ok: false);
     }
   }
 
@@ -240,17 +236,24 @@ class _AccountScreenState extends State<AccountScreen> {
                           : () async {
                               setS(() => sheetLoading = true);
                               _log.i('📱 MfaEnrollmentSheet: Sending OTP to $email');
+                              try {
+                                final result = await FirebaseMfaService.sendOtp(email: email);
+                                if (!sheetCtx.mounted) return;
+                                setS(() => sheetLoading = false);
 
-                              final result = await AuthService.mfaSendOtp(email: email);
-                              setS(() => sheetLoading = false);
-
-                              if (result.isSuccess) {
-                                _log.i('📱 MfaEnrollmentSheet: OTP sent — advancing to phase 2');
-                                setS(() => otpSent = true);
-                              } else {
-                                _log.w('📱 MfaEnrollmentSheet: OTP send failed — ${result.message}');
+                                if (result.isSuccess) {
+                                  _log.i('📱 MfaEnrollmentSheet: OTP sent — advancing to phase 2');
+                                  setS(() => otpSent = true);
+                                } else {
+                                  _log.w('📱 MfaEnrollmentSheet: OTP send failed — ${result.message}');
+                                  if (sheetCtx.mounted) Navigator.pop(sheetCtx);
+                                  if (mounted) _snack(result.message, ok: false);
+                                }
+                              } catch (e, st) {
+                                _log.e('📱 MfaEnrollmentSheet: Error sending OTP', error: e, stackTrace: st);
+                                if (sheetCtx.mounted) setS(() => sheetLoading = false);
                                 if (sheetCtx.mounted) Navigator.pop(sheetCtx);
-                                if (mounted) _snack(result.message, ok: false);
+                                if (mounted) _snack('Could not send code. Please try again.', ok: false);
                               }
                             },
                       style: ElevatedButton.styleFrom(
@@ -328,22 +331,29 @@ class _AccountScreenState extends State<AccountScreen> {
                               if (!otpFormKey.currentState!.validate()) return;
                               setS(() => sheetLoading = true);
                               _log.i('📱 MfaEnrollmentSheet: Verifying OTP');
+                              try {
+                                final result = await FirebaseMfaService.verifyOtp(
+                                  otp: otpController.text.trim(),
+                                );
 
-                              final result = await AuthService.mfaVerifyOtp(
-                                email: email,
-                                otp:   otpController.text.trim(),
-                              );
+                                if (!sheetCtx.mounted) return;
+                                setS(() => sheetLoading = false);
+                                Navigator.pop(sheetCtx);
+                                if (!mounted) return;
 
-                              if (!sheetCtx.mounted) return;
-                              setS(() => sheetLoading = false);
-                              Navigator.pop(sheetCtx);
-                              if (!mounted) return;
-
-                              _log.i(
-                                '📱 MfaEnrollmentSheet: Verify result — '
-                                'isSuccess=${result.isSuccess}',
-                              );
-                              _snack(result.message, ok: result.isSuccess);
+                                _log.i(
+                                  '📱 MfaEnrollmentSheet: Verify result — '
+                                  'isSuccess=${result.isSuccess}',
+                                );
+                                _snack(result.message, ok: result.isSuccess);
+                              } catch (e, st) {
+                                _log.e('📱 MfaEnrollmentSheet: Error verifying OTP', error: e, stackTrace: st);
+                                if (sheetCtx.mounted) {
+                                  setS(() => sheetLoading = false);
+                                  Navigator.pop(sheetCtx);
+                                }
+                                if (mounted) _snack('Verification failed. Please try again.', ok: false);
+                              }
                             },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF14FFEC),
@@ -375,7 +385,7 @@ class _AccountScreenState extends State<AccountScreen> {
                           : () async {
                               setS(() => sheetLoading = true);
                               _log.i('📱 MfaEnrollmentSheet: Re-sending OTP');
-                              await AuthService.mfaSendOtp(email: email);
+                              await FirebaseMfaService.sendOtp(email: email);
                               setS(() => sheetLoading = false);
                               if (mounted) {
                                 _snack(
