@@ -1,66 +1,3 @@
-// firebase_mfa_service.dart
-//
-// ARCHITECTURE — v4 (patch over v3)
-// ──────────────────────────────────
-// v3 called Cloud Functions via direct HTTP POST with Authorization: Bearer
-// <idToken> instead of httpsCallable() to bypass the JS firebase/functions
-// SDK's dependency on the (possibly corrupted) JS firebase/auth token cache.
-//
-// The direct HTTP approach is correct and is kept.  v4 fixes a subtle bug
-// in v3 that caused the Bearer token to be stale/expired on the server:
-//
-// THE v3 BUG (line 195 of the v3 file)
-// ──────────────────────────────────────
-//   _requireAuthenticatedUser() called user.getIdToken(true) to force-refresh
-//   the token.  On Flutter Web, getIdToken(true) makes a direct HTTPS request
-//   to the Firebase Auth REST API and returns a fresh token — but stores it
-//   in the DART layer's own internal cache.
-//
-//   _callFunctionViaHttp() then called user.getIdToken(false) to "use the
-//   cached token".  On Flutter Web, getIdToken(false) goes through the JS
-//   firebase/auth module's cache — a SEPARATE cache from the Dart layer's.
-//   If the JS cache was corrupted or emptied by an IndexedDB OperationError,
-//   getIdToken(false) returns an OLD or EXPIRED token from the JS cache,
-//   even though the Dart cache was just updated.
-//
-//   The expired token is sent to the Cloud Function.  The Firebase Admin SDK
-//   on the server fails to verify it (JWT exp claim is in the past).
-//   verifyIdToken() throws, the Functions SDK sets context.auth = null, and
-//   the function returns 401 UNAUTHENTICATED — even though the Dart layer
-//   shows a perfectly valid, recently signed-in user.
-//
-// THE v4 FIX
-// ───────────
-//   Change getIdToken(false) → getIdToken(true) in _callFunctionViaHttp.
-//
-//   This forces a fresh HTTPS request to the Firebase Auth REST API at the
-//   exact moment the Bearer token is needed, guaranteeing a non-expired token
-//   regardless of the state of the JS firebase/auth cache.
-//
-//   The token returned is signed by Firebase with a new exp claim 1 hour from
-//   now, so the Admin SDK's verifyIdToken() on the server will always succeed.
-//
-//   The redundant getIdToken(true) call in _requireAuthenticatedUser (which
-//   was intended to "warm up the cache" for the subsequent getIdToken(false)
-//   call) is removed — its purpose is now fulfilled by the single authoritative
-//   getIdToken(true) call in _callFunctionViaHttp.
-//
-// SERVER-SIDE CHANGE (index.js)
-// ─────────────────────────────
-//   The Cloud Functions were also converted from onCall to onRequest to
-//   eliminate any ambiguity in how the Functions SDK handles auth context
-//   when called via direct HTTP.  The server now calls
-//   admin.auth().verifyIdToken(idToken) directly, which is a pure
-//   cryptographic JWT verification with no dependency on the client-side
-//   JS auth module state.  See index.js for details.
-//
-// DEPENDENCIES (pubspec.yaml) — no changes from v3
-// ───────────────────────────
-//   firebase_core: ^3.x
-//   firebase_auth: ^5.x
-//   cloud_functions: ^5.x   ← kept for FirebaseFunctionsException type only
-//   http: any
-
 import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -96,22 +33,8 @@ class FirebaseMfaService {
     printer: PrettyPrinter(methodCount: 0, errorMethodCount: 8, lineLength: 100),
   );
 
-  // Cloud Functions region — must match the region your functions are deployed to.
-  // Check: Firebase Console → Functions → your function → location column.
   static const String _region = 'us-central1';
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // _requireAuthenticatedUser
-  //
-  // Returns the current non-anonymous Firebase User.
-  // If no real user is present, waits up to 10 s on authStateChanges.
-  //
-  // NOTE: This method no longer calls getIdToken(true) — the token refresh
-  // is deferred to _callFunctionViaHttp where the fresh token is needed.
-  // This avoids performing an unnecessary network round-trip to Firebase Auth
-  // only for it to be discarded; the single authoritative getIdToken(true)
-  // in _callFunctionViaHttp is sufficient.
-  // ══════════════════════════════════════════════════════════════════════════
   static Future<User?> _requireAuthenticatedUser() async {
     _log.d(
       '🔐 [AUTH_GUARD] ─────────────────────────────────────────────────────\n'
@@ -165,40 +88,6 @@ class FirebaseMfaService {
     return user;
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // _callFunctionViaHttp
-  //
-  // WHY getIdToken(TRUE) — THE CORE v4 FIX
-  // ────────────────────────────────────────
-  // v3 called getIdToken(false) here to "use the cached token" that was
-  // supposedly refreshed by _requireAuthenticatedUser's getIdToken(true).
-  //
-  // On Flutter Web, getIdToken(false) does NOT read from the Dart layer's
-  // cache.  It delegates to the JS firebase/auth module's getIdToken(false),
-  // which reads from the JS module's own in-memory cache.  If that JS cache
-  // was corrupted or invalidated by an IndexedDB OperationError (from a
-  // concurrent Firestore write during login), getIdToken(false) returns a
-  // STALE OR EXPIRED token — even though the Dart layer's cache is fresh.
-  //
-  // The stale token is a valid-looking JWT (correct format, correct length)
-  // but its exp (expiration) claim is in the past.  When the Firebase Admin
-  // SDK on the server calls verifyIdToken(staleTk), the verification fails,
-  // context.auth is set to null, and the function returns 401.
-  //
-  // getIdToken(TRUE) makes a direct HTTPS request to the Firebase Auth REST
-  // API endpoint.  This call is entirely in the Dart HTTP layer — it does
-  // not go through the JS firebase/auth module at all.  The token it returns
-  // has a new exp claim (1 hour from now) and will always pass server-side
-  // verification.
-  //
-  // PROTOCOL
-  // ────────
-  // The Dart client and the server (now using onRequest) communicate using
-  // the same body/header format as the onCall V1 protocol:
-  //   Request  body   : {"data": {...}}
-  //   Response success: {"result": {...}}
-  //   Response error  : {"error": {"status": "UPPER_SNAKE", "message": "..."}}
-  // ══════════════════════════════════════════════════════════════════════════
   static Future<Map<String, dynamic>> _callFunctionViaHttp({
     required User   user,
     required String functionName,
@@ -211,11 +100,7 @@ class FirebaseMfaService {
       '🌐 [HTTP_CALL] Payload  : $data',
     );
 
-    // ── A: Force-refresh the ID token from Firebase Auth REST API ─────────────
-    //
-    // getIdToken(TRUE) is the v4 fix.  It bypasses the JS firebase/auth module's
-    // internal cache — which can be stale after an IndexedDB OperationError —
-    // and always returns a freshly-minted token from the network.
+    // ── A: Force-refresh the ID token from Firebase Auth REST API
     _log.d('🌐 [HTTP_CALL] Step A — Force-refreshing ID token (getIdToken: true)');
     final String idToken;
     try {

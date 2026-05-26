@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for posting local/push notifications (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Required for notification vibration -->
+    <uses-permission android:name="android.permission.VIBRATE"/>
+
     <application
         android:label="Palmnazi"
         android:name="${applicationName}"
