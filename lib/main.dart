@@ -1,3 +1,4 @@
+import 'package:app_links/app_links.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,16 +8,24 @@ import 'package:palmnazi/firebase_options.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/landing_page.dart';
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/services/firebase_email_link_service.dart';
 import 'package:palmnazi/services/firebase_session_service.dart';
 import 'package:palmnazi/services/notification_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+/// Global notifier — fires whenever an incoming email sign-in / verification
+/// link is handled successfully.  The AuthScreen listens to this to navigate
+/// to LandingPage without needing to know about app_links directly.
+final ValueNotifier<EmailLinkResult?> emailLinkResultNotifier =
+    ValueNotifier(null);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ENTRY POINT
 // ─────────────────────────────────────────────────────────────────────────────
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ApiClient.primeSessionCache();
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
@@ -32,6 +41,23 @@ void main() async {
 
   await NotificationService.initialize();
 
+  // ── Email-link deep-link handler (app_links) ──────────────────────────────
+  // Handles both cold-start links (app launched via email link) and warm
+  // links (app already running in background).
+  final appLinks = AppLinks();
+
+  // Cold-start: the link that launched the app from a terminated state.
+  final initialUri = await appLinks.getInitialLink();
+  if (initialUri != null) {
+    _handleEmailLink(initialUri.toString());
+  }
+
+  // Warm: stream of links while the app is running.
+  appLinks.uriLinkStream.listen((uri) {
+    _handleEmailLink(uri.toString());
+  });
+  // ─────────────────────────────────────────────────────────────────────────
+
   // Set system UI overlay style.
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -41,6 +67,26 @@ void main() async {
   );
 
   runApp(const PalmnaziApp());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EMAIL LINK HANDLER
+// ─────────────────────────────────────────────────────────────────────────────
+/// Called for every incoming deep / universal link.
+/// Delegates to FirebaseEmailLinkService; on success it updates the notifier
+/// so any listening screen (AuthScreen) can react accordingly.
+Future<void> _handleEmailLink(String link) async {
+  final EmailLinkResult? result =
+      await FirebaseEmailLinkService.handleIncomingLink(link);
+  if (result == null) return; // not an email sign-in link
+  emailLinkResultNotifier.value = result;
+  if (result.isSuccess) {
+    // Navigate to LandingPage regardless of which screen is visible.
+    navigatorKey.currentState?.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LandingPage()),
+      (route) => false,
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

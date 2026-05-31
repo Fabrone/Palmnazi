@@ -4,9 +4,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:logger/logger.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LOGGER
-// ─────────────────────────────────────────────────────────────────────────────
 final Logger _fbLog = Logger(
   printer: PrettyPrinter(
     methodCount: 0,
@@ -20,8 +17,8 @@ final Logger _fbLog = Logger(
 class FirebaseSessionService {
   FirebaseSessionService._();
 
-  static FirebaseAuth      get _auth => FirebaseAuth.instance;
-  static FirebaseFirestore get _db   => FirebaseFirestore.instance;
+  static FirebaseAuth get _auth => FirebaseAuth.instance;
+  static FirebaseFirestore get _db => FirebaseFirestore.instance;
 
   static const String _collection = '_pnrc_sessions';
 
@@ -31,108 +28,93 @@ class FirebaseSessionService {
     return u.uid;
   }
 
-  // ── Initialisation ────────────────────────────────────────────────────────
-
-  /// Call once inside main() after Firebase.initializeApp().
+  // ─────────────────────────────────────────────────────────────────────────
+  // INITIALIZATION
+  // ─────────────────────────────────────────────────────────────────────────
   static Future<void> init() async {
     _fbLog.i('FirebaseSessionService.init: ━━━ START ━━━');
 
     if (kIsWeb) {
-      // ── Step 0: Disable Firestore offline persistence ─────────────────────
-
-      _db.settings = const Settings(persistenceEnabled: false);
-      _fbLog.i(
-        'FirebaseSessionService.init: '
-        '✓ Firestore offline persistence DISABLED on web — '
-        'IndexedDB contention with Firebase Auth eliminated',
-      );
-
-      // ── Step 1: Wait for Auth IndexedDB restore ───────────────────────────
-      
+      // ── Disable Firestore offline persistence ──────────────────────────────
+      // Prevents Firestore from opening its own IndexedDB store, which can
+      // conflict with the Auth IndexedDB and compound OperationError frequency.
       try {
-        await _auth
-            .authStateChanges()
-            .first
-            .timeout(const Duration(seconds: 8));
-        _fbLog.d(
-          'FirebaseSessionService.init: '
-          'Initial authStateChanges received — Auth IndexedDB restore complete',
+        _db.settings = const Settings(
+          persistenceEnabled: false,
+          cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
         );
-      } catch (_) {
-        _fbLog.w(
-          '⚠️ FirebaseSessionService.init: '
-          'authStateChanges timed out — proceeding with setPersistence anyway',
-        );
+        _fbLog.i('FirebaseSessionService.init: ✓ Firestore offline persistence DISABLED on web');
+      } catch (e) {
+        _fbLog.w('FirebaseSessionService.init: Could not disable Firestore persistence: $e');
       }
 
-      // ── Step 2: Switch Auth to localStorage ───────────────────────────────
-      
+      // ── Set Firebase Auth persistence to NONE ─────────────────────────────
+      //
+      // WHY NOT LOCAL (the previous value):
+      //   Persistence.LOCAL uses IndexedDB via the browser's WebCrypto API.
+      //   When the Firebase JS SDK migrates its in-memory auth state into
+      //   IndexedDB it does so via *detached JS Promises* that run seconds
+      //   after setPersistence() returns.  Those Promises throw OperationError
+      //   directly into Flutter's root zone — completely bypassing any Dart
+      //   try/catch — causing a widget-tree rebuild that disposes
+      //   _AuthScreenState while _handleLogin() is still running.  The
+      //   `if (!mounted) return` guard then fires and navigation never happens.
+      //
+      // WHY NOT SESSION:
+      //   Persistence.SESSION uses window.sessionStorage (no WebCrypto, no
+      //   OperationError), but it keeps an active Firebase Auth session alive
+      //   across the tab lifetime.  Since login() no longer calls loginMirror()
+      //   there is no Firebase Auth session to preserve, so SESSION would just
+      //   hold a stale/empty state for no benefit.
+      //
+      // WHY NONE:
+      //   Firebase Auth is entirely in-memory.  No IndexedDB.  No WebCrypto.
+      //   No detached Promises.  No OperationError.  The API/JWT session
+      //   (flutter_secure_storage → localStorage) is the sole auth store.
+      //
+      // Note: the previous `authStateChanges().first` wait was only needed to
+      // block until IndexedDB had restored a prior session.  With NONE there
+      // is nothing to restore, so the wait has been removed.
       try {
-        await _auth.setPersistence(Persistence.LOCAL);
-        _fbLog.i(
-          'FirebaseSessionService.init: '
-          '✓ Firebase Auth persistence set to localStorage — '
-          'IndexedDB write-lock race eliminated',
-        );
+        await _auth.setPersistence(Persistence.NONE);
+        _fbLog.i('FirebaseSessionService.init: ✓ Firebase Auth persistence set to NONE (no IndexedDB)');
       } catch (e) {
-        _fbLog.w(
-          '⚠️ FirebaseSessionService.init: '
-          'Could not set Auth persistence (non-fatal — IndexedDB remains): $e',
-        );
+        _fbLog.w('FirebaseSessionService.init: setPersistence failed: $e');
       }
     }
 
-    // ── Log current auth state ─────────────────────────────────────────────
     final current = _auth.currentUser;
     if (current != null && !current.isAnonymous) {
-      _fbLog.i(
-        'FirebaseSessionService.init: '
-        '✓ Real Firebase user already present — uid=${current.uid}',
-      );
+      _fbLog.i('FirebaseSessionService.init: ✓ Real Firebase user present — uid=${current.uid}');
     } else {
-      _fbLog.i(
-        'FirebaseSessionService.init: '
-        'No real Firebase user yet — session backup ready for post-login write.',
-      );
+      _fbLog.i('FirebaseSessionService.init: No real Firebase user yet — session backup ready');
     }
 
     _fbLog.i('FirebaseSessionService.init: ━━━ DONE ━━━');
   }
 
-  // ── Save ──────────────────────────────────────────────────────────────────
-
+  // ─────────────────────────────────────────────────────────────────────────
+  // SAVE SESSION
+  // ─────────────────────────────────────────────────────────────────────────
   static Future<void> saveSession({
-    required String       accessToken,
-    required String       refreshToken,
-    required String       userId,
-    required String       email,
+    required String accessToken,
+    required String refreshToken,
+    required String userId,
+    required String email,
     required List<String> roles,
   }) async {
     final uid = _uid;
     if (uid == null) {
-      _fbLog.w(
-        '⚠️ FirebaseSessionService.saveSession: '
-        'No real Firebase user — skipping Firestore write. '
-        'Session is held in FlutterSecureStorage only.',
-      );
+      _fbLog.w('FirebaseSessionService.saveSession: No Firebase user — skipping Firestore write');
       return;
     }
 
     if (kIsWeb) {
-      _fbLog.d(
-        '🗄️ [SESSION_SAVE] Waiting 300 ms before Firestore write (uid=$uid)',
-      );
       await Future.delayed(const Duration(milliseconds: 300));
     }
 
     await runZonedGuarded(
       () async {
-        _fbLog.d(
-          '🗄️ [SESSION_SAVE] Writing to Firestore\n'
-          '🗄️ [SESSION_SAVE]   collection : $_collection\n'
-          '🗄️ [SESSION_SAVE]   uid        : $uid\n'
-          '🗄️ [SESSION_SAVE]   userId     : $userId | email: $email',
-        );
         await _db.collection(_collection).doc(uid).set({
           'accessToken':  accessToken,
           'refreshToken': refreshToken,
@@ -141,118 +123,58 @@ class FirebaseSessionService {
           'userRoles':    roles.join(','),
           'savedAt':      FieldValue.serverTimestamp(),
         });
-        _fbLog.i(
-          '✅ [SESSION_SAVE] ✓ Session written to Firestore — uid=$uid',
-        );
+        _fbLog.i('✅ [SESSION_SAVE] Session written to Firestore — uid=$uid');
       },
       (e, st) {
-        _fbLog.e(
-          '❌ [SESSION_SAVE] Zone error captured during Firestore write\n'
-          '   Type       : ${e.runtimeType}\n'
-          '   Error      : $e\n'
-          '   Impact     : NON-FATAL — tokens remain in FlutterSecureStorage',
-          error: e,
-          stackTrace: st,
-        );
+        _fbLog.e('❌ [SESSION_SAVE] Firestore write failed (non-fatal)', error: e, stackTrace: st);
       },
-    ) ?? Future.value();
+    );
   }
 
-  // ── Restore ───────────────────────────────────────────────────────────────
-
-  /// Read session tokens from Firestore (network-only, no local cache).
+  // ─────────────────────────────────────────────────────────────────────────
+  // RESTORE SESSION
+  // ─────────────────────────────────────────────────────────────────────────
   static Future<Map<String, String>?> restoreSession() async {
     final uid = _uid;
-    if (uid == null) {
-      _fbLog.w(
-        '⚠️ FirebaseSessionService.restoreSession: '
-        'No real Firebase user — cannot read from Firestore.',
-      );
-      return null;
-    }
-
-    _fbLog.i(
-      'FirebaseSessionService.restoreSession: '
-      'Attempting Firestore read for uid=$uid',
-    );
+    if (uid == null) return null;
 
     try {
       final doc = await _db.collection(_collection).doc(uid).get();
+      if (!doc.exists || doc.data() == null) return null;
 
-      if (!doc.exists || doc.data() == null) {
-        _fbLog.d(
-          'FirebaseSessionService.restoreSession: '
-          'No session document found for uid=$uid',
-        );
-        return null;
-      }
-
-      final data         = doc.data()!;
-      final accessToken  = data['accessToken']  as String?;
+      final data = doc.data()!;
+      final accessToken = data['accessToken'] as String?;
       final refreshToken = data['refreshToken'] as String?;
-      final userId       = data['userId']       as String?;
-      final userEmail    = data['userEmail']    as String? ?? '';
-      final userRoles    = data['userRoles']    as String? ?? '';
+      final userId = data['userId'] as String?;
 
-      if (accessToken == null || refreshToken == null || userId == null) {
-        _fbLog.w(
-          '⚠️ FirebaseSessionService.restoreSession: '
-          'Firestore document is incomplete — '
-          'accessToken=${accessToken != null} '
-          'refreshToken=${refreshToken != null} '
-          'userId=$userId',
-        );
-        return null;
-      }
+      if (accessToken == null || refreshToken == null || userId == null) return null;
 
-      _fbLog.i(
-        '✅ FirebaseSessionService.restoreSession: '
-        '✓ Session restored from Firestore — userId=$userId',
-      );
-
+      _fbLog.i('✅ FirebaseSessionService.restoreSession: Success — userId=$userId');
       return {
-        'accessToken':  accessToken,
+        'accessToken': accessToken,
         'refreshToken': refreshToken,
-        'userId':       userId,
-        'userEmail':    userEmail,
-        'userRoles':    userRoles,
+        'userId': userId,
+        'userEmail': data['userEmail'] as String? ?? '',
+        'userRoles': data['userRoles'] as String? ?? '',
       };
     } catch (e, st) {
-      _fbLog.e(
-        '❌ FirebaseSessionService.restoreSession: Firestore read failed',
-        error: e,
-        stackTrace: st,
-      );
+      _fbLog.e('❌ restoreSession failed', error: e, stackTrace: st);
       return null;
     }
   }
 
-  // ── Clear ─────────────────────────────────────────────────────────────────
-
-  /// Delete the Firestore session document on logout.
+  // ─────────────────────────────────────────────────────────────────────────
+  // CLEAR SESSION
+  // ─────────────────────────────────────────────────────────────────────────
   static Future<void> clearSession() async {
     final uid = _uid;
+    if (uid == null) return;
 
-    if (uid != null) {
-      try {
-        await _db.collection(_collection).doc(uid).delete();
-        _fbLog.i(
-          '✅ FirebaseSessionService.clearSession: '
-          '✓ Firestore session document deleted for uid=$uid',
-        );
-      } catch (e, st) {
-        _fbLog.e(
-          '❌ FirebaseSessionService.clearSession: '
-          'Firestore delete failed — uid=$uid',
-          error: e,
-          stackTrace: st,
-        );
-      }
-    } else {
-      _fbLog.d(
-        'FirebaseSessionService.clearSession: '
-        'No real Firebase user — nothing to delete in Firestore.',
-      );
+    try {
+      await _db.collection(_collection).doc(uid).delete();
+      _fbLog.i('✅ FirebaseSessionService.clearSession: Deleted for uid=$uid');
+    } catch (e, st) {
+      _fbLog.e('❌ clearSession failed', error: e, stackTrace: st);
     }
   }
 }

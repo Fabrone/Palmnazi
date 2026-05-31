@@ -1,8 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED LOGGER
@@ -19,7 +20,6 @@ final Logger _apiLog = Logger(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // APP CONFIGURATION
-//
 // ─────────────────────────────────────────────────────────────────────────────
 class AppConfig {
   AppConfig._();
@@ -164,7 +164,7 @@ class ApiEndpoints {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECURE STORAGE KEYS
+// STORAGE KEYS
 // ─────────────────────────────────────────────────────────────────────────────
 class StorageKeys {
   StorageKeys._();
@@ -180,40 +180,172 @@ class StorageKeys {
   /// Roles stored as a comma-separated string.
   /// e.g. "tourist,admin"  — read back with storedValue.split(',')
   static const String userRoles = 'user_roles';
+
+  /// All keys managed by the session store (used for clear operations).
+  static const List<String> all = [
+    accessToken,
+    refreshToken,
+    userId,
+    userEmail,
+    userRoles,
+  ];
 }
 
-// ───────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// SESSION STORE
+//
+// WHY NOT flutter_secure_storage:
+//   On Flutter Web, flutter_secure_storage uses IndexedDB + WebCrypto. The
+//   underlying write operations dispatch detached JS Promises that can throw
+//   OperationError directly into Dart's root zone — bypassing all try/catch —
+//   causing widget disposal while _handleLogin() is still executing. The
+//   `if (!mounted) return` guard then fires and navigation never happens
+//   (same root cause as the Firebase Auth IndexedDB issue documented in
+//   firebase_session_service.dart).
+//
+// WHY shared_preferences:
+//   On web, shared_preferences writes to window.localStorage synchronously at
+//   the JS layer. No Promises, no WebCrypto, no IndexedDB, no OperationError.
+//   On iOS/Android, it uses NSUserDefaults / SharedPreferences — both are
+//   reliable and well-tested.
+//
+// WHY the in-memory cache:
+//   Even though shared_preferences is fast, an in-memory Map guarantees that
+//   getAccessToken() returns the just-saved value INSTANTLY after saveSession()
+//   — even during the same microtask cycle. This eliminates the race between
+//   saveSession() completing and the subsequent _loadAuthState() read in
+//   LandingPage.initState().
+// ─────────────────────────────────────────────────────────────────────────────
+class _SessionStore {
+  _SessionStore._();
+
+  // Primary source of truth at runtime. Populated on every write and on
+  // the first read (lazy cache warm-up). Cleared on clearSession().
+  static final Map<String, String> _mem = {};
+
+  // Lazy-initialized SharedPreferences instance. Created once on first use.
+  static SharedPreferences? _prefs;
+
+  static Future<SharedPreferences> get _instance async {
+    _prefs ??= await SharedPreferences.getInstance();
+    return _prefs!;
+  }
+
+  // ── Optional: call from main.dart before routing to pre-fill _mem ─────────
+  //
+  // This is not strictly required but eliminates any cold-start I/O on the
+  // very first ApiClient.isLoggedIn / getAccessToken() call.
+  //
+  //   void main() async {
+  //     WidgetsFlutterBinding.ensureInitialized();
+  //     await _SessionStore.prime();   // ← warm up cache
+  //     ...
+  //   }
+  static Future<void> prime() async {
+    try {
+      final p = await _instance;
+      for (final key in StorageKeys.all) {
+        final v = p.getString(key);
+        if (v != null) _mem[key] = v;
+      }
+      _apiLog.d('💾 _SessionStore.prime: Cache warmed — ${_mem.length} key(s) loaded');
+    } catch (e) {
+      _apiLog.w('⚠️ _SessionStore.prime: Could not warm cache: $e');
+    }
+  }
+
+  // ── Read ──────────────────────────────────────────────────────────────────
+
+  static Future<String?> read(String key) async {
+    // Memory hit — no I/O at all
+    if (_mem.containsKey(key)) return _mem[key];
+
+    // Cold start / cache miss — read from SharedPreferences and cache the result
+    try {
+      final p = await _instance;
+      final v = p.getString(key);
+      if (v != null) _mem[key] = v;
+      return v;
+    } catch (e) {
+      _apiLog.w('⚠️ _SessionStore.read($key) failed: $e');
+      return null;
+    }
+  }
+
+  static Future<void> writeAll(Map<String, String> entries) async {
+    // Apply all writes to memory immediately
+    _mem.addAll(entries);
+
+    try {
+      final p = await _instance;
+      for (final kv in entries.entries) {
+        await p.setString(kv.key, kv.value);
+      }
+    } catch (e) {
+      _apiLog.w('⚠️ _SessionStore.writeAll persist failed: $e');
+    }
+  }
+
+  // ── Delete one ────────────────────────────────────────────────────────────
+
+
+  // ── Delete all session keys ───────────────────────────────────────────────
+
+  static Future<void> deleteAll() async {
+    _mem.clear();
+    try {
+      final p = await _instance;
+      for (final key in StorageKeys.all) {
+        await p.remove(key);
+      }
+    } catch (e) {
+      _apiLog.w('⚠️ _SessionStore.deleteAll failed: $e');
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // API CLIENT
+// ─────────────────────────────────────────────────────────────────────────────
 class ApiClient {
   ApiClient._();
 
-  static const FlutterSecureStorage _storage = FlutterSecureStorage();
   static const Duration _timeout = Duration(seconds: 20);
 
   // ── Session-Expired Callback ─────────────────────────────
   static void Function()? onSessionExpired;
 
+  // ── Optional startup warm-up ─────────────────────────────────────────────
+  //
+  // Call once in main() after WidgetsFlutterBinding.ensureInitialized():
+  //
+  //   await ApiClient.primeSessionCache();
+  //
+  // This pre-loads any persisted session into the in-memory cache so that
+  // the very first isLoggedIn / getAccessToken() call is instant.
+  static Future<void> primeSessionCache() => _SessionStore.prime();
+
   // ── Token / Session Accessors ────────────────────────────
 
   static Future<String?> getAccessToken()  async =>
-      _storage.read(key: StorageKeys.accessToken);
+      _SessionStore.read(StorageKeys.accessToken);
 
   static Future<String?> getRefreshToken() async =>
-      _storage.read(key: StorageKeys.refreshToken);
+      _SessionStore.read(StorageKeys.refreshToken);
 
   static Future<String?> getUserId()       async =>
-      _storage.read(key: StorageKeys.userId);
+      _SessionStore.read(StorageKeys.userId);
 
   static Future<String?> getUserEmail()    async =>
-      _storage.read(key: StorageKeys.userEmail);
+      _SessionStore.read(StorageKeys.userEmail);
 
   /// Alias for [getUserEmail] — used by AccountScreen and other callers
   /// that refer to the session email as `getEmail()`.
   static Future<String?> getEmail() => getUserEmail();
 
-  /// Returns roles as a List.  Empty list when no session exists.
+  /// Returns roles as a List. Empty list when no session exists.
   static Future<List<String>> getUserRoles() async {
-    final raw = await _storage.read(key: StorageKeys.userRoles);
+    final raw = await _SessionStore.read(StorageKeys.userRoles);
     if (raw == null || raw.isEmpty) return [];
     return raw.split(',');
   }
@@ -228,7 +360,11 @@ class ApiClient {
 
   // ── Session Persistence ───────────────────────────────────────────────────
 
-  /// Persist tokens and user info to secure storage after any successful login.
+  /// Persist tokens and user info after any successful login.
+  ///
+  /// The in-memory cache inside _SessionStore is written synchronously before
+  /// any I/O, so getAccessToken() called immediately after saveSession()
+  /// returns the correct token without any async delay.
   static Future<void> saveSession({
     required String accessToken,
     required String refreshToken,
@@ -236,15 +372,15 @@ class ApiClient {
     required String email,
     required List<String> roles,
   }) async {
-    _apiLog.d('💾 ApiClient.saveSession: Persisting session to secure storage');
+    _apiLog.d('💾 ApiClient.saveSession: Persisting session');
     try {
-      await Future.wait([
-        _storage.write(key: StorageKeys.accessToken,  value: accessToken),
-        _storage.write(key: StorageKeys.refreshToken, value: refreshToken),
-        _storage.write(key: StorageKeys.userId,       value: userId),
-        _storage.write(key: StorageKeys.userEmail,    value: email),
-        _storage.write(key: StorageKeys.userRoles,    value: roles.join(',')),
-      ]);
+      await _SessionStore.writeAll({
+        StorageKeys.accessToken:  accessToken,
+        StorageKeys.refreshToken: refreshToken,
+        StorageKeys.userId:       userId,
+        StorageKeys.userEmail:    email,
+        StorageKeys.userRoles:    roles.join(','),
+      });
       _apiLog.i(
         '💾 ApiClient.saveSession: ✓ Session saved\n'
         '   userId : $userId\n'
@@ -256,10 +392,10 @@ class ApiClient {
     }
   }
 
-  /// Wipe all stored session data.  Call on logout or confirmed session expiry.
+  /// Wipe all stored session data. Call on logout or confirmed session expiry.
   static Future<void> clearSession() async {
-    _apiLog.i('🚪 ApiClient.clearSession: Deleting all secure storage entries');
-    await _storage.deleteAll();
+    _apiLog.i('🚪 ApiClient.clearSession: Deleting all session entries');
+    await _SessionStore.deleteAll();
     _apiLog.i('🚪 ApiClient.clearSession: ✓ Session cleared');
   }
 
@@ -270,6 +406,7 @@ class ApiClient {
       };
 
   static Future<Map<String, String>> get _authHeaders async {
+    // getAccessToken() returns from in-memory cache — no I/O after first login
     final token = await getAccessToken();
     return {
       'Content-Type': 'application/json',
@@ -277,7 +414,8 @@ class ApiClient {
     };
   }
 
-  // ── Public HTTP Helpers ───────────────────────────
+  // ── Public HTTP Helpers ───────────────────────────────────────────────────
+
   static Future<http.Response> post(
     String endpoint, {
     Map<String, dynamic>? body,
@@ -341,10 +479,8 @@ class ApiClient {
   static Future<http.Response> authGet(String endpoint) async {
     _apiLog.d('📥 ApiClient.authGet ──► ${ApiEndpoints.url(endpoint)}');
 
-    // First attempt
     var response = await _doAuthGet(endpoint);
 
-    // 401 recovery
     if (response.statusCode == 401) {
       _apiLog.w(
         '⚠️ ApiClient.authGet: 401 on $endpoint — '
@@ -416,8 +552,6 @@ class ApiClient {
   }
 
   /// Authenticated PATCH with automatic 401 recovery.
-  /// Used by AdminApiService for all progressive place update endpoints:
-  /// PATCH /api/places/:id, /location, /contact, /attributes, /media, /booking
   static Future<http.Response> authPatch(
     String endpoint, {
     Map<String, dynamic>? body,
@@ -457,11 +591,11 @@ class ApiClient {
     return response;
   }
 
-  /// Use for: DELETE /api/cities/:id and any other protected deletes.
+  /// Authenticated DELETE with automatic 401 recovery.
+  ///
   /// An optional [body] may be supplied for endpoints that require a JSON
   /// payload on DELETE (e.g. bulk-unlink operations). When omitted the
-  /// request is sent with no body, preserving backward-compatibility with
-  /// all existing call-sites.
+  /// request is sent with no body.
   static Future<http.Response> authDelete(
     String endpoint, {
     Map<String, dynamic>? body,
@@ -503,8 +637,6 @@ class ApiClient {
   }
 
   /// Authenticated GET with query parameters and automatic 401 recovery.
-
-  /// [queryParams] are appended to the URL automatically.
   static Future<http.Response> authGetWithParams(
     String endpoint, {
     Map<String, String>? queryParams,
@@ -604,13 +736,10 @@ class ApiClient {
           return false;
         }
 
-        await Future.wait([
-          _storage.write(
-              key: StorageKeys.accessToken, value: newAccessToken),
-          _storage.write(
-              key: StorageKeys.refreshToken,
-              value: newRefreshToken ?? refreshToken),
-        ]);
+        await _SessionStore.writeAll({
+          StorageKeys.accessToken:  newAccessToken,
+          StorageKeys.refreshToken: newRefreshToken ?? refreshToken,
+        });
 
         _apiLog.i(
           '✅ ApiClient.refreshAccessToken: ✓ Tokens rotated successfully',
@@ -656,9 +785,6 @@ class ApiClient {
   static String friendlyNetworkError(Object e) {
     final msg = e.toString().toLowerCase();
 
-    // Flutter Web (DDC runtime) CORS / XMLHttpRequest failure.
-    // Manifests as DartError wrapping DOMException("NetworkError") — appears
-    // in logs as "OperationError" or "failed to fetch".
     if (msg.contains('operationerror')) {
       _apiLog.e(
         '🌐 ApiClient: OperationError on web — almost certainly a CORS issue.\n'
@@ -674,9 +800,7 @@ class ApiClient {
     if (kIsWeb && msg.contains('failed to fetch')) {
       _apiLog.e(
         '🌐 ApiClient: CORS or network error on web.'
-
         '   The browser blocked the request — most likely the backend is missing Access-Control-Allow-Origin headers.'
-
         '   Check the browser DevTools → Network tab → look for a failed OPTIONS preflight request to confirm.',
       );
       return 'Request blocked by browser security policy. '
@@ -684,7 +808,6 @@ class ApiClient {
           'Please contact support or try the mobile app.';
     }
 
-    // ── Standard network errors ──────────────────────────────────────────────
     if (msg.contains('socketexception')    ||
         msg.contains('failed to fetch')    ||
         msg.contains('connection refused') ||
@@ -702,8 +825,6 @@ class ApiClient {
 
   // ── Private Helpers ───────────────────────────────────────────────────────
 
-  /// Internal authenticated POST — no retry logic.
-  /// Called by [authPost] which owns the 401-recovery logic.
   static Future<http.Response> _doAuthPost(
     String endpoint, {
     Map<String, dynamic>? body,
@@ -719,16 +840,12 @@ class ApiClient {
         .timeout(_timeout);
   }
 
-  /// Internal authenticated GET — no retry logic.
-  /// Called by [authGet] which owns the 401-recovery logic.
   static Future<http.Response> _doAuthGet(String endpoint) async {
     final uri     = Uri.parse(ApiEndpoints.url(endpoint));
     final headers = await _authHeaders;
     return http.get(uri, headers: headers).timeout(_timeout);
   }
 
-  /// Internal authenticated PUT — no retry logic.
-  /// Called by [authPut] which owns the 401-recovery logic.
   static Future<http.Response> _doAuthPut(
     String endpoint, {
     Map<String, dynamic>? body,
@@ -744,8 +861,6 @@ class ApiClient {
         .timeout(_timeout);
   }
 
-  /// Internal authenticated PATCH — no retry logic.
-  /// Called by [authPatch] which owns the 401-recovery logic.
   static Future<http.Response> _doAuthPatch(
     String endpoint, {
     Map<String, dynamic>? body,
@@ -761,8 +876,6 @@ class ApiClient {
         .timeout(_timeout);
   }
 
-  /// Internal authenticated DELETE — no retry logic.
-  /// Called by [authDelete] which owns the 401-recovery logic.
   static Future<http.Response> _doAuthDelete(
     String endpoint, {
     Map<String, dynamic>? body,
@@ -777,8 +890,6 @@ class ApiClient {
         )
         .timeout(_timeout);
   }
-
-  /// Clear the session and fire [onSessionExpired].
 
   static Future<void> _handleSessionExpired() async {
     await clearSession();

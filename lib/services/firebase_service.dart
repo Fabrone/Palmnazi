@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:logger/logger.dart';
-
-// FIREBASE SERVICE
+import 'package:palmnazi/services/firebase_email_link_service.dart';
 
 final Logger _fbLog = Logger(
   printer: PrettyPrinter(
@@ -15,7 +15,6 @@ final Logger _fbLog = Logger(
   ),
 );
 
-// ── Firestore collection + field constants ────────────────────────────────────
 class _FS {
   static const collection  = 'Users';
   static const email       = 'email';
@@ -24,18 +23,14 @@ class _FS {
   static const createdAt   = 'createdAt';
   static const lastLogin   = 'lastLoginAt';
   static const provider    = 'provider';
-  static const mfaEnabled  = 'mfaEnabled';
   static const displayName = 'displayName';
   static const photoUrl    = 'photoUrl';
 }
 
 class FirebaseService {
-  static final FirebaseAuth      _auth  = FirebaseAuth.instance;
+  static final FirebaseAuth _auth = FirebaseAuth.instance;
   static final FirebaseFirestore _store = FirebaseFirestore.instance;
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // CURRENT USER
-  // ══════════════════════════════════════════════════════════════════════════
   static User? get currentUser => _auth.currentUser;
 
   static Future<void> registerMirror({
@@ -45,46 +40,31 @@ class FirebaseService {
     _fbLog.i('🔥 FirebaseService.registerMirror: ━━━ START ━━━ | $email');
     try {
       final cred = await _auth.createUserWithEmailAndPassword(
-        email:    email.trim(),
+        email: email.trim(),
         password: password,
       );
-      _fbLog.i(
-        '🔥 FirebaseService.registerMirror: ✓ Firebase user created '
-        '| uid: ${cred.user?.uid}',
-      );
+      _fbLog.i('🔥 Firebase user created | uid: ${cred.user?.uid}');
 
-      await cred.user?.sendEmailVerification();
-      _fbLog.i('🔥 FirebaseService.registerMirror: ✓ Verification email sent');
+      final linkResult = await FirebaseEmailLinkService.sendSignInLink(
+        email: email.trim(),
+        purpose: EmailLinkPurpose.verify,
+      );
+      if (!linkResult.isSuccess) {
+        await cred.user?.sendEmailVerification();
+      }
 
       await _writeUserDocument(
-        uid:      cred.user!.uid,
-        email:    email.trim(),
+        uid: cred.user!.uid,
+        email: email.trim(),
         provider: 'email',
-        isNew:    true,
-      );
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'email-already-in-use') {
-        _fbLog.w(
-          '⚠️ FirebaseService.registerMirror: Firebase account already exists '
-          'for $email — skipping creation',
-        );
-        return;
-      }
-      _fbLog.e(
-        '❌ FirebaseService.registerMirror: FirebaseAuthException '
-        '| code: ${e.code} | ${e.message}',
+        isNew: true,
       );
     } catch (e, st) {
-      _fbLog.e(
-        '❌ FirebaseService.registerMirror: Unexpected error',
-        error: e, stackTrace: st,
-      );
+      _fbLog.e('❌ registerMirror failed', error: e, stackTrace: st);
     }
   }
 
-  // LOGIN MIRROR — mirror of AuthService.login
-
-  static Future<void> loginMirror({
+  static Future<MultiFactorResolver?> loginMirror({
     required String email,
     required String password,
   }) async {
@@ -96,75 +76,39 @@ class FirebaseService {
       if (existing != null &&
           !existing.isAnonymous &&
           existing.email?.toLowerCase() == email.trim().toLowerCase()) {
-        _fbLog.i(
-          '🔥 FirebaseService.loginMirror: ✓ Already signed in as '
-          '${existing.email} (uid: ${existing.uid}) — skipping re-auth, '
-          'refreshing token only',
-        );
-        // Force-refresh the token so Cloud Functions receive a fresh context.auth.
         await existing.getIdToken(true);
-        await _updateLastLogin(uid: existing.uid);
-        return;
+        _updateLastLogin(uid: existing.uid);
+        return null;
       }
 
-      // ── Sign out stale user if a different account is cached ───────────────
-      if (existing != null && existing.email?.toLowerCase() != email.trim().toLowerCase()) {
-        _fbLog.w(
-          '⚠️ FirebaseService.loginMirror: Different user cached '
-          '(${existing.email}) — signing out before mirror sign-in',
-        );
+      if (existing != null &&
+          existing.email?.toLowerCase() != email.trim().toLowerCase()) {
         await _auth.signOut();
-        // Settle: let the signOut IndexedDB/localStorage write finish completely
-        // before signInWithEmailAndPassword starts its own write.
-        _fbLog.d('🔥 [SIGN_OUT_SETTLE] Waiting 400 ms after stale-user signOut');
         await Future.delayed(const Duration(milliseconds: 400));
-        _fbLog.d('🔥 [SIGN_OUT_SETTLE] Settle complete');
       }
 
-      // ── Normal path: sign in (only when not already authenticated) ─────────
-      _fbLog.d(
-        '🔥 [SIGN_IN] ────────────────────────────────────────────────────\n'
-        '🔥 [SIGN_IN] Calling signInWithEmailAndPassword for $email',
-      );
       final cred = await _auth.signInWithEmailAndPassword(
-        email:    email.trim(),
+        email: email.trim(),
         password: password,
       );
-      _fbLog.i(
-        '🔥 [SIGN_IN] ✓ signInWithEmailAndPassword complete\n'
-        '🔥 [SIGN_IN]   uid=${cred.user?.uid}',
-      );
+      _fbLog.i('🔥 [SIGN_IN] ✓ complete | uid=${cred.user?.uid}');
 
-      _fbLog.d(
-        '🔥 [SIGN_IN] Waiting 600 ms for Auth IndexedDB cleanup to settle\n'
-        '🔥 [SIGN_IN] (prevents Firestore IndexedDB write conflict → OperationError)',
-      );
-      await Future.delayed(const Duration(milliseconds: 600));
-      _fbLog.d('🔥 [SIGN_IN] Settle complete — proceeding with Firestore write');
+      if (cred.user != null) {
+        _updateLastLogin(uid: cred.user!.uid);
+      }
 
-      await _updateLastLogin(uid: cred.user!.uid);
-
+      return null;
+    } on FirebaseAuthMultiFactorException catch (e) {
+      return e.resolver;
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found') {
-        _fbLog.w(
-          '⚠️ FirebaseService.loginMirror: Firebase user missing — '
-          'creating account for existing API user',
-        );
-        await _createMissingFirebaseAccount(
-          email:    email.trim(),
-          password: password,
-        );
-        return;
+        _fbLog.w('⚠️ Firebase user missing — creating retroactively');
+        await _createMissingFirebaseAccount(email: email.trim(), password: password);
       }
-      _fbLog.e(
-        '❌ FirebaseService.loginMirror: FirebaseAuthException (non-blocking) '
-        '| code: ${e.code} | ${e.message}',
-      );
+      return null;
     } catch (e, st) {
-      _fbLog.e(
-        '❌ FirebaseService.loginMirror: Unexpected error (non-blocking)',
-        error: e, stackTrace: st,
-      );
+      _fbLog.e('❌ loginMirror error (non-blocking)', error: e, stackTrace: st);
+      return null;
     }
   }
 
@@ -174,139 +118,131 @@ class FirebaseService {
   }) async {
     try {
       final cred = await _auth.createUserWithEmailAndPassword(
-        email:    email,
+        email: email,
         password: password,
       );
-      _fbLog.i(
-        '🔥 FirebaseService: Retroactive Firebase account created '
-        '| uid: ${cred.user?.uid}',
-      );
       await _writeUserDocument(
-        uid:      cred.user!.uid,
-        email:    email,
+        uid: cred.user!.uid,
+        email: email,
         provider: 'email',
-        isNew:    true,
+        isNew: true,
       );
     } catch (e) {
-      _fbLog.e('❌ FirebaseService._createMissingFirebaseAccount: Failed (non-blocking) | $e');
+      _fbLog.e('❌ _createMissingFirebaseAccount failed', error: e);
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // GOOGLE SIGN-IN MIRROR
-  // ══════════════════════════════════════════════════════════════════════════
+  static Future<bool> sendEmailVerificationLink() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return false;
+      if (user.emailVerified) return true;
+
+      final result = await FirebaseEmailLinkService.sendSignInLink(
+        email: user.email ?? '',
+        purpose: EmailLinkPurpose.verify,
+      );
+      return result.isSuccess;
+    } catch (e) {
+      _fbLog.e('❌ sendEmailVerificationLink: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> sendEmailVerification() async => sendEmailVerificationLink();
+
+  static Future<bool> reloadAndCheckEmailVerified() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return false;
+      await user.reload();
+      return _auth.currentUser?.emailVerified ?? false;
+    } catch (e) {
+      _fbLog.e('❌ reloadAndCheckEmailVerified: $e');
+      return false;
+    }
+  }
+
   static Future<void> googleSignInMirror({required String idToken}) async {
     _fbLog.i('🔥 FirebaseService.googleSignInMirror: ━━━ START ━━━');
     try {
       final credential = GoogleAuthProvider.credential(idToken: idToken);
-      final cred       = await _auth.signInWithCredential(credential);
-      _fbLog.i(
-        '🔥 FirebaseService.googleSignInMirror: ✓ Signed in '
-        '| uid: ${cred.user?.uid} | isNew: ${cred.additionalUserInfo?.isNewUser}',
-      );
+      final cred = await _auth.signInWithCredential(credential);
       final isNew = cred.additionalUserInfo?.isNewUser ?? false;
       await _writeUserDocument(
-        uid:         cred.user!.uid,
-        email:       cred.user!.email ?? '',
-        provider:    'google',
-        isNew:       isNew,
+        uid: cred.user!.uid,
+        email: cred.user!.email ?? '',
+        provider: 'google',
+        isNew: isNew,
         displayName: cred.user!.displayName,
-        photoUrl:    cred.user!.photoURL,
-      );
-    } on FirebaseAuthException catch (e) {
-      _fbLog.e(
-        '❌ FirebaseService.googleSignInMirror: FirebaseAuthException (non-blocking) '
-        '| code: ${e.code} | ${e.message}',
+        photoUrl: cred.user!.photoURL,
       );
     } catch (e, st) {
-      _fbLog.e(
-        '❌ FirebaseService.googleSignInMirror: Unexpected error (non-blocking)',
-        error: e, stackTrace: st,
-      );
+      _fbLog.e('❌ googleSignInMirror failed', error: e, stackTrace: st);
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // SIGN OUT
-  // ══════════════════════════════════════════════════════════════════════════
   static Future<void> signOut() async {
-    _fbLog.i('🔥 FirebaseService.signOut');
     try {
       await _auth.signOut();
       _fbLog.i('🔥 FirebaseService.signOut: ✓');
     } catch (e) {
-      _fbLog.e('❌ FirebaseService.signOut: $e');
+      _fbLog.e('❌ signOut failed', error: e);
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // FIRESTORE HELPERS (private)
-  // ══════════════════════════════════════════════════════════════════════════
-
-  /// On first creation the "role" field is set to "Tourist".
   static Future<void> _writeUserDocument({
-    required String  uid,
-    required String  email,
-    required String  provider,
-    required bool    isNew,
-    String?          displayName,
-    String?          photoUrl,
+    required String uid,
+    required String email,
+    required String provider,
+    required bool isNew,
+    String? displayName,
+    String? photoUrl,
   }) async {
-    _fbLog.i('🔥 FirebaseService._writeUserDocument: uid=$uid isNew=$isNew');
     try {
       final docRef = _store.collection(_FS.collection).doc(uid);
       if (isNew) {
         await docRef.set({
-          _FS.email:      email,
-          _FS.role:       _FS.defaultRole, // always "Tourist" on creation
-          _FS.createdAt:  FieldValue.serverTimestamp(),
-          _FS.lastLogin:  FieldValue.serverTimestamp(),
-          _FS.provider:   provider,
-          _FS.mfaEnabled: false,
+          _FS.email: email,
+          _FS.role: _FS.defaultRole,
+          _FS.createdAt: FieldValue.serverTimestamp(),
+          _FS.lastLogin: FieldValue.serverTimestamp(),
+          _FS.provider: provider,
           if (displayName != null) _FS.displayName: displayName,
-          if (photoUrl    != null) _FS.photoUrl:    photoUrl,
-        }, SetOptions(merge: true)); // merge:true won't overwrite role if doc exists
-        _fbLog.i('🔥 FirebaseService._writeUserDocument: ✓ Document created for $uid');
+          if (photoUrl != null) _FS.photoUrl: photoUrl,
+        }, SetOptions(merge: true));
       } else {
-        await _updateLastLogin(uid: uid);
+        _updateLastLogin(uid: uid);
       }
     } catch (e, st) {
-      _fbLog.e(
-        '❌ FirebaseService._writeUserDocument: Firestore write failed (non-blocking)',
-        error: e, stackTrace: st,
-      );
+      _fbLog.w('❌ _writeUserDocument failed (non-critical)', error: e, stackTrace: st);
     }
   }
 
-  static Future<void> _updateLastLogin({required String uid}) async {
-    await runZonedGuarded(
-      () async {
-        _fbLog.d('🔥 [FIRESTORE_WRITE] _updateLastLogin → Users/$uid');
-        await _store.collection(_FS.collection).doc(uid).set(
-          {_FS.lastLogin: FieldValue.serverTimestamp()},
-          SetOptions(merge: true),
-        );
-        _fbLog.d('🔥 [FIRESTORE_WRITE] _updateLastLogin ✓ complete');
-      },
-      (e, st) {
-        _fbLog.w(
-          '⚠️ [FIRESTORE_WRITE] _updateLastLogin: Zone error captured '
-          '(type=${e.runtimeType}) — non-fatal, continuing\n'
-          '   This is likely an IndexedDB OperationError from a concurrent '
-          'Auth/Firestore write. The OperationError source has been isolated '
-          'here and will NOT propagate to the firebase/functions auth state.\n'
-          '   Error: $e',
-        );
-      },
-    ) ?? Future.value();
+  static void _updateLastLogin({required String uid}) {
+    unawaited(_performLastLoginUpdate(uid));
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // ROLE READER (public — used by the rest of the app to gate features)
-  // ══════════════════════════════════════════════════════════════════════════
+  static Future<void> _performLastLoginUpdate(String uid) async {
+    try {
+      if (kIsWeb) {
+        await Future.delayed(const Duration(milliseconds: 2000)); // Increased delay
+      }
 
-  /// Reads the "role" field from Firestore for the current user.
-  /// Returns "Tourist" if not found or on error.
+      _fbLog.d('🔥 [FIRESTORE_WRITE] _updateLastLogin → Users/$uid');
+
+      await _store.collection(_FS.collection).doc(uid).set(
+        {_FS.lastLogin: FieldValue.serverTimestamp()},
+        SetOptions(merge: true),
+      ).timeout(const Duration(seconds: 15));
+
+      _fbLog.d('🔥 [FIRESTORE_WRITE] _updateLastLogin ✓ complete');
+    } catch (e, st) {
+      _fbLog.w('⚠️ [FIRESTORE_WRITE] _updateLastLogin failed (expected on Web)', 
+          error: e, stackTrace: st);
+    }
+  }
+
   static Future<String> readCurrentUserRole() async {
     try {
       final uid = _auth.currentUser?.uid;
@@ -314,7 +250,7 @@ class FirebaseService {
       final doc = await _store.collection(_FS.collection).doc(uid).get();
       return (doc.data()?[_FS.role] as String?) ?? _FS.defaultRole;
     } catch (e) {
-      _fbLog.e('❌ FirebaseService.readCurrentUserRole: $e');
+      _fbLog.e('❌ readCurrentUserRole: $e');
       return _FS.defaultRole;
     }
   }

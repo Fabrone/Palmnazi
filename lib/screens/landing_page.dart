@@ -1,6 +1,9 @@
 import 'dart:convert';
+// ignore: deprecated_member_use, avoid_web_libraries_in_flutter
+import 'dart:html' as html show window; // web-only: used for last-section storage
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:palmnazi/main.dart' show emailLinkResultNotifier;
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
@@ -39,7 +42,12 @@ abstract final class RC {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BlogPost model  (public endpoint — no auth)
+// Last-section persistence (survives tab close; cleared on explicit logout)
+// Keys are stored in window.localStorage so re-login can resume where the
+// user left off after their session expires.
+// ─────────────────────────────────────────────────────────────────────────────
+const String _kLastSectionKey  = 'pn_last_section';   // 'city' | 'account'
+const String _kLastCityPayload = 'pn_last_city_json'; // JSON of CityModel
 // ─────────────────────────────────────────────────────────────────────────────
 class BlogPost {
   final String id;
@@ -377,6 +385,19 @@ class _LandingPageState extends State<LandingPage>
 
     _heroCtrl.forward();
     _loadAll();
+
+    // ── Listen for email-link sign-in completions ─────────────────────────
+    // When main.dart's deep-link handler successfully completes a passwordless
+    // sign-in or email verification, the notifier fires.  We re-check auth
+    // state so the navbar icon updates immediately.
+    emailLinkResultNotifier.addListener(_onEmailLinkResult);
+  }
+
+  void _onEmailLinkResult() {
+    final result = emailLinkResultNotifier.value;
+    if (result != null && result.isSuccess && mounted) {
+      _loadAuthState();
+    }
   }
 
   Future<void> _loadAll() async {
@@ -388,7 +409,18 @@ class _LandingPageState extends State<LandingPage>
 
   Future<void> _loadAuthState() async {
     final token = await ApiClient.getAccessToken();
-    if (mounted) setState(() => _isLoggedIn = token != null && token.isNotEmpty);
+    if (!mounted) return;
+    final wasLoggedIn = _isLoggedIn;
+    final nowLoggedIn = token != null && token.isNotEmpty;
+    setState(() => _isLoggedIn = nowLoggedIn);
+
+    // On a fresh login (first time we see a valid token this session),
+    // resume the last section the user visited before their session ended.
+    if (!wasLoggedIn && nowLoggedIn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _resumeLastSection();
+      });
+    }
   }
 
   /// Pre-fetches the category tree in the background. The result is cached and
@@ -473,6 +505,11 @@ class _LandingPageState extends State<LandingPage>
   }
 
   void _goToCity(CityModel city) {
+    // Persist this city so re-login can resume here.
+    _saveLastSection('city', cityJson: {
+      'id':   city.id,
+      'name': city.name,
+    });
     Navigator.push(
       context,
       PageRouteBuilder(
@@ -516,6 +553,7 @@ class _LandingPageState extends State<LandingPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    emailLinkResultNotifier.removeListener(_onEmailLinkResult);
     _scrollCtrl.dispose();
     _heroCtrl.dispose();
     _revealCtrl.dispose();
@@ -675,6 +713,7 @@ class _LandingPageState extends State<LandingPage>
   }
 
   void _goToAccount() async {
+    _saveLastSection('account'); // persist so re-login resumes here
     await Navigator.push(
       context,
       PageRouteBuilder(
@@ -687,6 +726,63 @@ class _LandingPageState extends State<LandingPage>
     // Re-check login state when returning from AccountScreen
     // (user may have signed out while there).
     if (mounted) _loadAuthState();
+  }
+
+  // ── Last-section persistence helpers ─────────────────────────────────────
+  /// Saves [section] ('city' or 'account') to localStorage so that after a
+  /// session expiry the user is returned to the same place on re-login.
+  static void _saveLastSection(String section,
+      {Map<String, dynamic>? cityJson}) {
+    try {
+      html.window.localStorage[_kLastSectionKey] = section;
+      if (cityJson != null) {
+        html.window.localStorage[_kLastCityPayload] = jsonEncode(cityJson);
+      } else {
+        html.window.localStorage.remove(_kLastCityPayload);
+      }
+    } catch (_) {/* localStorage blocked — silently ignore */}
+  }
+
+  /// Called after a fresh login is detected.  Reads the stored section and
+  /// navigates there, then clears the stored values.
+  void _resumeLastSection() {
+    String? section;
+    String? cityPayload;
+    try {
+      section     = html.window.localStorage[_kLastSectionKey];
+      cityPayload = html.window.localStorage[_kLastCityPayload];
+    } catch (_) {
+      return; // localStorage not available
+    }
+
+    if (section == null || section.isEmpty) return;
+
+    // Clear storage before navigating so a crashed navigate doesn't loop.
+    try {
+      html.window.localStorage.remove(_kLastSectionKey);
+      html.window.localStorage.remove(_kLastCityPayload);
+    } catch (_) {}
+
+    if (section == 'account') {
+      _goToAccount();
+    } else if (section == 'city' && cityPayload != null) {
+      try {
+        final raw  = jsonDecode(cityPayload) as Map<String, dynamic>;
+        final cityId = raw['id'] as String?;
+        if (cityId == null) return;
+
+        // Try to find the fully-loaded CityModel from the already-fetched list.
+        final city = _cities.cast<CityModel?>().firstWhere(
+              (c) => c?.id == cityId,
+              orElse: () => null,
+            );
+        if (city != null) {
+          _goToCity(city);
+        }
+        // If cities haven't loaded yet, we skip — the user sees the landing page.
+        // A more elaborate approach would wait for _loadCities() to complete.
+      } catch (_) {}
+    }
   }
 
   void _showMobileMenu() {

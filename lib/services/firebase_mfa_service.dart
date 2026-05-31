@@ -1,9 +1,4 @@
-import 'dart:async';
-import 'dart:convert';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -24,334 +19,307 @@ class MfaResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FIREBASE MFA SERVICE
+// FIREBASE MFA SERVICE  —  Firebase Native Phone (SMS) MFA
+//
+// REPLACES the previous custom email-OTP Cloud Functions approach.
+// Firebase handles all SMS delivery and verification natively.
+// No Cloud Functions, no nodemailer, no Firestore mfaEnabled flag needed.
+//
+// ╔════════════════════════════════════════════════════════════╗
+// ║  PREREQUISITE  —  must be true before enrollment works    ║
+// ║  User's email must be verified (emailVerified = true).    ║
+// ║  Firebase enforces this; enrollment will error otherwise. ║
+// ╚════════════════════════════════════════════════════════════╝
+//
+// ── ENROLLMENT FLOW ─────────────────────────────────────────────────────────
+//   1. getMultiFactorSession()
+//        └─ returns MultiFactorSession (proves first-factor is complete)
+//   2. startEnrollment(phone, session, onCodeSent, onFailed)
+//        └─ Firebase sends SMS; onCodeSent(verificationId, resendToken) fires
+//   3. completeEnrollment(verificationId, smsCode)
+//        └─ user.multiFactor.enroll(PhoneMultiFactorGenerator.getAssertion(…))
+//
+// ── SIGN-IN CHALLENGE FLOW ───────────────────────────────────────────────────
+//   FirebaseAuthMultiFactorException is caught in FirebaseService.loginMirror()
+//   and the resolver is threaded back to the UI via LoginResult.mfaResolver.
+//
+//   1. startSignInChallenge(resolver, onCodeSent, onFailed)
+//        └─ Firebase sends SMS to enrolled number; onCodeSent fires
+//   2. resolveSignIn(resolver, verificationId, smsCode)
+//        └─ resolver.resolveSignIn(PhoneMultiFactorGenerator.getAssertion(…))
+//
+// ── DISABLE ──────────────────────────────────────────────────────────────────
+//   unenrollFactor(factor)
+//        └─ user.multiFactor.unenroll(multiFactorInfo: factor)
 // ─────────────────────────────────────────────────────────────────────────────
 class FirebaseMfaService {
   FirebaseMfaService._();
 
   static final Logger _log = Logger(
-    printer: PrettyPrinter(methodCount: 0, errorMethodCount: 8, lineLength: 100),
+    printer: PrettyPrinter(
+      methodCount: 0,
+      errorMethodCount: 8,
+      lineLength: 100,
+      colors: true,
+      printEmojis: true,
+    ),
   );
 
-  static const String _region = 'us-central1';
+  static FirebaseAuth get _auth => FirebaseAuth.instance;
 
-  static Future<User?> _requireAuthenticatedUser() async {
-    _log.d(
-      '🔐 [AUTH_GUARD] ─────────────────────────────────────────────────────\n'
-      '🔐 [AUTH_GUARD] Step 1 — Checking Dart-layer currentUser snapshot',
-    );
+  // ══════════════════════════════════════════════════════════════════════════
+  // READ MFA STATE — from Firebase Auth directly (no Firestore needed)
+  // ══════════════════════════════════════════════════════════════════════════
 
-    User? user = FirebaseAuth.instance.currentUser;
-    _log.d(
-      '🔐 [AUTH_GUARD] Step 1 result: '
-      'uid=${user?.uid ?? "null"} | isAnon=${user?.isAnonymous}',
-    );
+  /// True if the signed-in user has at least one phone factor enrolled.
+  /// Async because firebase_auth 5.x+ exposes this via getEnrolledFactors().
+  static Future<bool> isPhoneMfaEnrolled() async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+    final factors = await user.multiFactor.getEnrolledFactors();
+    return factors.any((f) => f is PhoneMultiFactorInfo);
+  }
 
-    // If absent or anonymous, wait for a real auth event on the stream.
-    if (user == null || user.isAnonymous) {
-      _log.w(
-        '🔐 [AUTH_GUARD] Step 2 — No real user in snapshot; '
-        'waiting on authStateChanges() (10 s timeout)…',
-      );
-      try {
-        user = await FirebaseAuth.instance
-            .authStateChanges()
-            .where((u) => u != null && !u.isAnonymous)
-            .first
-            .timeout(const Duration(seconds: 10));
-        _log.d(
-          '🔐 [AUTH_GUARD] Step 2 result: '
-          'uid=${user?.uid} confirmed via authStateChanges',
-        );
-      } on TimeoutException {
-        _log.w('🔐 [AUTH_GUARD] Step 2 result: TIMEOUT — no real user arrived');
-        user = null;
-      } catch (e) {
-        _log.w('🔐 [AUTH_GUARD] Step 2 result: Stream error — $e');
-        user = null;
+  /// All enrolled factors for the current user (empty list if none).
+  /// Named fetchEnrolledFactors to avoid shadowing the Firebase SDK method.
+  static Future<List<MultiFactorInfo>> fetchEnrolledFactors() async {
+    final user = _auth.currentUser;
+    if (user == null) return [];
+    return user.multiFactor.getEnrolledFactors();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ENROLLMENT — Step 1: get session
+  // ══════════════════════════════════════════════════════════════════════════
+  /// Call this once before [startEnrollment] to prove the user recently
+  /// authenticated with their first factor.
+  static Future<MultiFactorSession?> getMultiFactorSession() async {
+    _log.d('🔐 [MFA_ENROLL] getMultiFactorSession()');
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        _log.w('🔐 [MFA_ENROLL] getMultiFactorSession: no current user');
+        return null;
       }
-    }
-
-    if (user == null || user.isAnonymous) {
-      _log.w(
-        '🔐 [AUTH_GUARD] RESULT: NO VALID USER — '
-        'uid=${user?.uid ?? "null"} | isAnon=${user?.isAnonymous}',
-      );
+      final session = await user.multiFactor.getSession();
+      _log.d('🔐 [MFA_ENROLL] getMultiFactorSession: ✓');
+      return session;
+    } on FirebaseAuthException catch (e) {
+      _log.e('🔐 [MFA_ENROLL] getMultiFactorSession: FirebaseAuthException ${e.code}');
+      return null;
+    } catch (e, st) {
+      _log.e('🔐 [MFA_ENROLL] getMultiFactorSession: unexpected error',
+          error: e, stackTrace: st);
       return null;
     }
-
-    _log.d(
-      '🔐 [AUTH_GUARD] RESULT: ✓ User object ready\n'
-      '🔐 [AUTH_GUARD]           uid=${user.uid} | email=${user.email}\n'
-      '🔐 [AUTH_GUARD]           (Token will be force-refreshed in _callFunctionViaHttp)',
-    );
-    return user;
   }
 
-  static Future<Map<String, dynamic>> _callFunctionViaHttp({
-    required User   user,
-    required String functionName,
-    Map<String, dynamic> data = const {},
+  // ══════════════════════════════════════════════════════════════════════════
+  // ENROLLMENT — Step 2: send SMS to the phone number
+  // ══════════════════════════════════════════════════════════════════════════
+  /// Triggers Firebase to deliver an SMS verification code.
+  /// [onCodeSent] receives the [verificationId] required by [completeEnrollment].
+  /// [onFailed] receives a [FirebaseAuthException] if delivery fails.
+  ///
+  /// Phone number must include the country code (e.g. +254712345678).
+  static Future<void> startEnrollment({
+    required String             phoneNumber,
+    required MultiFactorSession session,
+    required void Function(String verificationId, int? resendToken) onCodeSent,
+    required void Function(FirebaseAuthException error) onFailed,
   }) async {
-    _log.d(
-      '🌐 [HTTP_CALL] ─────────────────────────────────────────────────────\n'
-      '🌐 [HTTP_CALL] Function : $functionName\n'
-      '🌐 [HTTP_CALL] UID      : ${user.uid}\n'
-      '🌐 [HTTP_CALL] Payload  : $data',
+    _log.i('🔐 [MFA_ENROLL] startEnrollment: phoneNumber=$phoneNumber');
+    await _auth.verifyPhoneNumber(
+      multiFactorSession:       session,
+      phoneNumber:              phoneNumber,
+      verificationCompleted:    (_) {},        // auto-retrieval — not used on web
+      verificationFailed:       onFailed,
+      codeSent:                 onCodeSent,
+      codeAutoRetrievalTimeout: (_) {},
     );
+  }
 
-    // ── A: Force-refresh the ID token from Firebase Auth REST API
-    _log.d('🌐 [HTTP_CALL] Step A — Force-refreshing ID token (getIdToken: true)');
-    final String idToken;
+  // ══════════════════════════════════════════════════════════════════════════
+  // ENROLLMENT — Step 3: verify code and enroll the factor
+  // ══════════════════════════════════════════════════════════════════════════
+  /// [verificationId] comes from the [onCodeSent] callback in [startEnrollment].
+  /// [smsCode] is the 6-digit code the user typed.
+  static Future<MfaResult> completeEnrollment({
+    required String verificationId,
+    required String smsCode,
+    String? displayName,        // optional label shown in Firebase console
+  }) async {
+    _log.i('🔐 [MFA_ENROLL] completeEnrollment()');
     try {
-      final raw = await user.getIdToken(true); // ← v4 FIX: true, not false
-      if (raw == null || raw.isEmpty) {
-        throw Exception('getIdToken returned null/empty');
-      }
-      idToken = raw;
-      _log.d(
-        '🌐 [HTTP_CALL] Step A: ✓ Fresh token obtained '
-        '(${idToken.length} chars, first 20: ${idToken.substring(0, 20)}…)',
-      );
-    } catch (e) {
-      _log.w('🌐 [HTTP_CALL] Step A: ✗ Token refresh failed — $e');
-      throw FirebaseFunctionsException(
-        code: 'unauthenticated',
-        message: 'Could not obtain auth token. Please sign in again.',
-      );
-    }
+      final user = _auth.currentUser;
+      if (user == null) return MfaResult.failure('Not signed in.');
 
-    // ── B: Cloud Function URL ─────────────────────────────────────────────────
-    final projectId = Firebase.app().options.projectId;
-    final uri = Uri.parse(
-      'https://$_region-$projectId.cloudfunctions.net/$functionName',
-    );
-    _log.d('🌐 [HTTP_CALL] Step B: URL = $uri');
-
-    // ── C: POST with Authorization: Bearer header ─────────────────────────────
-    _log.d(
-      '🌐 [HTTP_CALL] Step C — Sending HTTP POST\n'
-      '🌐 [HTTP_CALL]           Authorization: Bearer ${idToken.substring(0, 20)}…',
-    );
-    final http.Response response;
-    try {
-      response = await http.post(
-        uri,
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': 'Bearer $idToken',
-        },
-        body: jsonEncode({'data': data}),
-      ).timeout(const Duration(seconds: 30));
-
-      _log.d(
-        '🌐 [HTTP_CALL] Step C: ✓ Response received\n'
-        '🌐 [HTTP_CALL]           HTTP status : ${response.statusCode}\n'
-        '🌐 [HTTP_CALL]           Body        : '
-        '${response.body.length > 400 ? "${response.body.substring(0, 400)}…" : response.body}',
+      final credential = PhoneAuthProvider.credential(
+        verificationId: verificationId,
+        smsCode:        smsCode.trim(),
       );
-    } on TimeoutException {
-      _log.w('🌐 [HTTP_CALL] Step C: ✗ Request timed out after 30 s');
-      throw FirebaseFunctionsException(
-        code: 'deadline-exceeded',
-        message: 'The request timed out. Please try again.',
+      await user.multiFactor.enroll(
+        PhoneMultiFactorGenerator.getAssertion(credential),
+        displayName: displayName,
       );
-    } catch (e) {
-      _log.w('🌐 [HTTP_CALL] Step C: ✗ HTTP error — $e');
-      rethrow;
-    }
-
-    // ── D: Parse response ─────────────────────────────────────────────────────
-    _log.d('🌐 [HTTP_CALL] Step D — Parsing response body');
-    try {
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-
-      if (response.statusCode == 200) {
-        final result = (body['result'] as Map<String, dynamic>?) ?? {};
-        _log.d('🌐 [HTTP_CALL] Step D: ✓ Success → $result');
-        return result;
-      }
-
-      // Error: {"error": {"status": "UNAUTHENTICATED", "message": "..."}}
-      final error   = (body['error'] as Map<String, dynamic>?) ?? {};
-      final rawCode = (error['status'] as String? ?? 'INTERNAL');
-      final code    = rawCode.toLowerCase().replaceAll('_', '-');
-      final message = (error['message'] as String?) ?? 'Unknown error from server';
-
-      _log.w(
-        '🌐 [HTTP_CALL] Step D: ✗ Function returned error\n'
-        '🌐 [HTTP_CALL]           HTTP status : ${response.statusCode}\n'
-        '🌐 [HTTP_CALL]           Error code  : $code  (raw: $rawCode)\n'
-        '🌐 [HTTP_CALL]           Message     : $message',
+      _log.i('🔐 [MFA_ENROLL] completeEnrollment: ✓ enrolled');
+      return MfaResult.success(
+        message: 'Phone two-factor authentication has been enabled.',
       );
-      throw FirebaseFunctionsException(code: code, message: message);
-    } catch (e) {
-      if (e is FirebaseFunctionsException) rethrow;
-      _log.w(
-        '🌐 [HTTP_CALL] Step D: ✗ Could not parse response body\n'
-        '🌐 [HTTP_CALL]           Raw body : ${response.body}\n'
-        '🌐 [HTTP_CALL]           Error    : $e',
-      );
-      throw FirebaseFunctionsException(
-        code: 'internal',
-        message: 'Unexpected response from server.',
-      );
+    } on FirebaseAuthException catch (e) {
+      _log.w('🔐 [MFA_ENROLL] completeEnrollment: ${e.code}');
+      return MfaResult.failure(_mapAuthError(e));
+    } catch (e, st) {
+      _log.e('🔐 [MFA_ENROLL] completeEnrollment: unexpected error',
+          error: e, stackTrace: st);
+      return MfaResult.failure('Enrollment failed. Please try again.');
     }
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SEND OTP
+  // SIGN-IN CHALLENGE — Step 1: send SMS to the enrolled number
   // ══════════════════════════════════════════════════════════════════════════
-  static Future<MfaResult> sendOtp({required String email}) async {
+  /// Called after FirebaseAuthMultiFactorException is caught during loginMirror.
+  /// The [resolver] comes from that exception (via LoginResult.mfaResolver).
+  /// Firebase sends SMS to the number in [resolver.hints[hintIndex]].
+  static Future<MfaResult> startSignInChallenge({
+    required MultiFactorResolver resolver,
+    required void Function(String verificationId, int? resendToken) onCodeSent,
+    required void Function(FirebaseAuthException error) onFailed,
+    int hintIndex = 0,
+  }) async {
     _log.i(
-      '🔐 [SEND_OTP] ══════════════════════════════════════════════════════\n'
-      '🔐 [SEND_OTP] ━━━ START ━━━ | email=$email',
+      '🔐 [MFA_SIGN_IN] startSignInChallenge: '
+      'hints=${resolver.hints.length} hintIndex=$hintIndex',
     );
 
-    _log.d('🔐 [SEND_OTP] Phase 1 — Acquiring authenticated user');
-    final user = await _requireAuthenticatedUser();
-    if (user == null) {
-      _log.w('🔐 [SEND_OTP] Phase 1: ✗ No authenticated user — aborting');
-      return MfaResult.failure('Please sign in again before enabling MFA.');
+    if (resolver.hints.isEmpty) {
+      return MfaResult.failure('No MFA factors enrolled on this account.');
     }
-    _log.d('🔐 [SEND_OTP] Phase 1: ✓ uid=${user.uid}');
+    if (hintIndex >= resolver.hints.length) {
+      return MfaResult.failure('Invalid hint index.');
+    }
 
-    _log.d(
-      '🔐 [SEND_OTP] Phase 2 — Calling mfaSendOtp via direct HTTP\n'
-      '🔐 [SEND_OTP]            (token will be force-refreshed in _callFunctionViaHttp)',
-    );
+    final hint = resolver.hints[hintIndex];
+    if (hint is! PhoneMultiFactorInfo) {
+      _log.w('🔐 [MFA_SIGN_IN] startSignInChallenge: '
+          'hint type is ${hint.factorId} (expected phone)');
+      return MfaResult.failure('Unsupported MFA factor type: ${hint.factorId}');
+    }
+
     try {
-      final result = await _callFunctionViaHttp(
-        user:         user,
-        functionName: 'mfaSendOtp',
-        data:         {'email': email.trim()},
+      _log.d(
+        '🔐 [MFA_SIGN_IN] startSignInChallenge: '
+        'sending SMS to ${hint.phoneNumber}',
       );
-      _log.i(
-        '🔐 [SEND_OTP] Phase 2: ✓ Cloud Function succeeded\n'
-        '🔐 [SEND_OTP]            Result : $result',
+      await _auth.verifyPhoneNumber(
+        multiFactorSession:       resolver.session,
+        multiFactorInfo:          hint,
+        verificationCompleted:    (_) {},
+        verificationFailed:       onFailed,
+        codeSent:                 onCodeSent,
+        codeAutoRetrievalTimeout: (_) {},
       );
       return MfaResult.success(
-        message: 'A verification code has been sent to $email.',
+        message:
+            'Verification code sent to ${_maskedPhone(hint.phoneNumber)}.',
       );
-    } on FirebaseFunctionsException catch (e) {
-      _log.w(
-        '🔐 [SEND_OTP] Phase 2: ✗ Function error\n'
-        '🔐 [SEND_OTP]            code    : ${e.code}\n'
-        '🔐 [SEND_OTP]            message : ${e.message}',
-      );
-      return MfaResult.failure(_mapFunctionError(e));
     } catch (e, st) {
-      _log.e(
-        '🔐 [SEND_OTP] Phase 2: ✗ Unexpected error (${e.runtimeType})',
-        error: e, stackTrace: st,
-      );
+      _log.e('🔐 [MFA_SIGN_IN] startSignInChallenge: error',
+          error: e, stackTrace: st);
       return MfaResult.failure('Could not send verification code. Please try again.');
     }
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // VERIFY OTP
+  // SIGN-IN CHALLENGE — Step 2: verify code and complete sign-in
   // ══════════════════════════════════════════════════════════════════════════
-  static Future<MfaResult> verifyOtp({required String otp}) async {
-    _log.i(
-      '🔐 [VERIFY_OTP] ════════════════════════════════════════════════════\n'
-      '🔐 [VERIFY_OTP] ━━━ START ━━━',
-    );
-
-    _log.d('🔐 [VERIFY_OTP] Phase 1 — Acquiring authenticated user');
-    final user = await _requireAuthenticatedUser();
-    if (user == null) {
-      _log.w('🔐 [VERIFY_OTP] Phase 1: ✗ No authenticated user — aborting');
-      return MfaResult.failure('Please sign in again before verifying your code.');
-    }
-    _log.d('🔐 [VERIFY_OTP] Phase 1: ✓ uid=${user.uid}');
-
-    _log.d('🔐 [VERIFY_OTP] Phase 2 — Calling mfaVerifyOtp via direct HTTP');
+  static Future<MfaResult> resolveSignIn({
+    required MultiFactorResolver resolver,
+    required String              verificationId,
+    required String              smsCode,
+  }) async {
+    _log.i('🔐 [MFA_SIGN_IN] resolveSignIn()');
     try {
-      final result = await _callFunctionViaHttp(
-        user:         user,
-        functionName: 'mfaVerifyOtp',
-        data:         {'otp': otp.trim()},
+      final credential = PhoneAuthProvider.credential(
+        verificationId: verificationId,
+        smsCode:        smsCode.trim(),
       );
-      final msg = (result['message'] as String?) ?? 'MFA enabled.';
-      _log.i(
-        '🔐 [VERIFY_OTP] Phase 2: ✓ MFA enabled\n'
-        '🔐 [VERIFY_OTP]            message : $msg',
+      await resolver.resolveSignIn(
+        PhoneMultiFactorGenerator.getAssertion(credential),
       );
-      return MfaResult.success(message: '🔒 $msg Your account is now more secure.');
-    } on FirebaseFunctionsException catch (e) {
-      _log.w(
-        '🔐 [VERIFY_OTP] Phase 2: ✗ Function error\n'
-        '🔐 [VERIFY_OTP]            code    : ${e.code}\n'
-        '🔐 [VERIFY_OTP]            message : ${e.message}',
-      );
-      return MfaResult.failure(_mapFunctionError(e));
+      _log.i('🔐 [MFA_SIGN_IN] resolveSignIn: ✓ Firebase sign-in complete');
+      return MfaResult.success(message: 'Signed in successfully.');
+    } on FirebaseAuthException catch (e) {
+      _log.w('🔐 [MFA_SIGN_IN] resolveSignIn: ${e.code}');
+      return MfaResult.failure(_mapAuthError(e));
     } catch (e, st) {
-      _log.e(
-        '🔐 [VERIFY_OTP] Phase 2: ✗ Unexpected error (${e.runtimeType})',
-        error: e, stackTrace: st,
-      );
+      _log.e('🔐 [MFA_SIGN_IN] resolveSignIn: unexpected error',
+          error: e, stackTrace: st);
       return MfaResult.failure('Verification failed. Please try again.');
     }
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // DISABLE MFA
+  // DISABLE — unenroll a specific factor
   // ══════════════════════════════════════════════════════════════════════════
-  static Future<MfaResult> disableMfa() async {
-    _log.i(
-      '🔐 [DISABLE_MFA] ═══════════════════════════════════════════════════\n'
-      '🔐 [DISABLE_MFA] ━━━ START ━━━',
-    );
-
-    _log.d('🔐 [DISABLE_MFA] Phase 1 — Acquiring authenticated user');
-    final user = await _requireAuthenticatedUser();
-    if (user == null) {
-      _log.w('🔐 [DISABLE_MFA] Phase 1: ✗ No authenticated user — aborting');
-      return MfaResult.failure('Please sign in again before disabling MFA.');
-    }
-    _log.d('🔐 [DISABLE_MFA] Phase 1: ✓ uid=${user.uid}');
-
-    _log.d('🔐 [DISABLE_MFA] Phase 2 — Calling mfaDisable via direct HTTP');
+  /// Pass a factor from [fetchEnrolledFactors()].
+  static Future<MfaResult> unenrollFactor(MultiFactorInfo factor) async {
+    _log.i('🔐 [MFA_DISABLE] unenrollFactor: factorId=${factor.factorId}');
     try {
-      await _callFunctionViaHttp(
-        user:         user,
-        functionName: 'mfaDisable',
-        data:         {},
+      final user = _auth.currentUser;
+      if (user == null) return MfaResult.failure('Not signed in.');
+      await user.multiFactor.unenroll(multiFactorInfo: factor);
+      _log.i('🔐 [MFA_DISABLE] unenrollFactor: ✓ unenrolled');
+      return MfaResult.success(
+        message: 'Phone two-factor authentication has been disabled.',
       );
-      _log.i('🔐 [DISABLE_MFA] Phase 2: ✓ MFA disabled');
-      return MfaResult.success(message: 'Email MFA has been disabled.');
-    } on FirebaseFunctionsException catch (e) {
-      _log.w(
-        '🔐 [DISABLE_MFA] Phase 2: ✗ Function error\n'
-        '🔐 [DISABLE_MFA]            code    : ${e.code}\n'
-        '🔐 [DISABLE_MFA]            message : ${e.message}',
-      );
-      return MfaResult.failure(_mapFunctionError(e));
+    } on FirebaseAuthException catch (e) {
+      _log.w('🔐 [MFA_DISABLE] unenrollFactor: ${e.code}');
+      return MfaResult.failure(_mapAuthError(e));
     } catch (e, st) {
-      _log.e(
-        '🔐 [DISABLE_MFA] Phase 2: ✗ Unexpected error',
-        error: e, stackTrace: st,
-      );
+      _log.e('🔐 [MFA_DISABLE] unenrollFactor: unexpected error',
+          error: e, stackTrace: st);
       return MfaResult.failure('Could not disable MFA. Please try again.');
     }
   }
 
-  // ── Error mapping ──────────────────────────────────────────────────────────
-  static String _mapFunctionError(FirebaseFunctionsException e) {
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  /// Mask the middle digits: +254712345678 → +254 *** 5678
+  static String _maskedPhone(String? phone) {
+    if (phone == null || phone.length < 6) return 'your phone';
+    return '${phone.substring(0, phone.length - 4)}****';
+  }
+
+  // ── Public error mapper ───────────────────────────────────────────────────
+  // auth_screen.dart calls this directly in onFailed callbacks, so it must
+  // be public. It delegates to _mapAuthError internally.
+  static String mapAuthErrorPublic(FirebaseAuthException e) =>
+      _mapAuthError(e);
+
+  static String _mapAuthError(FirebaseAuthException e) {
     switch (e.code) {
-      case 'unauthenticated':
-        return 'Please sign in again before enabling MFA.';
-      case 'resource-exhausted':
-        return e.message ?? 'Too many requests. Please wait a moment.';
-      case 'invalid-argument':
-        return e.message ?? 'Incorrect or expired code. Please try again.';
-      case 'not-found':
-        return 'No pending code found. Please request a new one.';
-      case 'deadline-exceeded':
-        return 'Your code has expired. Please request a new one.';
+      case 'invalid-verification-code':
+        return 'Incorrect code. Please check and try again.';
+      case 'session-expired':
+        return 'The verification session expired. Please request a new code.';
+      case 'invalid-phone-number':
+        return 'Invalid phone number. Include your country code (e.g. +254 712 345 678).';
+      case 'quota-exceeded':
+        return 'SMS quota exceeded. Please try again later.';
+      case 'requires-recent-login':
+        return 'For security, please sign out and sign in again before changing MFA settings.';
+      case 'second-factor-already-in-use':
+        return 'This phone number is already registered as a second factor.';
+      case 'unsupported-first-factor':
+        return 'Email verification is required before enabling two-factor authentication.';
+      case 'unverified-email':
+        return 'Please verify your email address before enabling MFA.';
+      case 'maximum-second-factor-count-exceeded':
+        return 'Maximum number of second factors reached.';
       default:
-        return e.message ?? 'Something went wrong. Please try again.';
+        return e.message ?? 'An error occurred. Please try again.';
     }
   }
 }
