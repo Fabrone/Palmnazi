@@ -1,6 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:logger/logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// ignore: deprecated_member_use, avoid_web_libraries_in_flutter
+import 'dart:html' as html show window; // web-only: cross-tab verification signal
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RESULT TYPE
@@ -77,7 +80,32 @@ class FirebaseEmailLinkService {
   //                         2. Add it to Firebase Console → Auth → Authorized domains.
   //                         3. Set linkDomain: 'your.custom.domain' in _acs().
   // ─────────────────────────────────────────────────────────────────────────
-  static const String _continueUrlDomain = 'palmnazi-5259e.web.app';
+  // ── CONTINUE URL (dynamic) ────────────────────────────────────────────────
+  // Uses window.location.origin so the email link ALWAYS lands on the same
+  // origin the app is currently running on:
+  //   • flutter run -d chrome  → http://localhost:<port>
+  //   • Firebase Hosting        → https://palmnazi-5259e.web.app
+  //
+  // This is critical:
+  //   1. The link opens in the same-origin tab, enabling Firebase's IndexedDB
+  //      cross-tab auth-state sync AND localStorage storage-events to work.
+  //   2. SharedPreferences (backed by localStorage) that stored the pending
+  //      email is readable by the incoming tab because it shares the same origin.
+  //
+  // Fallback: uses the production domain on non-web platforms.
+  static const String _fallbackDomain = 'palmnazi-5259e.web.app';
+
+  static String _buildContinueUrl(EmailLinkPurpose purpose) {
+    if (kIsWeb) {
+      try {
+        // origin example: "http://localhost:8080"  or
+        //                  "https://palmnazi-5259e.web.app"
+        final origin = html.window.location.origin;
+        return '$origin/?purpose=${purpose.name}';
+      } catch (_) {}
+    }
+    return 'https://$_fallbackDomain/?purpose=${purpose.name}';
+  }
 
   // ── APP IDENTIFIERS ───────────────────────────────────────────────────────
   // Replace these before releasing to production.
@@ -192,6 +220,7 @@ class FirebaseEmailLinkService {
       );
       final idToken = await cred.user?.getIdToken();
       await clearPendingData();
+      _notifyVerificationComplete(email.trim()); // ← signals other tabs
       _log.i('📧 [EL] completeSignIn: ✓ uid=${cred.user?.uid}');
       return EmailLinkResult.success(
         message: 'Email verified and signed in successfully!',
@@ -223,11 +252,13 @@ class FirebaseEmailLinkService {
       );
       await user.linkWithCredential(credential);
       await clearPendingData();
+      _notifyVerificationComplete(email.trim()); // ← signals other tabs
       _log.i('📧 [EL] _linkCredential: ✓ email verified');
       return EmailLinkResult.success(message: 'Email verified successfully!');
     } on FirebaseAuthException catch (e) {
       if (e.code == 'provider-already-linked') {
         await clearPendingData();
+        _notifyVerificationComplete(email.trim()); // already verified — still signal
         return EmailLinkResult.success(message: 'Email already verified.');
       }
       _log.e('📧 [EL] _linkCredential error: ${e.code}');
@@ -296,7 +327,7 @@ class FirebaseEmailLinkService {
   /// lets Firebase pick its own working default automatically.
   static ActionCodeSettings _acs(EmailLinkPurpose purpose) =>
       ActionCodeSettings(
-        url: 'https://$_continueUrlDomain/?purpose=${purpose.name}',
+        url: _buildContinueUrl(purpose),   // ← dynamic origin (see above)
         handleCodeInApp:       true,
         iOSBundleId:           _iosBundleId,
         androidPackageName:    _androidPackage,
@@ -305,6 +336,33 @@ class FirebaseEmailLinkService {
         // linkDomain: omitted — set this only when a custom Firebase Hosting
         // domain is configured (not web.app / firebaseapp.com subdomains).
       );
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // CROSS-TAB VERIFICATION SIGNAL
+  // ══════════════════════════════════════════════════════════════════════════
+  // localStorage keys consumed by AccountScreen's onStorage listener.
+  static const String kVerifiedEmail = 'pn_verified_email';
+  static const String kVerifiedAt    = 'pn_verified_at';
+
+  /// Writes a localStorage flag so same-origin tabs can detect that email
+  /// verification just completed in this tab.
+  ///
+  /// Works via two mechanisms:
+  ///  1. Firebase web SDK (LOCAL persistence) propagates auth state to other
+  ///     tabs via IndexedDB → authStateChanges() fires in the original tab.
+  ///  2. This localStorage write triggers a 'storage' event in other same-origin
+  ///     tabs as an instant backup.
+  static void _notifyVerificationComplete(String email) {
+    if (!kIsWeb) return;
+    try {
+      html.window.localStorage[kVerifiedAt]    =
+          DateTime.now().millisecondsSinceEpoch.toString();
+      html.window.localStorage[kVerifiedEmail] = email.toLowerCase();
+      _log.d('📧 [EL] _notifyVerificationComplete: localStorage updated for $email');
+    } catch (e) {
+      _log.w('📧 [EL] _notifyVerificationComplete: localStorage unavailable — $e');
+    }
+  }
 
   static String _sentMsg(EmailLinkPurpose purpose, String email) {
     switch (purpose) {

@@ -33,6 +33,12 @@ class FirebaseService {
 
   static User? get currentUser => _auth.currentUser;
 
+  /// Stream of Firebase auth-state changes.
+  /// Fires in ALL same-origin tabs when any tab signs in or out,
+  /// because the web SDK syncs via IndexedDB (LOCAL persistence).
+  /// Used by AccountScreen to detect cross-tab email verification.
+  static Stream<User?> get authStateChanges => _auth.authStateChanges();
+
   static Future<void> registerMirror({
     required String email,
     required String password,

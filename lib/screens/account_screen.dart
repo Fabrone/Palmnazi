@@ -1,4 +1,7 @@
 import 'dart:async';
+// ignore: deprecated_member_use, avoid_web_libraries_in_flutter
+import 'dart:html' as html show window, StorageEvent; // web-only: cross-tab verification
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:logger/logger.dart';
@@ -41,6 +44,17 @@ class _AccountScreenState extends State<AccountScreen> {
   StreamSubscription<String>?        _roleSub;
   StreamSubscription<AdminRequest?>? _requestSub;
 
+  // ── Cross-tab email verification listeners ────────────────────────────────
+  // Three-layered approach (all cancelled once verified):
+  //  1. Firebase authStateChanges() — fires when any same-origin tab signs in
+  //     (Firebase web SDK syncs via IndexedDB with LOCAL persistence).
+  //  2. localStorage 'storage' event — instant signal written by
+  //     FirebaseEmailLinkService._notifyVerificationComplete().
+  //  3. Periodic poll — fallback every 6 s for edge cases.
+  StreamSubscription<dynamic>?       _authStateSub;
+  StreamSubscription<html.StorageEvent>? _storageSub;
+  Timer?                             _verificationTimer;
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +65,7 @@ class _AccountScreenState extends State<AccountScreen> {
   void dispose() {
     _roleSub?.cancel();
     _requestSub?.cancel();
+    _cancelVerificationListeners(); // stop auth / storage / timer listeners
     super.dispose();
   }
 
@@ -72,7 +87,25 @@ class _AccountScreenState extends State<AccountScreen> {
       if (fbUser != null) {
         try { await fbUser.reload(); } catch (_) {}
       }
-      final emailVerified = FirebaseService.currentUser?.emailVerified ?? false;
+
+      // Primary check: Firebase Auth (works when user is signed into Firebase).
+      bool emailVerified = FirebaseService.currentUser?.emailVerified ?? false;
+
+      // Fallback check: localStorage signal written by
+      // FirebaseEmailLinkService._notifyVerificationComplete() after the
+      // verification link is processed (possibly in a different tab).
+      // This covers the API-only-auth case where currentUser is null.
+      if (!emailVerified && kIsWeb) {
+        try {
+          final storedEmail =
+              html.window.localStorage['pn_verified_email'] ?? '';
+          if (storedEmail.isNotEmpty &&
+              storedEmail == (email ?? '').toLowerCase().trim()) {
+            emailVerified = true;
+            _log.d('AccountScreen: emailVerified via localStorage signal');
+          }
+        } catch (_) {}
+      }
 
       if (mounted) {
         setState(() {
@@ -87,6 +120,15 @@ class _AccountScreenState extends State<AccountScreen> {
       }
 
       if (fbUid != null) _startRbacListeners(fbUid);
+
+      // Start real-time cross-tab listeners when email is not yet verified.
+      // They cancel themselves automatically once verification is detected.
+      if (!emailVerified) {
+        _cancelVerificationListeners();
+        _listenForVerification(email);
+      } else {
+        _cancelVerificationListeners(); // verified — no need to keep listeners
+      }
     } catch (e, st) {
       _log.e('❌ AccountScreen._loadUserInfo', error: e, stackTrace: st);
       if (mounted) setState(() => _loading = false);
@@ -106,6 +148,103 @@ class _AccountScreenState extends State<AccountScreen> {
       onError: (e) => _log.w('⚠️ AccountScreen: request stream error — $e'),
     );
     NotificationService.startUserRequestListener(userId);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Cross-tab email verification detection
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// Starts three complementary listeners that detect email verification
+  /// completed in another browser tab (or in the same tab after a redirect):
+  ///
+  ///  1. [FirebaseService.authStateChanges] — Firebase web SDK propagates
+  ///     sign-in events across same-origin tabs via IndexedDB (LOCAL
+  ///     persistence). When the verification link is processed in any tab,
+  ///     authStateChanges fires here with a verified User.
+  ///
+  ///  2. [html.window.onStorage] — FirebaseEmailLinkService writes
+  ///     `pn_verified_email` to localStorage after processing the link.
+  ///     The browser delivers a 'storage' event to every other same-origin
+  ///     tab instantly, giving us an immediate UI update path.
+  ///
+  ///  3. Periodic 6-second poll — fallback for any edge case where the
+  ///     above events don't fire (e.g. cross-origin redirect, ad-blockers
+  ///     that suppress storage events, cold-start after the link is opened).
+  ///     Checks localStorage first (O(1)), then Firebase reload if needed.
+  ///
+  /// All three cancel themselves once verification is confirmed.
+  void _listenForVerification(String? userEmail) {
+    // 1. Firebase auth-state stream (cross-tab via IndexedDB)
+    _authStateSub = FirebaseService.authStateChanges.listen((fbUser) {
+      if (!mounted || _emailVerified) return;
+      if (fbUser?.emailVerified == true) {
+        _log.d('AccountScreen: emailVerified via authStateChanges');
+        setState(() => _emailVerified = true);
+        _cancelVerificationListeners();
+      }
+    });
+
+    // 2. localStorage storage event (same-origin cross-tab signal)
+    if (kIsWeb) {
+      _storageSub = html.window.onStorage
+          .listen((html.StorageEvent event) {
+        if (!mounted || _emailVerified) return;
+        if (event.key == 'pn_verified_email') {
+          final incoming = event.newValue ?? '';
+          if (incoming.isNotEmpty &&
+              incoming == (userEmail ?? '').toLowerCase().trim()) {
+            _log.d('AccountScreen: emailVerified via storage event');
+            setState(() => _emailVerified = true);
+            _cancelVerificationListeners();
+          }
+        }
+      });
+    }
+
+    // 3. Polling fallback (every 6 s)
+    _verificationTimer = Timer.periodic(
+      const Duration(seconds: 6),
+      (_) async {
+        if (!mounted || _emailVerified) {
+          _cancelVerificationListeners();
+          return;
+        }
+
+        // Check localStorage first — cheap, synchronous
+        if (kIsWeb) {
+          try {
+            final stored =
+                html.window.localStorage['pn_verified_email'] ?? '';
+            if (stored.isNotEmpty &&
+                stored == (userEmail ?? '').toLowerCase().trim()) {
+              if (mounted) {
+                _log.d('AccountScreen: emailVerified via poll localStorage');
+                setState(() => _emailVerified = true);
+              }
+              _cancelVerificationListeners();
+              return;
+            }
+          } catch (_) {}
+        }
+
+        // Firebase reload fallback
+        final verified = await FirebaseService.reloadAndCheckEmailVerified();
+        if (verified && mounted) {
+          _log.d('AccountScreen: emailVerified via poll Firebase reload');
+          setState(() => _emailVerified = true);
+          _cancelVerificationListeners();
+        }
+      },
+    );
+  }
+
+  void _cancelVerificationListeners() {
+    _authStateSub?.cancel();
+    _authStateSub = null;
+    _storageSub?.cancel();
+    _storageSub = null;
+    _verificationTimer?.cancel();
+    _verificationTimer = null;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
