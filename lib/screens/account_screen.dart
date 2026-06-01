@@ -638,7 +638,7 @@ class _AccountScreenState extends State<AccountScreen> {
                   label: Text(sending ? 'Sending…' : sent ? 'Resend Link' : 'Send Verification Link'),
                   onPressed: sending ? null : () async {
                     setS(() => sending = true);
-                    final ok = await FirebaseService.sendEmailVerificationLink();
+                    final ok = await FirebaseService.sendEmailVerificationLink(emailOverride: _email);
                     setS(() { sending = false; sent = ok; });
                     if (!ok && mounted) {
                       _snack('Could not send verification link. Please try again.', ok: false);

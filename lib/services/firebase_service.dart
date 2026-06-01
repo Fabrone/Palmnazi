@@ -132,14 +132,38 @@ class FirebaseService {
     }
   }
 
-  static Future<bool> sendEmailVerificationLink() async {
+  /// Sends a Firebase email verification link.
+  ///
+  /// [emailOverride] MUST be supplied by callers that use the API-only auth
+  /// flow (i.e. where Firebase Auth persistence is set to NONE and
+  /// `_auth.currentUser` is null between navigations).  Omitting it falls
+  /// back to the active Firebase session email, which only exists when the
+  /// user was explicitly signed into Firebase Auth (e.g. magic-link flow).
+  static Future<bool> sendEmailVerificationLink({String? emailOverride}) async {
     try {
+      // Prefer the explicitly supplied email over the Firebase session email.
+      // With Persistence.NONE the session email is null after every navigation,
+      // so API-only callers must pass the email from their own session store.
+      final email = (emailOverride?.trim().isNotEmpty == true)
+          ? emailOverride!.trim()
+          : _auth.currentUser?.email;
+
+      if (email == null || email.isEmpty) {
+        _fbLog.w('⚠️ sendEmailVerificationLink: no email available — skipping');
+        return false;
+      }
+
+      // If the currently signed-in Firebase user already has this address
+      // verified there is nothing left to do.
       final user = _auth.currentUser;
-      if (user == null) return false;
-      if (user.emailVerified) return true;
+      if (user != null &&
+          user.email?.toLowerCase() == email.toLowerCase() &&
+          user.emailVerified) {
+        return true;
+      }
 
       final result = await FirebaseEmailLinkService.sendSignInLink(
-        email: user.email ?? '',
+        email: email,
         purpose: EmailLinkPurpose.verify,
       );
       return result.isSuccess;
@@ -149,7 +173,8 @@ class FirebaseService {
     }
   }
 
-  static Future<bool> sendEmailVerification() async => sendEmailVerificationLink();
+  static Future<bool> sendEmailVerification({String? emailOverride}) async =>
+      sendEmailVerificationLink(emailOverride: emailOverride);
 
   static Future<bool> reloadAndCheckEmailVerified() async {
     try {

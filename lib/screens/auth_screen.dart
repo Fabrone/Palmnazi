@@ -1058,7 +1058,12 @@ class _AuthScreenState extends State<AuthScreen>
   Future<void> _showEmailNotVerifiedDialog() async {
     if (!mounted) return;
 
-    final email = fb.FirebaseAuth.instance.currentUser?.email ?? '';
+    // Firebase Auth persistence is NONE on web, so currentUser?.email is null
+    // after an API-only login.  Fall back to the email stored in the API session.
+    final firebaseEmail = fb.FirebaseAuth.instance.currentUser?.email;
+    final email = (firebaseEmail != null && firebaseEmail.isNotEmpty)
+        ? firebaseEmail
+        : (await ApiClient.getEmail() ?? '');
 
     await showDialog<void>(
       context: context,
@@ -1117,7 +1122,11 @@ class _AuthScreenState extends State<AuthScreen>
                 label: Text(sending ? 'Sending…' : 'Resend Verification Link'),
                 onPressed: sending ? null : () async {
                   setD(() => sending = true);
-                  final ok = await FirebaseService.sendEmailVerificationLink();
+                  // Pass the email explicitly — Firebase currentUser is null
+                  // with Persistence.NONE and API-only auth.
+                  final ok = await FirebaseService.sendEmailVerificationLink(
+                    emailOverride: email,
+                  );
                   setD(() { sending = false; sent = ok; });
                   if (!ok && ctx2.mounted) {
                     Navigator.pop(ctx2);
