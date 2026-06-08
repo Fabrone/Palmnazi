@@ -31,7 +31,6 @@ class _AccountScreenState extends State<AccountScreen> {
   String?       _firebaseUid;
   // ignore: unused_field
   String?       _userId;
-  List<String>  _roles         = [];
   bool          _emailVerified = false;
   bool          _mfaEnabled    = false;
 
@@ -44,13 +43,7 @@ class _AccountScreenState extends State<AccountScreen> {
   StreamSubscription<String>?        _roleSub;
   StreamSubscription<AdminRequest?>? _requestSub;
 
-  // ── Cross-tab email verification listeners ────────────────────────────────
-  // Three-layered approach (all cancelled once verified):
-  //  1. Firebase authStateChanges() — fires when any same-origin tab signs in
-  //     (Firebase web SDK syncs via IndexedDB with LOCAL persistence).
-  //  2. localStorage 'storage' event — instant signal written by
-  //     FirebaseEmailLinkService._notifyVerificationComplete().
-  //  3. Periodic poll — fallback every 6 s for edge cases.
+  // ── Cross-tab email verification listeners ────────────
   StreamSubscription<dynamic>?       _authStateSub;
   StreamSubscription<html.StorageEvent>? _storageSub;
   Timer?                             _verificationTimer;
@@ -78,7 +71,6 @@ class _AccountScreenState extends State<AccountScreen> {
     try {
       final email  = await ApiClient.getEmail();
       final userId = await ApiClient.getUserId();
-      final roles  = await ApiClient.getRoles();
 
       final fbUid      = FirebaseService.currentUser?.uid;
       final mfaEnabled = await FirebaseMfaService.isPhoneMfaEnrolled();
@@ -91,10 +83,7 @@ class _AccountScreenState extends State<AccountScreen> {
       // Primary check: Firebase Auth (works when user is signed into Firebase).
       bool emailVerified = FirebaseService.currentUser?.emailVerified ?? false;
 
-      // Fallback check: localStorage signal written by
-      // FirebaseEmailLinkService._notifyVerificationComplete() after the
-      // verification link is processed (possibly in a different tab).
-      // This covers the API-only-auth case where currentUser is null.
+      // Fallback check: localStorage signal
       if (!emailVerified && kIsWeb) {
         try {
           final storedEmail =
@@ -112,7 +101,6 @@ class _AccountScreenState extends State<AccountScreen> {
           _email         = email;
           _firebaseUid   = fbUid;
           _userId        = userId;
-          _roles         = roles;
           _emailVerified = emailVerified;
           _mfaEnabled    = mfaEnabled;
           _loading       = false;
@@ -152,27 +140,7 @@ class _AccountScreenState extends State<AccountScreen> {
 
   // ─────────────────────────────────────────────────────────────────────────
   // Cross-tab email verification detection
-  // ─────────────────────────────────────────────────────────────────────────
-
-  /// Starts three complementary listeners that detect email verification
-  /// completed in another browser tab (or in the same tab after a redirect):
-  ///
-  ///  1. [FirebaseService.authStateChanges] — Firebase web SDK propagates
-  ///     sign-in events across same-origin tabs via IndexedDB (LOCAL
-  ///     persistence). When the verification link is processed in any tab,
-  ///     authStateChanges fires here with a verified User.
-  ///
-  ///  2. [html.window.onStorage] — FirebaseEmailLinkService writes
-  ///     `pn_verified_email` to localStorage after processing the link.
-  ///     The browser delivers a 'storage' event to every other same-origin
-  ///     tab instantly, giving us an immediate UI update path.
-  ///
-  ///  3. Periodic 6-second poll — fallback for any edge case where the
-  ///     above events don't fire (e.g. cross-origin redirect, ad-blockers
-  ///     that suppress storage events, cold-start after the link is opened).
-  ///     Checks localStorage first (O(1)), then Firebase reload if needed.
-  ///
-  /// All three cancel themselves once verification is confirmed.
+  // ────────────────────────────────────────────────────────────
   void _listenForVerification(String? userEmail) {
     // 1. Firebase auth-state stream (cross-tab via IndexedDB)
     _authStateSub = FirebaseService.authStateChanges.listen((fbUser) {
@@ -250,8 +218,11 @@ class _AccountScreenState extends State<AccountScreen> {
   // ─────────────────────────────────────────────────────────────────────────
   // Role helpers
   // ─────────────────────────────────────────────────────────────────────────
-  String get _effectiveRole =>
-      _firestoreRole ?? (_roles.isNotEmpty ? _roles.first : 'Tourist');
+  // Role is sourced exclusively from the Firestore Users collection
+  // (streamed via RbacService.userRoleStream → _firestoreRole).
+  // The API-fetched _roles list is intentionally NOT used as a fallback here
+  // so that any stale or mismatched API value never overrides the Firestore truth.
+  String get _effectiveRole => _firestoreRole ?? 'Tourist';
   bool get _isTourist => _effectiveRole == 'Tourist';
   bool get _isAdmin   => _effectiveRole == 'Admin' || _effectiveRole == 'MainAdmin';
 

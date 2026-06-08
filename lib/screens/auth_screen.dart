@@ -102,7 +102,7 @@ class LoginResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AUTH SERVICE
+// AUTH SERVICE — Dual Auth (Firebase + API) — FINAL
 // ─────────────────────────────────────────────────────────────────────────────
 class AuthService {
   static String? _lastRefreshTokenId;
@@ -116,6 +116,26 @@ class AuthService {
   }) async {
     _log.i('🔐 AuthService.register: ━━━ START ━━━');
 
+    // 1. Firebase Register + Email Verification
+    try {
+      final credential = await fb.FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+            email: email.trim(),
+            password: password,
+          );
+
+      if (credential.user != null) {
+        await credential.user!.sendEmailVerification();
+        _log.i('✅ Firebase user created + verification email sent');
+      }
+    } on fb.FirebaseAuthException catch (e) {
+      _log.e('❌ Firebase register failed', error: e);
+      return AuthResult.failure(_mapFirebaseError(e));
+    } catch (e) {
+      _log.e('❌ Unexpected Firebase register error', error: e);
+    }
+
+    // 2. API Register
     dynamic response;
     try {
       response = await ApiClient.post(
@@ -130,10 +150,6 @@ class AuthService {
     switch (response.statusCode) {
       case 200:
       case 201:
-        // Firebase register mirror removed: Firebase auth is no longer mirrored
-        // from the API auth flow. Authentication is handled exclusively via the
-        // REST API + JWT session. This eliminates the IndexedDB/WebCrypto
-        // OperationError that was causing zone-level failures on Flutter Web.
         return AuthResult.success(
           message: 'Account created! A verification link has been sent to '
                    '$email — tap it to verify your address, then log in.',
@@ -150,7 +166,7 @@ class AuthService {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // LOGIN
+  // LOGIN — Dual Auth
   // ══════════════════════════════════════════════════════════════════════════
   static Future<LoginResult> login({
     required String email,
@@ -158,6 +174,22 @@ class AuthService {
   }) async {
     _log.i('🔑 AuthService.login: ━━━ START ━━━');
 
+    // 1. Firebase Sign In (Critical for RBAC / Firestore uid)
+    fb.UserCredential? firebaseCred;
+    try {
+      firebaseCred = await fb.FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      _log.i('✅ Firebase sign-in successful');
+    } on fb.FirebaseAuthException catch (e) {
+      _log.e('❌ Firebase login failed', error: e);
+      return LoginResult.failure(_mapFirebaseError(e));
+    } catch (e) {
+      _log.e('❌ Unexpected Firebase login error', error: e);
+    }
+
+    // 2. API Login (JWT Session)
     dynamic response;
     try {
       response = await ApiClient.post(
@@ -166,6 +198,7 @@ class AuthService {
       );
     } on Exception catch (e, st) {
       _log.e('❌ AuthService.login: Network exception', error: e, stackTrace: st);
+      await fb.FirebaseAuth.instance.signOut(); // cleanup
       return LoginResult.failure(ApiClient.friendlyNetworkError(e));
     }
 
@@ -180,6 +213,7 @@ class AuthService {
         final userJson       = body['user']           as Map<String, dynamic>?;
 
         if (accessToken == null || refreshToken == null || userJson == null) {
+          await fb.FirebaseAuth.instance.signOut();
           return LoginResult.failure('Login failed. Please try again.');
         }
 
@@ -194,23 +228,54 @@ class AuthService {
           roles:        user.roles,
         );
 
+        // Optional: Link Firebase UID to backend user (helps with future sync)
+        if (firebaseCred?.user?.uid != null) {
+          try {
+            await ApiClient.authPost('/api/users/link-firebase',
+                body: {'firebaseUid': firebaseCred!.user!.uid});
+          } catch (_) {/* non-critical */}
+        }
+
         return LoginResult.success(
           message: 'Welcome back!',
           user: user,
         );
 
       case 400:
+        await fb.FirebaseAuth.instance.signOut();
         return LoginResult.failure('Please enter both email and password.');
       case 401:
+        await fb.FirebaseAuth.instance.signOut();
         return LoginResult.failure('Incorrect email or password. Please try again.');
       case 403:
+        await fb.FirebaseAuth.instance.signOut();
         return LoginResult.failure('Your account is inactive. Please contact support.');
       case 404:
+        await fb.FirebaseAuth.instance.signOut();
         return LoginResult.failure('No account found with this email address.');
       case 500:
+        await fb.FirebaseAuth.instance.signOut();
         return LoginResult.failure('Server error. Please try again later.');
       default:
+        await fb.FirebaseAuth.instance.signOut();
         return LoginResult.failure('Something went wrong. Please try again.');
+    }
+  }
+
+  // Firebase error mapper
+  static String _mapFirebaseError(fb.FirebaseAuthException e) {
+    switch (e.code) {
+      case 'user-not-found':
+      case 'wrong-password':
+        return 'Incorrect email or password. Please try again.';
+      case 'invalid-email':
+        return 'Please enter a valid email address.';
+      case 'user-disabled':
+        return 'Your account is inactive. Please contact support.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please wait a few minutes and try again.';
+      default:
+        return e.message ?? 'Authentication failed.';
     }
   }
 

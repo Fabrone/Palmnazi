@@ -193,28 +193,6 @@ class StorageKeys {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SESSION STORE
-//
-// WHY NOT flutter_secure_storage:
-//   On Flutter Web, flutter_secure_storage uses IndexedDB + WebCrypto. The
-//   underlying write operations dispatch detached JS Promises that can throw
-//   OperationError directly into Dart's root zone — bypassing all try/catch —
-//   causing widget disposal while _handleLogin() is still executing. The
-//   `if (!mounted) return` guard then fires and navigation never happens
-//   (same root cause as the Firebase Auth IndexedDB issue documented in
-//   firebase_session_service.dart).
-//
-// WHY shared_preferences:
-//   On web, shared_preferences writes to window.localStorage synchronously at
-//   the JS layer. No Promises, no WebCrypto, no IndexedDB, no OperationError.
-//   On iOS/Android, it uses NSUserDefaults / SharedPreferences — both are
-//   reliable and well-tested.
-//
-// WHY the in-memory cache:
-//   Even though shared_preferences is fast, an in-memory Map guarantees that
-//   getAccessToken() returns the just-saved value INSTANTLY after saveSession()
-//   — even during the same microtask cycle. This eliminates the race between
-//   saveSession() completing and the subsequent _loadAuthState() read in
-//   LandingPage.initState().
 // ─────────────────────────────────────────────────────────────────────────────
 class _SessionStore {
   _SessionStore._();
@@ -232,15 +210,7 @@ class _SessionStore {
   }
 
   // ── Optional: call from main.dart before routing to pre-fill _mem ─────────
-  //
-  // This is not strictly required but eliminates any cold-start I/O on the
-  // very first ApiClient.isLoggedIn / getAccessToken() call.
-  //
-  //   void main() async {
-  //     WidgetsFlutterBinding.ensureInitialized();
-  //     await _SessionStore.prime();   // ← warm up cache
-  //     ...
-  //   }
+  
   static Future<void> prime() async {
     try {
       final p = await _instance;
@@ -288,6 +258,15 @@ class _SessionStore {
 
   // ── Delete one ────────────────────────────────────────────────────────────
 
+ /* static Future<void> deleteOne(String key) async {
+    _mem.remove(key);
+    try {
+      final p = await _instance;
+      await p.remove(key);
+    } catch (e) {
+      _apiLog.w('⚠️ _SessionStore.deleteOne($key) failed: $e');
+    }
+  }*/
 
   // ── Delete all session keys ───────────────────────────────────────────────
 
@@ -315,14 +294,7 @@ class ApiClient {
   // ── Session-Expired Callback ─────────────────────────────
   static void Function()? onSessionExpired;
 
-  // ── Optional startup warm-up ─────────────────────────────────────────────
-  //
-  // Call once in main() after WidgetsFlutterBinding.ensureInitialized():
-  //
-  //   await ApiClient.primeSessionCache();
-  //
-  // This pre-loads any persisted session into the in-memory cache so that
-  // the very first isLoggedIn / getAccessToken() call is instant.
+  // ── Optional startup warm-up ─────────────────────────────────
   static Future<void> primeSessionCache() => _SessionStore.prime();
 
   // ── Token / Session Accessors ────────────────────────────
@@ -339,8 +311,6 @@ class ApiClient {
   static Future<String?> getUserEmail()    async =>
       _SessionStore.read(StorageKeys.userEmail);
 
-  /// Alias for [getUserEmail] — used by AccountScreen and other callers
-  /// that refer to the session email as `getEmail()`.
   static Future<String?> getEmail() => getUserEmail();
 
   /// Returns roles as a List. Empty list when no session exists.
@@ -350,8 +320,6 @@ class ApiClient {
     return raw.split(',');
   }
 
-  /// Alias for [getUserRoles] — used by AccountScreen and other callers
-  /// that refer to the session roles as `getRoles()`.
   static Future<List<String>> getRoles() => getUserRoles();
 
   /// True when a valid access token is currently stored.
@@ -360,11 +328,6 @@ class ApiClient {
 
   // ── Session Persistence ───────────────────────────────────────────────────
 
-  /// Persist tokens and user info after any successful login.
-  ///
-  /// The in-memory cache inside _SessionStore is written synchronously before
-  /// any I/O, so getAccessToken() called immediately after saveSession()
-  /// returns the correct token without any async delay.
   static Future<void> saveSession({
     required String accessToken,
     required String refreshToken,

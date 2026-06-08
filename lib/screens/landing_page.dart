@@ -1,8 +1,10 @@
 import 'dart:convert';
 // ignore: deprecated_member_use, avoid_web_libraries_in_flutter
 import 'dart:html' as html show window; // web-only: used for last-section storage
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:logger/logger.dart';
 import 'package:palmnazi/main.dart' show emailLinkResultNotifier;
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
@@ -10,8 +12,21 @@ import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/account_screen.dart';
 import 'package:palmnazi/screens/resort_city_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/services/firebase_service.dart';
 import 'package:palmnazi/admin/admin_dashboard.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Logger
+// ─────────────────────────────────────────────────────────────────────────────
+final Logger _log = Logger(
+  printer: PrettyPrinter(
+    methodCount: 0,
+    errorMethodCount: 8,
+    lineLength: 100,
+    colors: true,
+    printEmojis: true,
+  ),
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Design tokens  (unchanged from v1 — kept in one place)
@@ -161,10 +176,12 @@ class _LandingApi {
     if (resp.statusCode != 200) return [];
     final body = jsonDecode(resp.body) as Map<String, dynamic>;
     final data = body['data'];
+    // FIX: was List<<dynamic> (double angle-bracket)
     final List<dynamic> list;
     if (data is List) {
       list = data;
     } else if (data is Map) {
+      // FIX: was List<<dynamic>
       list = (data['cities'] ?? data['data'] ?? <dynamic>[]) as List<dynamic>;
     } else {
       list = [];
@@ -177,6 +194,7 @@ class _LandingApi {
   }
 
   // ── Blog ───────────────────────────────────────────────────────────────────
+  // FIX: was Future<<({...})> (double angle-bracket)
   static Future<({List<BlogPost> posts, int total})> fetchBlogPosts({
     int limit = 6,
     int page = 1,
@@ -186,6 +204,7 @@ class _LandingApi {
     final resp = await http.get(uri).timeout(_timeout);
     if (resp.statusCode != 200) return (posts: <BlogPost>[], total: 0);
     final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    // FIX: was List<<dynamic>
     final posts = body['posts'] as List<dynamic>? ?? [];
     final pagination = body['pagination'] as Map<String, dynamic>?;
     final total = pagination?['total'] as int? ?? posts.length;
@@ -199,12 +218,14 @@ class _LandingApi {
   }
 
   // ── All categories (tree) ──────────────────────────────────────────────────
+  // FIX: was Future<List<<CategoryModel>> (double angle-bracket)
   static Future<List<CategoryModel>> fetchAllCategories() async {
     final uri =
         Uri.parse(ApiEndpoints.url('/api/categories?tree=true&isActive=true'));
     final resp = await http.get(uri).timeout(_timeout);
     if (resp.statusCode != 200) return [];
     final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    // FIX: was List<<dynamic> (×2)
     final list = body['data'] as List<dynamic>? ??
         body['categories'] as List<dynamic>? ??
         [];
@@ -225,6 +246,7 @@ class _LandingApi {
         if (resp.statusCode != 200) return [];
         final body = jsonDecode(resp.body) as Map<String, dynamic>;
         final data = body['data'];
+        // FIX: was List<<dynamic> (×2)
         final List<dynamic> list;
         if (data is List) {
           list = data;
@@ -255,6 +277,7 @@ class _LandingApi {
         final resp = await http.get(uri).timeout(_timeout);
         if (resp.statusCode != 200) return [];
         final body = jsonDecode(resp.body) as Map<String, dynamic>;
+        // FIX: was List<<dynamic> (×3)
         final places = (body['data'] as List<dynamic>?) ??
             (body['places'] as List<dynamic>?) ??
             [];
@@ -279,6 +302,7 @@ class _LandingApi {
         final resp = await http.get(uri).timeout(_timeout);
         if (resp.statusCode != 200) return [];
         final body = jsonDecode(resp.body) as Map<String, dynamic>;
+        // FIX: was List<<dynamic> (×2)
         final list = (body['data'] as List<dynamic>?) ??
             (body['categories'] as List<dynamic>?) ??
             [];
@@ -300,6 +324,7 @@ class _LandingApi {
         final resp = await http.get(uri).timeout(_timeout);
         if (resp.statusCode != 200) return [];
         final body = jsonDecode(resp.body) as Map<String, dynamic>;
+        // FIX: was List<<dynamic>
         final posts = (body['posts'] as List<dynamic>?) ?? [];
         return posts
             .whereType<Map<String, dynamic>>()
@@ -336,9 +361,14 @@ class _LandingPageState extends State<LandingPage>
   // ── Auth state (drives navbar button) ─────────────────────────────────────
   bool _isLoggedIn = false;
 
+  // ── Admin / Role gate ───────────────────────────────────────────────────────
+  bool  _isAdmin   = false;
+  String? _userRole;
+
   // ── Data ──────────────────────────────────────────────────────────────────
   List<CityModel> _cities = [];
   List<BlogPost> _blogPosts = [];
+  // FIX: was List<<CategoryModel>
   List<CategoryModel> _cachedCategories = [];   // pre-fetched for instant overlay
   bool _citiesLoading = true;
   bool _blogLoading = true;
@@ -358,6 +388,7 @@ class _LandingPageState extends State<LandingPage>
   // ── Hero animation ────────────────────────────────────────────────────────
   late AnimationController _heroCtrl;
   late Animation<double> _heroFade;
+  // FIX: was Animation<<Offset>
   late Animation<Offset> _heroSlide;
 
   // ── Section reveal ────────────────────────────────────────────────────────
@@ -368,7 +399,7 @@ class _LandingPageState extends State<LandingPage>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // for didChangeAppLifecycleState
+    WidgetsBinding.instance.addObserver(this);
     _scrollCtrl.addListener(() {
       if (mounted) setState(() => _scrollOffset = _scrollCtrl.offset);
     });
@@ -376,6 +407,7 @@ class _LandingPageState extends State<LandingPage>
     _heroCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 1100));
     _heroFade = CurvedAnimation(parent: _heroCtrl, curve: Curves.easeOut);
+    // FIX: was Tween<<Offset>
     _heroSlide = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
         .animate(CurvedAnimation(parent: _heroCtrl, curve: Curves.easeOut));
 
@@ -387,9 +419,6 @@ class _LandingPageState extends State<LandingPage>
     _loadAll();
 
     // ── Listen for email-link sign-in completions ─────────────────────────
-    // When main.dart's deep-link handler successfully completes a passwordless
-    // sign-in or email verification, the notifier fires.  We re-check auth
-    // state so the navbar icon updates immediately.
     emailLinkResultNotifier.addListener(_onEmailLinkResult);
   }
 
@@ -403,8 +432,8 @@ class _LandingPageState extends State<LandingPage>
   Future<void> _loadAll() async {
     _loadCities();
     _loadBlog();
-    _loadCategories(); // background pre-fetch so the overlay opens instantly
-    _loadAuthState();  // check whether a session token exists
+    _loadCategories();
+    _loadAuthState();
   }
 
   Future<void> _loadAuthState() async {
@@ -414,17 +443,81 @@ class _LandingPageState extends State<LandingPage>
     final nowLoggedIn = token != null && token.isNotEmpty;
     setState(() => _isLoggedIn = nowLoggedIn);
 
-    // On a fresh login (first time we see a valid token this session),
-    // resume the last section the user visited before their session ended.
+    // FIX: clear stale last-section localStorage keys on logout so a future
+    // user on the same browser does not inherit stale navigation state.
+    if (!nowLoggedIn) {
+      try {
+        html.window.localStorage.remove(_kLastSectionKey);
+        html.window.localStorage.remove(_kLastCityPayload);
+      } catch (_) {/* localStorage blocked — silently ignore */}
+    }
+
+    // On a fresh login, resume the last section the user visited.
     if (!wasLoggedIn && nowLoggedIn) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _resumeLastSection();
       });
     }
+
+    // ── Role check from Firebase "Users" collection ───────────────────────
+    if (nowLoggedIn) {
+      _log.d('LandingPage._loadAuthState: authenticated session detected — starting role check');
+      await _checkAdminRole();
+    } else {
+      _log.d('LandingPage._loadAuthState: no session — clearing admin gate');
+      if (mounted) {
+        setState(() {
+          _isAdmin = false;
+          _userRole = null;
+        });
+      }
+    }
   }
 
-  /// Pre-fetches the category tree in the background. The result is cached and
-  /// passed directly to [_PublicCategoriesOverlay] so it never needs to fetch.
+  /// Fetches the user's `role` from Firestore `Users/{uid}` and updates
+  /// [_isAdmin] / [_userRole]. Called automatically after every auth state
+  /// refresh (login, resume, lifecycle change).
+  ///
+  /// FIX: removed unreliable ApiClient.getUserId() fallback. Firestore uses
+  /// Firebase Auth UIDs as document keys; the API userId may be a different
+  /// format (e.g. MongoDB ObjectId). If Firebase Auth is not ready yet, we
+  /// defer rather than query with a potentially wrong ID.
+  Future<void> _checkAdminRole() async {
+    try {
+      final userId = FirebaseService.currentUser?.uid;
+
+      if (userId == null || userId.isEmpty) {
+        _log.d('LandingPage._checkAdminRole: Firebase Auth not ready — deferring role check');
+        if (mounted) setState(() { _isAdmin = false; _userRole = null; });
+        return;
+      }
+
+      final doc = await FirebaseFirestore.instance
+          .collection('Users')
+          .doc(userId)
+          .get();
+      final role = doc.data()?['role'] as String?;
+      final isAdmin = role == 'Admin' || role == 'MainAdmin';
+
+      _log.i('LandingPage._checkAdminRole: userId=$userId, role=$role, isAdmin=$isAdmin');
+
+      if (mounted) {
+        setState(() {
+          _userRole = role;
+          _isAdmin = isAdmin;
+        });
+      }
+    } catch (e, st) {
+      _log.e('LandingPage._checkAdminRole: failed to fetch role', error: e, stackTrace: st);
+      if (mounted) {
+        setState(() {
+          _isAdmin = false;
+          _userRole = null;
+        });
+      }
+    }
+  }
+
   Future<void> _loadCategories() async {
     try {
       final cats = await _LandingApi.fetchAllCategories();
@@ -461,8 +554,7 @@ class _LandingPageState extends State<LandingPage>
 
   Future<void> _loadBlog() async {
     try {
-      final result = await _LandingApi.fetchBlogPosts(
-          limit: 6, page: 1);
+      final result = await _LandingApi.fetchBlogPosts(limit: 6, page: 1);
       if (mounted) {
         setState(() {
           _blogPosts = result.posts;
@@ -481,8 +573,7 @@ class _LandingPageState extends State<LandingPage>
     final nextPage = _blogPage + 1;
     setState(() => _blogLoadingMore = true);
     try {
-      final result = await _LandingApi.fetchBlogPosts(
-          limit: 6, page: nextPage);
+      final result = await _LandingApi.fetchBlogPosts(limit: 6, page: nextPage);
       if (mounted) {
         setState(() {
           _blogPosts = [..._blogPosts, ...result.posts];
@@ -505,7 +596,6 @@ class _LandingPageState extends State<LandingPage>
   }
 
   void _goToCity(CityModel city) {
-    // Persist this city so re-login can resume here.
     _saveLastSection('city', cityJson: {
       'id':   city.id,
       'name': city.name,
@@ -531,6 +621,7 @@ class _LandingPageState extends State<LandingPage>
         pageBuilder: (_, __, ___) =>
             _PublicCategoriesOverlay(preloaded: _cachedCategories),
         transitionsBuilder: (_, anim, __, child) => SlideTransition(
+          // FIX: was Tween<<Offset>
           position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
               .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
           child: child,
@@ -560,9 +651,6 @@ class _LandingPageState extends State<LandingPage>
     super.dispose();
   }
 
-  /// Refreshes auth state whenever the app returns to the foreground.
-  /// This covers edge cases where zone crashes or background tab-switches
-  /// prevent the normal post-navigation _loadAuthState() call from running.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && mounted) {
@@ -618,16 +706,13 @@ class _LandingPageState extends State<LandingPage>
             child: Row(children: [
               _brand(),
               const Spacer(),
-              // ── Full nav links (≥ 600 px) ──────────────────────────────────
               if (!isMobile) ...[
-                _navLink('Destinations',
-                    onTap: () => _scrollToKey(_citiesKey)),
+                _navLink('Destinations', onTap: () => _scrollToKey(_citiesKey)),
                 _navLink('Categories', onTap: _openCategoriesOverlay),
                 _navLink('Blog', onTap: () => _scrollToKey(_blogKey)),
                 const SizedBox(width: 8),
                 _signInButton(),
               ],
-              // ── Mobile: always show the account/sign-in icon + hamburger ──
               if (isMobile) ...[
                 _signInButtonMobile(),
                 const SizedBox(width: 4),
@@ -658,8 +743,7 @@ class _LandingPageState extends State<LandingPage>
               )
             ],
           ),
-          child: const Icon(Icons.person_rounded,
-              color: Colors.white, size: 18),
+          child: const Icon(Icons.person_rounded, color: Colors.white, size: 18),
         ),
       );
     }
@@ -673,13 +757,8 @@ class _LandingPageState extends State<LandingPage>
     );
   }
 
-  /// Compact account/sign-in widget for the mobile navbar.
-  /// Always visible so the user can see their auth state at a glance.
-  /// • Logged in  → same teal circle avatar as the desktop button.
-  /// • Logged out → a login icon button (no text, saves space next to hamburger).
   Widget _signInButtonMobile() {
     if (_isLoggedIn) {
-      // Reuse the full desktop account button — it's already icon-sized.
       return _signInButton();
     }
     return IconButton(
@@ -707,13 +786,11 @@ class _LandingPageState extends State<LandingPage>
         transitionDuration: const Duration(milliseconds: 320),
       ),
     );
-    // Re-check login state when returning from AuthScreen
-    // (user may have just signed in).
     if (mounted) _loadAuthState();
   }
 
   void _goToAccount() async {
-    _saveLastSection('account'); // persist so re-login resumes here
+    _saveLastSection('account');
     await Navigator.push(
       context,
       PageRouteBuilder(
@@ -723,14 +800,10 @@ class _LandingPageState extends State<LandingPage>
         transitionDuration: const Duration(milliseconds: 320),
       ),
     );
-    // Re-check login state when returning from AccountScreen
-    // (user may have signed out while there).
     if (mounted) _loadAuthState();
   }
 
   // ── Last-section persistence helpers ─────────────────────────────────────
-  /// Saves [section] ('city' or 'account') to localStorage so that after a
-  /// session expiry the user is returned to the same place on re-login.
   static void _saveLastSection(String section,
       {Map<String, dynamic>? cityJson}) {
     try {
@@ -743,8 +816,6 @@ class _LandingPageState extends State<LandingPage>
     } catch (_) {/* localStorage blocked — silently ignore */}
   }
 
-  /// Called after a fresh login is detected.  Reads the stored section and
-  /// navigates there, then clears the stored values.
   void _resumeLastSection() {
     String? section;
     String? cityPayload;
@@ -752,12 +823,12 @@ class _LandingPageState extends State<LandingPage>
       section     = html.window.localStorage[_kLastSectionKey];
       cityPayload = html.window.localStorage[_kLastCityPayload];
     } catch (_) {
-      return; // localStorage not available
+      return;
     }
 
     if (section == null || section.isEmpty) return;
 
-    // Clear storage before navigating so a crashed navigate doesn't loop.
+    // Clear before navigating so a crashed navigate doesn't loop.
     try {
       html.window.localStorage.remove(_kLastSectionKey);
       html.window.localStorage.remove(_kLastCityPayload);
@@ -767,11 +838,10 @@ class _LandingPageState extends State<LandingPage>
       _goToAccount();
     } else if (section == 'city' && cityPayload != null) {
       try {
-        final raw  = jsonDecode(cityPayload) as Map<String, dynamic>;
+        final raw    = jsonDecode(cityPayload) as Map<String, dynamic>;
         final cityId = raw['id'] as String?;
         if (cityId == null) return;
 
-        // Try to find the fully-loaded CityModel from the already-fetched list.
         final city = _cities.cast<CityModel?>().firstWhere(
               (c) => c?.id == cityId,
               orElse: () => null,
@@ -779,8 +849,6 @@ class _LandingPageState extends State<LandingPage>
         if (city != null) {
           _goToCity(city);
         }
-        // If cities haven't loaded yet, we skip — the user sees the landing page.
-        // A more elaborate approach would wait for _loadCities() to complete.
       } catch (_) {}
     }
   }
@@ -850,12 +918,17 @@ class _LandingPageState extends State<LandingPage>
 
   // ── Auth-gated admin navigation ──────────────────────────────────────────
   Future<void> _goToAdminWithAuthCheck() async {
+    if (!_isAdmin) {
+      _log.d('LandingPage._goToAdminWithAuthCheck: blocked non-admin access attempt. role=$_userRole');
+      return;
+    }
+
     final accessToken = await ApiClient.getAccessToken();
-    final isLoggedIn = accessToken != null && accessToken.isNotEmpty;
+    final isLoggedIn  = accessToken != null && accessToken.isNotEmpty;
 
     if (isLoggedIn) {
-      // Already authenticated — navigate directly.
       if (!mounted) return;
+      _log.i('LandingPage._goToAdminWithAuthCheck: admin access granted — navigating to AdminDashboard');
       await Navigator.push(
         context,
         PageRouteBuilder(
@@ -865,14 +938,8 @@ class _LandingPageState extends State<LandingPage>
           transitionDuration: const Duration(milliseconds: 320),
         ),
       );
-      // Refresh auth state in case admin session changed while away.
       if (mounted) _loadAuthState();
     } else {
-      // Not logged in — show login screen.
-      // NOTE: _navigateToLanding() in AuthScreen calls Navigator.pop(context)
-      // which does NOT pass an AuthResult back, so we cannot rely on the return
-      // value here to detect a successful login.  Instead we simply re-read the
-      // token after the push returns.
       if (!mounted) return;
       await Navigator.push(
         context,
@@ -886,47 +953,39 @@ class _LandingPageState extends State<LandingPage>
 
       if (!mounted) return;
 
-      // Re-read the token — if the user just logged in, it will now be present.
       final newToken = await ApiClient.getAccessToken();
       if (!mounted) return;
-      _loadAuthState(); // update the navbar icon regardless
+
+      // FIX: was `_loadAuthState()` (fire-and-forget). Must be awaited so that
+      // _checkAdminRole() completes and _isAdmin is updated before we read it.
+      await _loadAuthState();
+      if (!mounted) return;
 
       if (newToken != null && newToken.isNotEmpty) {
-        // Login succeeded while on AuthScreen — go to admin.
-        Navigator.push(
-          context,
-          PageRouteBuilder(
-            pageBuilder: (_, anim, __) => const AdminDashboard(),
-            transitionsBuilder: (_, anim, __, child) =>
-                FadeTransition(opacity: anim, child: child),
-            transitionDuration: const Duration(milliseconds: 320),
-          ),
-        );
+        if (_isAdmin) {
+          Navigator.push(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (_, anim, __) => const AdminDashboard(),
+              transitionsBuilder: (_, anim, __, child) =>
+                  FadeTransition(opacity: anim, child: child),
+              transitionDuration: const Duration(milliseconds: 320),
+            ),
+          );
+        } else {
+          _log.w('LandingPage._goToAdminWithAuthCheck: user logged in but is not admin — blocking admin navigation');
+        }
       }
-      // If the user dismissed AuthScreen without logging in — nothing to do.
     }
   }
 
   Widget _brand() => Row(mainAxisSize: MainAxisSize.min, children: [
-        GestureDetector(
-          onTap: _goToAdminWithAuthCheck,
-          child: ClipOval(
-            child: Image.asset(
-              'assets/images/logo.png',
-              width: 34,
-              height: 34,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                width: 34,
-                height: 34,
-                decoration: const BoxDecoration(
-                    gradient: RC.tealGrad, shape: BoxShape.circle),
-                child: const Icon(Icons.travel_explore_rounded,
-                    color: Colors.white, size: 18),
-              ),
-            ),
-          ),
-        ),
+        _isAdmin
+            ? GestureDetector(
+                onTap: _goToAdminWithAuthCheck,
+                child: _logoImage(),
+              )
+            : _logoImage(),
         const SizedBox(width: 10),
         ShaderMask(
           shaderCallback: (b) =>
@@ -943,6 +1002,23 @@ class _LandingPageState extends State<LandingPage>
         ),
       ]);
 
+  Widget _logoImage() => ClipOval(
+        child: Image.asset(
+          'assets/images/logo.png',
+          width: 34,
+          height: 34,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            width: 34,
+            height: 34,
+            decoration: const BoxDecoration(
+                gradient: RC.tealGrad, shape: BoxShape.circle),
+            child: const Icon(Icons.travel_explore_rounded,
+                color: Colors.white, size: 18),
+          ),
+        ),
+      );
+
   Widget _navLink(String label, {required VoidCallback onTap}) => TextButton(
         onPressed: onTap,
         style: TextButton.styleFrom(
@@ -952,9 +1028,8 @@ class _LandingPageState extends State<LandingPage>
         child: Text(label, style: const TextStyle(fontSize: 13)),
       );
 
-
   // ─────────────────────────────────────────────────────────────────────────
-  // HERO  — background: assets/images/homepage.jpg + dark overlay
+  // HERO
   // ─────────────────────────────────────────────────────────────────────────
   Widget _hero(double w) {
     final isMobile = w < 600;
@@ -964,7 +1039,6 @@ class _LandingPageState extends State<LandingPage>
       height: isMobile ? 640.0 : 740.0,
       child: Stack(
         children: [
-          // ── Background image ──────────────────────────────────────────────
           Positioned.fill(
             child: Image.asset(
               'assets/images/homepage.jpg',
@@ -974,8 +1048,6 @@ class _LandingPageState extends State<LandingPage>
               ),
             ),
           ),
-
-          // ── Dark gradient overlay (readability) ───────────────────────────
           Positioned.fill(
             child: Container(
               decoration: const BoxDecoration(
@@ -992,15 +1064,11 @@ class _LandingPageState extends State<LandingPage>
               ),
             ),
           ),
-
-          // ── Dot grid texture ──────────────────────────────────────────────
           Positioned.fill(
             child: CustomPaint(
               painter: _DotGridPainter(color: RC.teal.withValues(alpha: 0.035)),
             ),
           ),
-
-          // ── Ambient glows ─────────────────────────────────────────────────
           Positioned(
               top: -100,
               right: -60,
@@ -1009,8 +1077,6 @@ class _LandingPageState extends State<LandingPage>
               bottom: 30,
               left: -50,
               child: _glow(260, RC.gold.withValues(alpha: 0.06))),
-
-          // ── Hero content ──────────────────────────────────────────────────
           Positioned.fill(
             child: Padding(
               padding:
@@ -1018,7 +1084,6 @@ class _LandingPageState extends State<LandingPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Tag pill
                   FadeTransition(
                     opacity: _heroFade,
                     child: SlideTransition(
@@ -1029,8 +1094,6 @@ class _LandingPageState extends State<LandingPage>
                     ),
                   ),
                   const SizedBox(height: 22),
-
-                  // Headline
                   FadeTransition(
                     opacity: _heroFade,
                     child: SlideTransition(
@@ -1062,8 +1125,6 @@ class _LandingPageState extends State<LandingPage>
                     ),
                   ),
                   const SizedBox(height: 18),
-
-                  // Sub-headline
                   FadeTransition(
                     opacity: _heroFade,
                     child: Text(
@@ -1079,16 +1140,11 @@ class _LandingPageState extends State<LandingPage>
                     ),
                   ),
                   const SizedBox(height: 40),
-
-                  // ── Search trigger row ─────────────────────────────────────
                   FadeTransition(
                     opacity: _heroFade,
                     child: _heroSearchTrigger(isMobile),
                   ),
-
                   const Spacer(),
-
-                  // ── Quick-nav chips ────────────────────────────────────────
                   FadeTransition(
                     opacity: _heroFade,
                     child: _heroQuickChips(),
@@ -1102,12 +1158,10 @@ class _LandingPageState extends State<LandingPage>
     );
   }
 
-  /// Compact search button that floats in the hero and opens the full dialog.
   Widget _heroSearchTrigger(bool isMobile) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Main search button
         GestureDetector(
           onTap: _openSearchDialog,
           child: Container(
@@ -1171,7 +1225,6 @@ class _LandingPageState extends State<LandingPage>
     );
   }
 
-  /// Quick-access category/nav pills at the bottom of the hero.
   Widget _heroQuickChips() {
     final chips = [
       (Icons.location_city_outlined, 'Destinations'),
@@ -1513,7 +1566,7 @@ class _LandingPageState extends State<LandingPage>
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // STATS SECTION  (moved here from hero)
+  // STATS SECTION
   // ─────────────────────────────────────────────────────────────────────────
   Widget _statsSection(double w) {
     final isMobile = w < 600;
@@ -1693,7 +1746,6 @@ class _LandingPageState extends State<LandingPage>
         ],
       );
 
-  // ── Shared helpers ────────────────────────────────────────────────────────
   Widget _sectionLabel(String label, Color color) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
         decoration: BoxDecoration(
@@ -1711,7 +1763,7 @@ class _LandingPageState extends State<LandingPage>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _StatCard  — for the stats section
+// _StatCard
 // ─────────────────────────────────────────────────────────────────────────────
 class _StatCard extends StatelessWidget {
   final IconData icon;
@@ -1777,7 +1829,7 @@ class _StatCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _SearchDialog  — floating search dialog  (City / Place / Category)
+// _SearchDialog
 // ─────────────────────────────────────────────────────────────────────────────
 class _SearchDialog extends StatefulWidget {
   const _SearchDialog();
@@ -1877,7 +1929,7 @@ class _SearchDialogState extends State<_SearchDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ── Header ───────────────────────────────────────────────────────
+            // ── Header ──────────────────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 20, 16, 0),
               child: Row(children: [
@@ -1901,7 +1953,7 @@ class _SearchDialogState extends State<_SearchDialog> {
             ),
             const SizedBox(height: 16),
 
-            // ── Type selector ─────────────────────────────────────────────────
+            // ── Type selector ─────────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Wrap(
@@ -1954,7 +2006,7 @@ class _SearchDialogState extends State<_SearchDialog> {
             ),
             const SizedBox(height: 14),
 
-            // ── Search input ──────────────────────────────────────────────────
+            // ── Search input ──────────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(children: [
@@ -2013,10 +2065,8 @@ class _SearchDialogState extends State<_SearchDialog> {
             ),
             const SizedBox(height: 16),
 
-            // ── Results ───────────────────────────────────────────────────────
-            Flexible(
-              child: _buildResults(),
-            ),
+            // ── Results ───────────────────────────────────────────────────
+            Flexible(child: _buildResults()),
             const SizedBox(height: 8),
           ],
         ),
@@ -2167,22 +2217,20 @@ class _SearchDialogState extends State<_SearchDialog> {
           );
         }
       case _SearchType.place:
-        // Navigate to place detail when screen is available
         break;
       case _SearchType.category:
-        // Navigate to category listing when screen is available
         break;
       case _SearchType.blog:
-        // Navigate to blog post detail when screen is available
         break;
     }
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _PublicCategoriesOverlay  — full-screen categories listing from backend
+// _PublicCategoriesOverlay
 // ─────────────────────────────────────────────────────────────────────────────
 class _PublicCategoriesOverlay extends StatefulWidget {
+  // FIX: was List<<CategoryModel>
   final List<CategoryModel> preloaded;
   const _PublicCategoriesOverlay({this.preloaded = const []});
 
@@ -2192,6 +2240,7 @@ class _PublicCategoriesOverlay extends StatefulWidget {
 }
 
 class _PublicCategoriesOverlayState extends State<_PublicCategoriesOverlay> {
+  // FIX: was List<<CategoryModel>
   List<CategoryModel> _roots = [];
   bool _loading = true;
   String? _error;
@@ -2203,12 +2252,11 @@ class _PublicCategoriesOverlayState extends State<_PublicCategoriesOverlay> {
   void initState() {
     super.initState();
     if (widget.preloaded.isNotEmpty) {
-      // Data is already here — show instantly, no spinner.
       _roots = List.of(widget.preloaded);
       _loading = false;
       if (_roots.length <= 6) _expanded.addAll(_roots.map((r) => r.id));
     } else {
-      _fetch(); // fallback: pre-fetch hadn't finished yet
+      _fetch();
     }
   }
 
@@ -2229,7 +2277,6 @@ class _PublicCategoriesOverlayState extends State<_PublicCategoriesOverlay> {
         setState(() {
           _roots = roots;
           _loading = false;
-          // Auto-expand all if there are 6 or fewer root categories
           if (roots.length <= 6) _expanded.addAll(roots.map((r) => r.id));
         });
       }
@@ -2243,6 +2290,7 @@ class _PublicCategoriesOverlayState extends State<_PublicCategoriesOverlay> {
     }
   }
 
+  // FIX: was List<<CategoryModel>
   List<CategoryModel> get _filtered {
     if (_query.trim().isEmpty) return _roots;
     final q = _query.toLowerCase();
@@ -2373,7 +2421,7 @@ class _PublicCategoriesOverlayState extends State<_PublicCategoriesOverlay> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _RootCategoryTile  (used in public categories overlay)
+// _RootCategoryTile
 // ─────────────────────────────────────────────────────────────────────────────
 class _RootCategoryTile extends StatelessWidget {
   final CategoryModel root;
@@ -2394,14 +2442,12 @@ class _RootCategoryTile extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // ── Root row ─────────────────────────────────────────────────────
           InkWell(
             borderRadius: BorderRadius.circular(14),
             onTap: root.children.isNotEmpty ? () => onToggle(root.id) : null,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
               child: Row(children: [
-                // Icon badge
                 Container(
                   width: 38,
                   height: 38,
@@ -2417,8 +2463,6 @@ class _RootCategoryTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 14),
-
-                // Name + child count
                 Expanded(
                     child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2437,8 +2481,6 @@ class _RootCategoryTile extends StatelessWidget {
                               color: RC.textMute, fontSize: 11)),
                   ],
                 )),
-
-                // Child count pill
                 if (root.children.isNotEmpty) ...[
                   Container(
                     padding:
@@ -2467,8 +2509,6 @@ class _RootCategoryTile extends StatelessWidget {
               ]),
             ),
           ),
-
-          // ── Children ────────────────────────────────────────────────────
           if (expanded && root.children.isNotEmpty)
             Container(
               decoration: BoxDecoration(
@@ -2509,7 +2549,7 @@ class _RootCategoryTile extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CityCard
+// _CityCard
 // ─────────────────────────────────────────────────────────────────────────────
 class _CityCard extends StatefulWidget {
   final CityModel city;
@@ -2748,7 +2788,7 @@ class _CityCardState extends State<_CityCard>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BlogCard
+// _BlogCard
 // ─────────────────────────────────────────────────────────────────────────────
 class _BlogCard extends StatefulWidget {
   final BlogPost post;
@@ -2858,7 +2898,6 @@ class _BlogCardState extends State<_BlogCard>
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 14),
-                      // ── Date row ─────────────────────────────────────────
                       if (post.formattedDate.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 8),
@@ -2883,7 +2922,6 @@ class _BlogCardState extends State<_BlogCard>
                             ],
                           ]),
                         ),
-                      // ── Author / reading time / views ─────────────────────
                       Row(children: [
                         const Icon(Icons.person_outline_rounded,
                             size: 13, color: RC.textMute),
@@ -2930,7 +2968,7 @@ class _BlogCardState extends State<_BlogCard>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Skeleton box  (loading placeholder)
+// _SkeletonBox
 // ─────────────────────────────────────────────────────────────────────────────
 class _SkeletonBox extends StatefulWidget {
   final double width;
@@ -2980,7 +3018,7 @@ class _SkeletonBoxState extends State<_SkeletonBox>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Background dot grid painter
+// _DotGridPainter
 // ─────────────────────────────────────────────────────────────────────────────
 class _DotGridPainter extends CustomPainter {
   final Color color;

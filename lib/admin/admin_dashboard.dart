@@ -10,6 +10,7 @@ import 'package:palmnazi/admin/admin_role_requests_screen.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/services/notification_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:palmnazi/services/rbac_service.dart';
 
@@ -86,18 +87,7 @@ class _AdminDashboardState extends State<AdminDashboard>
     _initRbac();
   }
 
-  // ── Load admin identity & start RBAC listeners ────────────────────────────
-  //
-  // WHY userRoleStream instead of getUserRole (one-shot):
-  //   getUserRole() is an async Firestore read that takes 300-1000 ms.
-  //   During that window _adminRole is null, _isMainAdmin is false, and the
-  //   Role Requests stat card / quick action / sidebar item are all hidden.
-  //   Every time AdminDashboard is recreated (e.g. on return from AccountScreen)
-  //   the async gap repeats and the items flash-disappear.
-  //
-  //   userRoleStream() uses Firestore's local offline cache: the first event
-  //   fires almost immediately, eliminating the visible flash.  It also keeps
-  //   the role up-to-date if it changes while the dashboard is open.
+  // ── Load admin identity & start RBAC listeners ──────────────────
   Future<void> _initRbac() async {
     await _waitForFirebaseAuth();
 
@@ -109,15 +99,22 @@ class _AdminDashboardState extends State<AdminDashboard>
       return;
     }
 
-    _log.i('🔐 [AdminDashboard._initRbac] Starting role stream for uid=$firebaseUid');
+    _log.i('🔐 [AdminDashboard._initRbac] Starting Firestore role stream for uid=$firebaseUid');
     _roleSub?.cancel();
 
-    _roleSub = RbacService.userRoleStream(firebaseUid).listen(
+    // Role is read directly from the Firestore Users/{firebaseUid} document —
+    // the 'role' field is the single source of truth and never proxied via the API.
+    _roleSub = FirebaseFirestore.instance
+        .collection('Users')
+        .doc(firebaseUid)
+        .snapshots()
+        .map((snap) => (snap.data()?['role'] as String? ?? '').trim())
+        .listen(
       (role) {
         if (!mounted) return;
 
-        // The stream already delivers a .trim()ed value from RbacService, but
-        // we trim again here as a permanent safety net.
+        // The Firestore snapshot is already mapped and trimmed above, but we
+        // trim again here as a permanent safety net.
         final cleanRole    = role.trim();
         final wasMainAdmin = _adminRole?.trim() == 'MainAdmin';
 
@@ -146,23 +143,16 @@ class _AdminDashboardState extends State<AdminDashboard>
         }
       },
       onError: (e) {
-        _log.e('❌ [AdminDashboard._initRbac] userRoleStream error: $e', error: e);
+        _log.e('❌ [AdminDashboard._initRbac] Firestore role stream error: $e', error: e);
       },
       onDone: () {
-        _log.w('⚠️ [AdminDashboard._initRbac] userRoleStream closed unexpectedly');
+        _log.w('⚠️ [AdminDashboard._initRbac] Firestore role stream closed unexpectedly');
       },
     );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Wait until Firebase Auth has a signed-in user (max 3 s).
-  //
-  // On session restore the custom-API tokens load first (synchronous), then
-  // FirebaseSessionService mirrors the sign-in to Firebase Auth (async network
-  // call).  There is a short window where ApiClient has a userId but
-  // FirebaseAuth.instance.currentUser is still null.  Opening a Firestore
-  // stream in that window returns [cloud_firestore/permission-denied] because
-  // the SDK has no auth token to attach.  Polling avoids that race.
   // ─────────────────────────────────────────────────────────────────────────
   Future<void> _waitForFirebaseAuth({int maxWaitMs = 3000}) async {
     const tickMs = 200;
