@@ -55,8 +55,16 @@ class FirebaseService {
         email: email.trim(),
         purpose: EmailLinkPurpose.verify,
       );
+
+      // ─────────────────────────────────────────────────────────────────────
       if (!linkResult.isSuccess) {
-        await cred.user?.sendEmailVerification();
+        _fbLog.w(
+          '⚠️ registerMirror: Branded email link failed — ${linkResult.message}. '
+          'User must re-request verification from AccountScreen. '
+          'NOT falling back to sendEmailVerification() to avoid spam/branding issues.',
+        );
+      } else {
+        _fbLog.i('🔥 registerMirror: Verification link sent successfully.');
       }
 
       await _writeUserDocument(
@@ -139,17 +147,9 @@ class FirebaseService {
   }
 
   /// Sends a Firebase email verification link.
-  ///
-  /// [emailOverride] MUST be supplied by callers that use the API-only auth
-  /// flow (i.e. where Firebase Auth persistence is set to NONE and
-  /// `_auth.currentUser` is null between navigations).  Omitting it falls
-  /// back to the active Firebase session email, which only exists when the
-  /// user was explicitly signed into Firebase Auth (e.g. magic-link flow).
+
   static Future<bool> sendEmailVerificationLink({String? emailOverride}) async {
     try {
-      // Prefer the explicitly supplied email over the Firebase session email.
-      // With Persistence.NONE the session email is null after every navigation,
-      // so API-only callers must pass the email from their own session store.
       final email = (emailOverride?.trim().isNotEmpty == true)
           ? emailOverride!.trim()
           : _auth.currentUser?.email;
@@ -257,7 +257,7 @@ class FirebaseService {
   static Future<void> _performLastLoginUpdate(String uid) async {
     try {
       if (kIsWeb) {
-        await Future.delayed(const Duration(milliseconds: 2000)); // Increased delay
+        await Future.delayed(const Duration(milliseconds: 2000));
       }
 
       _fbLog.d('🔥 [FIRESTORE_WRITE] _updateLastLogin → Users/$uid');
@@ -269,7 +269,7 @@ class FirebaseService {
 
       _fbLog.d('🔥 [FIRESTORE_WRITE] _updateLastLogin ✓ complete');
     } catch (e, st) {
-      _fbLog.w('⚠️ [FIRESTORE_WRITE] _updateLastLogin failed (expected on Web)', 
+      _fbLog.w('⚠️ [FIRESTORE_WRITE] _updateLastLogin failed (expected on Web)',
           error: e, stackTrace: st);
     }
   }

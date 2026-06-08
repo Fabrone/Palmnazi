@@ -1065,6 +1065,14 @@ class _AuthScreenState extends State<AuthScreen>
         ? firebaseEmail
         : (await ApiClient.getEmail() ?? '');
 
+    // Guard: ApiClient.getEmail() is async — the widget may have been disposed
+    // while it was awaited.  Using context after any await without this check
+    // triggers use_build_context_synchronously (dart diagnostic line 1069).
+    // The earlier `if (!mounted) return` at the top of this method only
+    // protects usage up to the first await; every subsequent await needs its
+    // own guard before context is accessed again.
+    if (!mounted) return;
+
     await showDialog<void>(
       context: context,
       builder: (ctx) {

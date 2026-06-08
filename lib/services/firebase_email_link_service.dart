@@ -12,9 +12,6 @@ class EmailLinkResult {
   final bool isSuccess;
   final String message;
 
-  /// Firebase ID token, populated only when sign-in is completed.
-  /// Pass this to ApiEndpoints.googleAuth (or a dedicated emailLink endpoint)
-  /// to obtain a REST-API session — identical to the Google sign-in flow.
   final String? idToken;
 
   const EmailLinkResult._({
@@ -59,40 +56,7 @@ class FirebaseEmailLinkService {
   FirebaseEmailLinkService._();
 
   // ── DOMAIN CONFIGURATION ──────────────────────────────────────────────────
-  //
-  // _continueUrlDomain  → Must exactly match one of the domains listed in
-  //                       Firebase Console → Authentication → Settings →
-  //                       Authorized domains.
-  //                       Current authorized domains for this project:
-  //                         • localhost
-  //                         • palmnazi-5259e.firebaseapp.com
-  //                         • palmnazi-5259e.web.app   ← used here (production)
-  //
-  // linkDomain (ActionCodeSettings) → Firebase FORBIDS the default .web.app
-  //                       and .firebaseapp.com subdomains here. It requires a
-  //                       CUSTOM domain configured in Firebase Hosting.
-  //                       Since this project has no custom domain yet, we omit
-  //                       linkDomain entirely and let Firebase use its own
-  //                       default email-link domain automatically.
-  //
-  //                       To add a custom domain later:
-  //                         1. Configure it in Firebase Console → Hosting.
-  //                         2. Add it to Firebase Console → Auth → Authorized domains.
-  //                         3. Set linkDomain: 'your.custom.domain' in _acs().
-  // ─────────────────────────────────────────────────────────────────────────
-  // ── CONTINUE URL (dynamic) ────────────────────────────────────────────────
-  // Uses window.location.origin so the email link ALWAYS lands on the same
-  // origin the app is currently running on:
-  //   • flutter run -d chrome  → http://localhost:<port>
-  //   • Firebase Hosting        → https://palmnazi-5259e.web.app
-  //
-  // This is critical:
-  //   1. The link opens in the same-origin tab, enabling Firebase's IndexedDB
-  //      cross-tab auth-state sync AND localStorage storage-events to work.
-  //   2. SharedPreferences (backed by localStorage) that stored the pending
-  //      email is readable by the incoming tab because it shares the same origin.
-  //
-  // Fallback: uses the production domain on non-web platforms.
+
   static const String _fallbackDomain = 'palmnazi-5259e.web.app';
 
   static String _buildContinueUrl(EmailLinkPurpose purpose) {
@@ -131,13 +95,7 @@ class FirebaseEmailLinkService {
   // ══════════════════════════════════════════════════════════════════════════
   // SEND SIGN-IN / VERIFICATION LINK
   // ══════════════════════════════════════════════════════════════════════════
-  /// Sends a Firebase email sign-in link to [email].
-  ///
-  /// The same link serves three purposes depending on [purpose]:
-  ///   • [EmailLinkPurpose.signIn]        → passwordless sign-in
-  ///   • [EmailLinkPurpose.verify]        → post-registration email verification
-  ///   • [EmailLinkPurpose.secondFactor]  → 2nd-factor confirmation after password login
-  ///
+
   /// In all cases, clicking the link marks the address as `emailVerified=true`.
   static Future<EmailLinkResult> sendSignInLink({
     required String email,
@@ -173,14 +131,7 @@ class FirebaseEmailLinkService {
   // ══════════════════════════════════════════════════════════════════════════
   // UNIVERSAL INCOMING-LINK HANDLER  (called from main.dart)
   // ══════════════════════════════════════════════════════════════════════════
-  /// Main entry point for incoming deep / universal links.
-  ///
-  /// Routing logic:
-  ///   • If a Firebase user is already signed in with the same email →
-  ///       link credential to existing user (verifies email, no sign-out).
-  ///   • Otherwise → complete a fresh Firebase sign-in.
-  ///
-  /// Returns null if [link] is not an email sign-in link.
+
   static Future<EmailLinkResult?> handleIncomingLink(String link) async {
     if (!isEmailLink(link)) return null;
 
@@ -316,15 +267,6 @@ class FirebaseEmailLinkService {
     } catch (_) {}
   }
 
-  /// Builds ActionCodeSettings for the email link.
-  ///
-  /// [url] must use a domain listed in Firebase Console → Authentication →
-  /// Authorized domains, or Firebase rejects with "unauthorized-continue-uri".
-  ///
-  /// [linkDomain] is intentionally omitted: Firebase forbids the default
-  /// .web.app / .firebaseapp.com subdomains there and requires a custom
-  /// Firebase Hosting domain. Without a custom domain, omitting the field
-  /// lets Firebase pick its own working default automatically.
   static ActionCodeSettings _acs(EmailLinkPurpose purpose) =>
       ActionCodeSettings(
         url: _buildContinueUrl(purpose),   // ← dynamic origin (see above)
@@ -333,8 +275,6 @@ class FirebaseEmailLinkService {
         androidPackageName:    _androidPackage,
         androidInstallApp:     true,
         androidMinimumVersion: _androidMinVer,
-        // linkDomain: omitted — set this only when a custom Firebase Hosting
-        // domain is configured (not web.app / firebaseapp.com subdomains).
       );
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -344,14 +284,6 @@ class FirebaseEmailLinkService {
   static const String kVerifiedEmail = 'pn_verified_email';
   static const String kVerifiedAt    = 'pn_verified_at';
 
-  /// Writes a localStorage flag so same-origin tabs can detect that email
-  /// verification just completed in this tab.
-  ///
-  /// Works via two mechanisms:
-  ///  1. Firebase web SDK (LOCAL persistence) propagates auth state to other
-  ///     tabs via IndexedDB → authStateChanges() fires in the original tab.
-  ///  2. This localStorage write triggers a 'storage' event in other same-origin
-  ///     tabs as an instant backup.
   static void _notifyVerificationComplete(String email) {
     if (!kIsWeb) return;
     try {
