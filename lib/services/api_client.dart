@@ -333,7 +333,7 @@ class ApiClient {
     required String refreshToken,
     required String userId,
     required String email,
-    required List<String> roles,
+    required List<String> roles, required String firebaseUid, required String apiId,
   }) async {
     _apiLog.d('💾 ApiClient.saveSession: Persisting session');
     try {

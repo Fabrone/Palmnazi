@@ -1,6 +1,7 @@
 import 'dart:async';
 // ignore: deprecated_member_use, avoid_web_libraries_in_flutter
 import 'dart:html' as html show window;// web-only: used for last-section storage
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,7 +10,7 @@ import 'package:logger/logger.dart';
 import 'package:palmnazi/screens/landing_page.dart';
 import 'package:palmnazi/screens/reset_password_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
-import 'package:palmnazi/services/firebase_email_link_service.dart'; // ← NEW
+import 'package:palmnazi/services/firebase_email_link_service.dart';
 import 'package:palmnazi/services/firebase_mfa_service.dart';
 import 'package:palmnazi/services/firebase_service.dart';
 
@@ -30,26 +31,145 @@ final Logger _log = Logger(
 // APP USER MODEL
 // ─────────────────────────────────────────────────────────────────────────────
 class AppUser {
-  final String       id;
-  final String       email;
-  final List<String> roles;
+  /// Firebase UID — primary key for ALL system operations and the document ID
+  /// in the Firestore `Users` collection.
+  final String firebaseUid;
 
-  AppUser({required this.id, required this.email, required this.roles});
+  /// Backend API's own user ID (_id from MongoDB). Stored as `apiId` on the
+  /// Firestore document so both systems can be cross-referenced.
+  final String apiId;
 
-  factory AppUser.fromJson(Map<String, dynamic> json) {
+  final String email;
+
+  /// Single role string — Firestore is the source of truth.
+  /// Possible values: 'Tourist' (default) | 'Admin' | 'MainAdmin'
+  final String role;
+
+  final bool   mfaEnabled;
+  final String provider;   // 'email' | 'google'
+
+  AppUser({
+    required this.firebaseUid,
+    required this.apiId,
+    required this.email,
+    required this.role,
+    this.mfaEnabled = false,
+    this.provider   = 'email',
+  });
+
+  /// Constructs from a Firebase UID plus the backend API response JSON.
+  /// [roleOverride] should be supplied from Firestore whenever available —
+  /// Firestore is the single source of truth for role.
+  factory AppUser.fromApiJson({
+    required String              firebaseUid,
+    required Map<String, dynamic> json,
+    String?                      roleOverride,
+  }) {
     return AppUser(
-      id:    json['id']    as String? ?? '',
-      email: json['email'] as String? ?? '',
-      roles: (json['roles'] as List<dynamic>? ?? [])
-          .map((r) => r.toString())
-          .toList(),
+      firebaseUid: firebaseUid,
+      apiId:       json['_id']      as String?
+                ?? json['id']       as String? ?? '',
+      email:       json['email']    as String? ?? '',
+      role:        roleOverride
+                ?? json['role']     as String?
+                ?? 'Tourist',
+      mfaEnabled:  json['mfaEnabled'] as bool?   ?? false,
+      provider:    json['provider']   as String? ?? 'email',
     );
   }
 
-  String get primaryRole => roles.isNotEmpty ? roles.first : 'user';
+  /// Exposes role as a list — used by [ApiClient.saveSession] which expects
+  /// [List<String>] for backward compatibility with the roles storage key.
+  List<String> get roles => [role];
+
+  String get primaryRole => role.isNotEmpty ? role : 'Tourist';
+
+  bool get isTourist   => role == 'Tourist';
+  bool get isAdmin     => role == 'Admin' || role == 'MainAdmin';
+  bool get isMainAdmin => role == 'MainAdmin';
 
   @override
-  String toString() => 'AppUser(id: $id, email: $email, roles: $roles)';
+  String toString() =>
+      'AppUser(uid: $firebaseUid, apiId: $apiId, email: $email, role: $role)';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// USER FIRESTORE STORE
+// Owns all reads and writes to the `Users` collection.
+// Document ID = Firebase UID so every query is an O(1) point-read.
+// ─────────────────────────────────────────────────────────────────────────────
+class _UserStore {
+  _UserStore._();
+
+  static final CollectionReference<Map<String, dynamic>> _col =
+      FirebaseFirestore.instance.collection('Users');
+
+  static DocumentReference<Map<String, dynamic>> _doc(String uid) =>
+      _col.doc(uid);
+
+  // ── Called once on email/password registration ────────────────────────────
+  // Sets role to 'Tourist' — always. Admin promotion is a separate admin-side
+  // operation that updates the role field directly in Firestore.
+  static Future<void> createUser({
+    required String firebaseUid,
+    required String email,
+    required String apiId,
+    required String provider,
+  }) =>
+      _doc(firebaseUid).set({
+        'email':       email,
+        'provider':    provider,
+        'role':        'Tourist',                  // ← default, always
+        'apiId':       apiId,
+        'mfaEnabled':  false,
+        'createdAt':   FieldValue.serverTimestamp(),
+        'lastLoginAt': FieldValue.serverTimestamp(),
+      });
+
+  // ── Called on Google Sign-In ──────────────────────────────────────────────
+  // If the document doesn't exist yet → creates it (new Google user).
+  // If it already exists → only refreshes lastLoginAt and syncs apiId.
+  // Role is NEVER overwritten here — admin controls it.
+  static Future<void> upsertGoogleUser({
+    required String firebaseUid,
+    required String email,
+    required String apiId,
+  }) async {
+    final ref  = _doc(firebaseUid);
+    final snap = await ref.get();
+
+    if (!snap.exists) {
+      await ref.set({
+        'email':       email,
+        'provider':    'google',
+        'role':        'Tourist',                  // ← default for new Google users
+        'apiId':       apiId,
+        'mfaEnabled':  false,
+        'createdAt':   FieldValue.serverTimestamp(),
+        'lastLoginAt': FieldValue.serverTimestamp(),
+      });
+    } else {
+      await ref.update({
+        'apiId':       apiId,                      // keep in sync with backend
+        'lastLoginAt': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  // ── Called on every login ─────────────────────────────────────────────────
+  // Stamps lastLoginAt and returns the current role from Firestore.
+  static Future<String> touchAndGetRole(String firebaseUid) async {
+    final ref = _doc(firebaseUid);
+    await ref.update({'lastLoginAt': FieldValue.serverTimestamp()});
+    final snap = await ref.get();
+    return snap.data()?['role'] as String? ?? 'Tourist';
+  }
+
+  // ── Role-only read (used after Google upsert) ─────────────────────────────
+  static Future<String> getRole(String firebaseUid) async {
+    final snap = await _doc(firebaseUid).get();
+    return snap.data()?['role'] as String? ?? 'Tourist';
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,53 +236,101 @@ class AuthService {
   }) async {
     _log.i('🔐 AuthService.register: ━━━ START ━━━');
 
-    // 1. Firebase Register + Email Verification
+    // ── Step 1: Firebase — create auth user + send verification email ────────
+    fb.User? firebaseUser;
     try {
       final credential = await fb.FirebaseAuth.instance
           .createUserWithEmailAndPassword(
             email: email.trim(),
             password: password,
           );
-
-      if (credential.user != null) {
-        await credential.user!.sendEmailVerification();
-        _log.i('✅ Firebase user created + verification email sent');
+      firebaseUser = credential.user;
+      if (firebaseUser != null) {
+        await firebaseUser.sendEmailVerification();
+        _log.i('✅ Firebase user created (uid: ${firebaseUser.uid})');
       }
     } on fb.FirebaseAuthException catch (e) {
       _log.e('❌ Firebase register failed', error: e);
       return AuthResult.failure(_mapFirebaseError(e));
     } catch (e) {
       _log.e('❌ Unexpected Firebase register error', error: e);
+      return AuthResult.failure('Registration failed. Please try again.');
     }
 
-    // 2. API Register
+    if (firebaseUser == null) {
+      return AuthResult.failure('Registration failed. Please try again.');
+    }
+
+    // ── Step 2: API — create backend user record ─────────────────────────────
     dynamic response;
     try {
       response = await ApiClient.post(
         ApiEndpoints.register,
-        body: {'email': email.trim(), 'password': password},
+        body: {
+          'email':    email.trim(),
+          'password': password,
+          'provider': 'email',
+        },
       );
     } on Exception catch (e, st) {
-      _log.e('❌ AuthService.register: Network exception', error: e, stackTrace: st);
+      _log.e('❌ AuthService.register: API network error', error: e, stackTrace: st);
+      // Roll back Firebase user so auth state stays consistent
+      await firebaseUser.delete().catchError((_) {});
       return AuthResult.failure(ApiClient.friendlyNetworkError(e));
     }
 
-    switch (response.statusCode) {
-      case 200:
-      case 201:
-        return AuthResult.success(
-          message: 'Account created! A verification link has been sent to '
-                   '$email — tap it to verify your address, then log in.',
-        );
-      case 400:
-        return AuthResult.failure('Please fill in all required fields correctly.');
-      case 409:
-        return AuthResult.failure('This email is already registered. Try logging in.');
-      case 500:
-        return AuthResult.failure('Server error. Please try again later.');
-      default:
-        return AuthResult.failure('Something went wrong. Please try again.');
+    // Roll back Firebase user if the API rejected the registration
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      await firebaseUser.delete().catchError((_) {});
+      switch (response.statusCode) {
+        case 400: return AuthResult.failure('Please fill in all required fields correctly.');
+        case 409: return AuthResult.failure('This email is already registered. Try logging in.');
+        case 500: return AuthResult.failure('Server error. Please try again later.');
+        default:  return AuthResult.failure('Something went wrong. Please try again.');
+      }
     }
+
+    // ── Step 3: Extract apiId from API response ──────────────────────────────
+    final body     = ApiClient.parseBody(response);
+    final userJson = body['user'] as Map<String, dynamic>? ?? {};
+    final apiId    = userJson['_id'] as String?
+                  ?? userJson['id']  as String? ?? '';
+
+    // ── Step 4: Firestore — create Users/{firebaseUid} document ─────────────
+    // role is always 'Tourist' on registration.
+    // Admin promotion is handled separately on the admin side.
+    try {
+      await _UserStore.createUser(
+        firebaseUid: firebaseUser.uid,
+        email:       email.trim(),
+        apiId:       apiId,
+        provider:    'email',
+      );
+      _log.i('✅ Firestore Users/${firebaseUser.uid} created — role: Tourist | apiId: $apiId');
+    } catch (e) {
+      _log.e('❌ Firestore write failed after registration', error: e);
+      // Non-fatal — user can still log in; doc can be rebuilt on first login
+    }
+
+    // ── Step 5: Persist session if the API returned tokens ───────────────────
+    final accessToken  = body['accessToken']  as String?;
+    final refreshToken = body['refreshToken'] as String?;
+    if (accessToken != null && refreshToken != null) {
+      await ApiClient.saveSession(
+        firebaseUid:  firebaseUser.uid,
+        accessToken:  accessToken,
+        refreshToken: refreshToken,
+        apiId:        apiId,
+        email:        email.trim(),
+        roles:        ['Tourist'], userId: '',
+      );
+      _log.i('✅ Session persisted for uid: ${firebaseUser.uid}');
+    }
+
+    return AuthResult.success(
+      message: 'Account created! A verification link has been sent to '
+               '$email — tap it to verify your address, then log in.',
+    );
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -174,22 +342,25 @@ class AuthService {
   }) async {
     _log.i('🔑 AuthService.login: ━━━ START ━━━');
 
-    // 1. Firebase Sign In (Critical for RBAC / Firestore uid)
+    // ── Step 1: Firebase sign-in — establishes Firebase session + gets UID ───
     fb.UserCredential? firebaseCred;
     try {
       firebaseCred = await fb.FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email.trim(),
         password: password,
       );
-      _log.i('✅ Firebase sign-in successful');
+      _log.i('✅ Firebase sign-in OK (uid: ${firebaseCred.user?.uid})');
     } on fb.FirebaseAuthException catch (e) {
       _log.e('❌ Firebase login failed', error: e);
       return LoginResult.failure(_mapFirebaseError(e));
     } catch (e) {
       _log.e('❌ Unexpected Firebase login error', error: e);
+      return LoginResult.failure('Sign-in failed. Please try again.');
     }
 
-    // 2. API Login (JWT Session)
+    final firebaseUid = firebaseCred.user?.uid ?? '';
+
+    // ── Step 2: API login — get JWT tokens ───────────────────────────────────
     dynamic response;
     try {
       response = await ApiClient.post(
@@ -197,8 +368,8 @@ class AuthService {
         body: {'email': email.trim(), 'password': password},
       );
     } on Exception catch (e, st) {
-      _log.e('❌ AuthService.login: Network exception', error: e, stackTrace: st);
-      await fb.FirebaseAuth.instance.signOut(); // cleanup
+      _log.e('❌ AuthService.login: API network error', error: e, stackTrace: st);
+      await fb.FirebaseAuth.instance.signOut();
       return LoginResult.failure(ApiClient.friendlyNetworkError(e));
     }
 
@@ -217,29 +388,39 @@ class AuthService {
           return LoginResult.failure('Login failed. Please try again.');
         }
 
-        final user = AppUser.fromJson(userJson);
+        final apiId = userJson['_id'] as String?
+                   ?? userJson['id']  as String? ?? '';
+
         _lastRefreshTokenId = refreshTokenId;
 
-        await ApiClient.saveSession(
-          accessToken:  accessToken,
-          refreshToken: refreshToken,
-          userId:       user.id,
-          email:        user.email,
-          roles:        user.roles,
-        );
-
-        // Optional: Link Firebase UID to backend user (helps with future sync)
-        if (firebaseCred?.user?.uid != null) {
-          try {
-            await ApiClient.authPost('/api/users/link-firebase',
-                body: {'firebaseUid': firebaseCred!.user!.uid});
-          } catch (_) {/* non-critical */}
+        // ── Step 3: Firestore — stamp lastLoginAt, read current role ─────────
+        // Firestore is the source of truth for role. Admin may have updated it
+        // since the last login — always read fresh.
+        String role = 'Tourist';
+        try {
+          role = await _UserStore.touchAndGetRole(firebaseUid);
+          _log.i('✅ Firestore updated — role: $role | uid: $firebaseUid');
+        } catch (e) {
+          _log.w('⚠️ Firestore touch failed — defaulting to Tourist: $e');
         }
 
-        return LoginResult.success(
-          message: 'Welcome back!',
-          user: user,
+        final user = AppUser.fromApiJson(
+          firebaseUid:  firebaseUid,
+          json:         userJson,
+          roleOverride: role,
         );
+
+        // ── Step 4: Persist full session ─────────────────────────────────────
+        await ApiClient.saveSession(
+          firebaseUid:  firebaseUid,
+          accessToken:  accessToken,
+          refreshToken: refreshToken,
+          apiId:        apiId,
+          email:        user.email,
+          roles:        user.roles, userId: '',
+        );
+
+        return LoginResult.success(message: 'Welcome back!', user: user);
 
       case 400:
         await fb.FirebaseAuth.instance.signOut();
@@ -293,8 +474,7 @@ class AuthService {
         return AuthResult.failure('Google Sign-In is not supported on this platform.');
       }
 
-      final GoogleSignInAccount googleUser =
-          await gsi.authenticate(scopeHint: ['email', 'profile']);
+      final GoogleSignInAccount  googleUser = await gsi.authenticate(scopeHint: ['email', 'profile']);
       final GoogleSignInAuthentication googleAuth = googleUser.authentication;
       final String? idToken = googleAuth.idToken;
 
@@ -302,6 +482,7 @@ class AuthService {
         return AuthResult.failure('Could not retrieve Google credentials. Please try again.');
       }
 
+      // ── Step 1: API Google auth — get JWT tokens + apiId ──────────────────
       dynamic response;
       try {
         response = await ApiClient.post(
@@ -319,23 +500,64 @@ class AuthService {
         case 201:
           final accessToken  = body['accessToken']  as String?;
           final refreshToken = body['refreshToken'] as String?;
-          final userJson     = body['user']          as Map<String, dynamic>?;
+          final userJson     = body['user']         as Map<String, dynamic>?;
 
           if (accessToken == null || refreshToken == null || userJson == null) {
             return AuthResult.failure('Google Sign-In failed. Please try again.');
           }
 
-          final user = AppUser.fromJson(userJson);
-          await ApiClient.saveSession(
-            accessToken:  accessToken,
-            refreshToken: refreshToken,
-            userId:       user.id,
-            email:        user.email,
-            roles:        user.roles,
+          final apiId = userJson['_id'] as String?
+                     ?? userJson['id']  as String? ?? '';
+          final email = userJson['email'] as String? ?? '';
+
+          // ── Step 2: Firebase — sign in with Google credential to get UID ──
+          // Firebase UID is the Firestore document key — required for Firestore writes.
+          String firebaseUid = '';
+          try {
+            final fbCredential = fb.GoogleAuthProvider.credential(idToken: idToken);
+            final fbResult     = await fb.FirebaseAuth.instance
+                .signInWithCredential(fbCredential);
+            firebaseUid = fbResult.user?.uid ?? '';
+            _log.i('✅ Firebase Google sign-in OK (uid: $firebaseUid)');
+          } catch (e) {
+            // Fall back to any UID the API may have returned
+            firebaseUid = userJson['firebaseUid'] as String? ?? '';
+            _log.w('⚠️ Firebase Google sign-in failed — falling back: $e');
+          }
+
+          // ── Step 3: Firestore — upsert Users/{firebaseUid} ────────────────
+          // New user  → creates doc with role: Tourist
+          // Returning → updates lastLoginAt + syncs apiId; role is untouched
+          String role = 'Tourist';
+          if (firebaseUid.isNotEmpty) {
+            try {
+              await _UserStore.upsertGoogleUser(
+                firebaseUid: firebaseUid,
+                email:       email,
+                apiId:       apiId,
+              );
+              role = await _UserStore.getRole(firebaseUid);
+              _log.i('✅ Firestore upsert OK — uid: $firebaseUid | role: $role');
+            } catch (e) {
+              _log.w('⚠️ Firestore upsert failed: $e');
+            }
+          }
+
+          final user = AppUser.fromApiJson(
+            firebaseUid:  firebaseUid,
+            json:         userJson,
+            roleOverride: role,
           );
 
-          // Firebase Google mirror removed: see login() for full explanation.
-          // API session is the sole auth source of truth.
+          // ── Step 4: Persist session ────────────────────────────────────────
+          await ApiClient.saveSession(
+            firebaseUid:  firebaseUid,
+            accessToken:  accessToken,
+            refreshToken: refreshToken,
+            apiId:        apiId,
+            email:        user.email,
+            roles:        user.roles, userId: '',
+          );
 
           return AuthResult.success(
             message: 'Signed in with Google successfully!',
