@@ -1,10 +1,13 @@
 import 'dart:typed_data';
+import 'dart:async';         // Timer for debounce
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:palmnazi/admin/admin_api_service.dart';
+import 'package:palmnazi/admin/admin_place_map_picker.dart';
 import 'package:palmnazi/admin/admin_shared_widgets.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
@@ -365,6 +368,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
 
   @override
   void dispose() {
+    //_placeSearchCtrl.dispose();
+    //_debounceTimer?.cancel();
     _nameCtrl.dispose(); _shortDescCtrl.dispose(); _descCtrl.dispose();
     _areaCtrl.dispose(); _addressCtrl.dispose(); _latCtrl.dispose();
     _lngCtrl.dispose(); _phoneCtrl.dispose(); _emailCtrl.dispose();
@@ -1171,23 +1176,201 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         ],
       );
 
-  // ── Step 3 — Location ─────────────────────────────────────────────────────
-  Widget _buildStep3() => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AdminField(ctrl: _addressCtrl, label: 'Full Address',
-              hint: 'e.g. Shanzu Beach Road, Mombasa', maxLines: 2),
-          Row(children: [
-            Expanded(
-              child: AdminField(ctrl: _latCtrl, label: 'Latitude',
-                  hint: 'e.g. -3.9875', keyboardType: TextInputType.number),
+  Widget _buildStep3() {
+    final hasCoords = _latCtrl.text.isNotEmpty && _lngCtrl.text.isNotEmpty;
+    final lat = double.tryParse(_latCtrl.text.trim());
+    final lng = double.tryParse(_lngCtrl.text.trim());
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Map Picker Launch Card ─────────────────────────────────────────
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF111827),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: hasCoords
+                  ? const Color(0xFF14FFEC).withValues(alpha: 0.4)
+                  : Colors.white12,
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: AdminField(ctrl: _lngCtrl, label: 'Longitude',
-                  hint: 'e.g. 39.7392', keyboardType: TextInputType.number),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF14FFEC).withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.map_rounded,
+                      color: Color(0xFF14FFEC), size: 18),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        hasCoords ? 'Location Selected' : 'Pick on Map',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        hasCoords
+                            ? 'Tap to adjust the pin position'
+                            : 'Open interactive map to search and pin a location',
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 11, height: 1.4),
+                      ),
+                    ],
+                  ),
+                ),
+                if (hasCoords)
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.greenAccent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+              ]),
+              const SizedBox(height: 12),
+
+              // Mini preview of selected coordinates
+              if (hasCoords) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D1117),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_addressCtrl.text.isNotEmpty) ...[
+                        Row(children: [
+                          const Icon(Icons.location_on_rounded,
+                              color: Color(0xFF14FFEC), size: 12),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              _addressCtrl.text,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 12),
+                            ),
+                          ),
+                        ]),
+                        const SizedBox(height: 6),
+                      ],
+                      Row(children: [
+                        const Icon(Icons.gps_fixed_rounded,
+                            color: Colors.white24, size: 11),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Lat: ${lat?.toStringAsFixed(6) ?? _latCtrl.text}  •  Lng: ${lng?.toStringAsFixed(6) ?? _lngCtrl.text}',
+                          style: const TextStyle(
+                              color: Colors.white38, fontSize: 11),
+                        ),
+                      ]),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+
+              // Launch map picker button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _openMapPicker,
+                  icon: Icon(
+                    hasCoords ? Icons.edit_location_alt_rounded : Icons.map_rounded,
+                    size: 16,
+                  ),
+                  label: Text(
+                    hasCoords ? 'Adjust on Map' : 'Open Map Picker',
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: hasCoords
+                        ? const Color(0xFF14FFEC).withValues(alpha: 0.12)
+                        : const Color(0xFF14FFEC),
+                    foregroundColor: hasCoords
+                        ? const Color(0xFF14FFEC)
+                        : Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(9)),
+                    side: hasCoords
+                        ? BorderSide(
+                            color: const Color(0xFF14FFEC).withValues(alpha: 0.4))
+                        : BorderSide.none,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 20),
+
+        // ── Divider ────────────────────────────────────────────────────────
+        Row(children: const [
+          Expanded(child: Divider(color: Colors.white10)),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 10),
+            child: Text('or enter manually',
+                style: TextStyle(color: Colors.white24, fontSize: 10)),
+          ),
+          Expanded(child: Divider(color: Colors.white10)),
+        ]),
+        const SizedBox(height: 16),
+
+        // ── Manual fields (always visible as fallback) ──────────────────────
+        AdminField(
+          ctrl: _addressCtrl,
+          label: 'Full Address',
+          hint: 'e.g. Shanzu Beach Road, Mombasa',
+          maxLines: 2,
+        ),
+        Row(children: [
+          Expanded(
+            child: AdminField(
+              ctrl: _latCtrl,
+              label: 'Latitude',
+              hint: 'e.g. -3.9875',
+              keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true, signed: true),
             ),
-          ]),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: AdminField(
+              ctrl: _lngCtrl,
+              label: 'Longitude',
+              hint: 'e.g. 39.7392',
+              keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true, signed: true),
+            ),
+          ),
+        ]),
+
+        // Tip
+        if (!hasCoords)
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -1196,15 +1379,55 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
               border: Border.all(color: Colors.white12),
             ),
             child: const Row(children: [
-              Icon(Icons.info_outline_rounded, color: Colors.white38, size: 14),
+              Icon(Icons.lightbulb_outline_rounded,
+                  color: Colors.white38, size: 14),
               SizedBox(width: 8),
-              Expanded(child: Text(
-                  'Use Google Maps to find accurate coordinates. Right-click any location → "What\'s here?" to see lat/lng.',
-                  style: TextStyle(color: Colors.white38, fontSize: 11))),
+              Expanded(
+                child: Text(
+                  'Tip: Use the Map Picker for precise coordinates. '
+                  'You can search by place name, tap on the map, or drag the pin.',
+                  style: TextStyle(
+                      color: Colors.white38, fontSize: 11, height: 1.4),
+                ),
+              ),
             ]),
           ),
-        ],
-      );
+      ],
+    );
+  }
+
+    Future<void> _openMapPicker() async {
+    final existingLat = double.tryParse(_latCtrl.text.trim());
+    final existingLng = double.tryParse(_lngCtrl.text.trim());
+
+    final result = await Navigator.of(context).push<PlaceLocationResult>(
+      MaterialPageRoute(
+        builder: (_) => AdminPlaceMapPicker(
+          initialSelectedLocation:
+              existingLat != null && existingLng != null
+                  ? LatLng(existingLat, existingLng)
+                  : null,
+        ),
+      ),
+    );
+
+    if (result == null) {
+      debugPrint('📍 [Wizard/Step3] Map picker cancelled — no changes');
+      return;
+    }
+
+    debugPrint(
+        '📍 [Wizard/Step3] Map picker returned — lat=${result.latitude} lng=${result.longitude} address="${result.address}"');
+
+    setState(() {
+      _latCtrl.text = result.latitude.toStringAsFixed(7);
+      _lngCtrl.text = result.longitude.toStringAsFixed(7);
+      // Only overwrite address if map picker found one; preserve manual entry otherwise
+      if (result.address.isNotEmpty) {
+        _addressCtrl.text = result.address;
+      }
+    });
+  }
 
   // ── Step 4 — Contact ──────────────────────────────────────────────────────
   Widget _buildStep4() => Column(

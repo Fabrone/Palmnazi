@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.VIBRATE"/>
 
     <application
+
+        <meta-data android:name="com.google.android.geo.API_KEY"
+           android:value="AIzaSyDvBPtwmiof73wtHzIzr-eBHDme091VPxw"/>
         android:label="Palmnazi"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
