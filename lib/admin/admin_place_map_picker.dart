@@ -9,20 +9,6 @@ import 'package:palmnazi/config/maps_config.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AdminPlaceMapPicker
-//
-// Interactive Google Map for selecting a place location.
-//
-// Features:
-//   • Full Google Map with satellite + normal toggle
-//   • Search by name → results plotted as markers on the map
-//   • Tap any marker to select that location
-//   • Tap anywhere on the map to drop a pin
-//   • Drag the pin to fine-tune exact position
-//   • Reverse geocoding: pin → human-readable address
-//   • Kenya-centric default view (Nairobi) if no initial position
-//
-// Returns a [PlaceLocationResult] with address, lat, lng when the user
-// confirms their selection.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class PlaceLocationResult {
@@ -37,15 +23,8 @@ class PlaceLocationResult {
   });
 }
 
-// ── Map error classification (pattern adapted from CoffeeCore's
-//    FarmMapScreen) ───────────────────────────────────────────────────────
-//
-// NOTE: an unactivated/misconfigured Maps JavaScript API key throws its
-// error to the browser console, not into Dart's catch zones, so it can't be
-// classified directly — that case is caught by the load watchdog below
-// instead (see _startLoadWatchdog). This classifier handles errors that DO
-// surface in Dart: REST call failures from search/geocoding, and anything
-// thrown inside onMapCreated.
+// ── Map error classification (pattern adapted from CoffeeCore)
+
 enum MapErrorType { apiKeyInvalid, mapLoadFailed, networkError, unknownError }
 
 class MapErrorInfo {
@@ -126,6 +105,10 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
   LatLng? _selectedLocation;
   String? _resolvedAddress;
   bool _resolvingAddress = false;
+  // Bumped on every new pin placement and on clear, so a reverse-geocode
+  // response that lands late for an already-superseded pin can be detected
+  // and safely ignored instead of overwriting fresher state.
+  int _geocodeToken = 0;
 
   // ── Map markers ────────────────────────────────────────────────────────────
   final Set<Marker> _markers = {};
@@ -138,16 +121,15 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
   void initState() {
     super.initState();
     if (widget.initialSelectedLocation != null) {
-      _selectedLocation = widget.initialSelectedLocation;
-      _resolvedAddress = null; // will be fetched on map ready
+      final position = widget.initialSelectedLocation!;
+      _selectedLocation = position;
+      _resolvedAddress = null;
+      _markers.add(_pinMarker(position));
+      _reverseGeocode(position, ++_geocodeToken);
     }
     _startLoadWatchdog();
   }
 
-  // If onMapCreated hasn't fired within 5s, the JS Maps SDK almost certainly
-  // failed silently (unactivated API / billing / referrer issue) — surface
-  // that instead of leaving a blank screen. Search/geocoding below are REST
-  // calls on a separate key and keep working regardless of this state.
   void _startLoadWatchdog() {
     _loadWatchdog?.cancel();
     setState(() {
@@ -173,14 +155,11 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
     _loadWatchdog?.cancel();
     _searchCtrl.dispose();
     _searchFocus.dispose();
-    _mapController?.dispose();
+    // Deliberately NOT calling _mapController?.dispose() here. 
     super.dispose();
   }
 
   // ── Search: Places Text Search ───────────────────────────────────────────
-  //
-  // Uses the Places API Text Search endpoint (better for Kenya than
-  // Autocomplete because it returns lat/lng directly and ranks by prominence).
   void _onSearchChanged(String query) {
     _debounceTimer?.cancel();
     final trimmed = query.trim();
@@ -332,27 +311,44 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
     });
   }
 
+  Marker _pinMarker(LatLng position) => Marker(
+        markerId: const MarkerId('selected_pin'),
+        position: position,
+        draggable: true,
+        onDragEnd: _onMarkerDragged,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        infoWindow: const InfoWindow(title: 'Selected Location'),
+      );
+
   void _setSelectedLocation(LatLng position, {String? preResolvedAddress}) {
+    // A fresh pin always invalidates whatever reverse-geocode request was
+    // still in flight for the previous one.
+    final token = ++_geocodeToken;
+
     setState(() {
       _selectedLocation = position;
       _resolvedAddress = preResolvedAddress;
       _resolvingAddress = preResolvedAddress == null;
       _markers.clear();
-      _markers.add(
-        Marker(
-          markerId: const MarkerId('selected_pin'),
-          position: position,
-          draggable: true,
-          onDragEnd: _onMarkerDragged,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-          infoWindow: const InfoWindow(title: 'Selected Location'),
-        ),
-      );
+      _markers.add(_pinMarker(position));
     });
 
     if (preResolvedAddress == null) {
-      _reverseGeocode(position);
+      _reverseGeocode(position, token);
     }
+  }
+
+  // ── Clear pin ─────────────────────────────────────────────────────────────
+  
+  void _clearSelection() {
+    debugPrint('📍 [MapPicker] Pin cleared by user');
+    _geocodeToken++; // invalidate any in-flight reverse-geocode for this pin
+    setState(() {
+      _selectedLocation = null;
+      _resolvedAddress = null;
+      _resolvingAddress = false;
+      _markers.clear();
+    });
   }
 
   void _onMarkerDragged(LatLng newPosition) {
@@ -363,8 +359,16 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
   // ── Reverse Geocoding ──────────────────────────────────────────────────────
   //
   // Converts lat/lng → human-readable address using Geocoding API.
-  Future<void> _reverseGeocode(LatLng position) async {
-    if (!MapsConfig.hasPlacesKey) return;
+  Future<void> _reverseGeocode(LatLng position, int token) async {
+    if (!MapsConfig.hasPlacesKey) {
+      // No key → nothing to resolve. Reset immediately so Confirm (now
+      // gated on _resolvingAddress) never gets stuck waiting on a request
+      // that was never going to be made — manual entry stays available.
+      if (mounted && token == _geocodeToken) {
+        setState(() => _resolvingAddress = false);
+      }
+      return;
+    }
 
     setState(() => _resolvingAddress = true);
 
@@ -380,7 +384,10 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
 
       debugPrint('🌍 [MapPicker/Geocode] reverse geocode $position');
       final resp = await http.get(uri).timeout(const Duration(seconds: 8));
-      if (!mounted) return;
+      // A newer pin (or an explicit clear) superseded this request while it
+      // was in flight — drop the response instead of overwriting fresher
+      // state with a stale address.
+      if (!mounted || token != _geocodeToken) return;
 
       if (resp.statusCode == 200) {
         final body = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -401,7 +408,9 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
       debugPrint('❌ [MapPicker/Geocode] $e');
     }
 
-    if (mounted) setState(() => _resolvingAddress = false);
+    if (mounted && token == _geocodeToken) {
+      setState(() => _resolvingAddress = false);
+    }
   }
 
   // ── Confirm selection ────────────────────────────────────────────────────
@@ -410,6 +419,14 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
     if (_selectedLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Tap the map or search to select a location first.'),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+
+    if (_resolvingAddress) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Still resolving the address for this pin — one moment.'),
         behavior: SnackBarBehavior.floating,
       ));
       return;
@@ -457,13 +474,26 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
               });
             },
           ),
-          // Confirm button
+          // Confirm button — also gated on _resolvingAddress so a fast tap
+          // can't race ahead of the address that's about to auto-fill it.
           TextButton.icon(
-            onPressed: _selectedLocation != null ? _confirmSelection : null,
-            icon: const Icon(Icons.check_rounded, size: 18),
-            label: const Text('CONFIRM', style: TextStyle(fontWeight: FontWeight.w600)),
+            onPressed: (_selectedLocation != null && !_resolvingAddress)
+                ? _confirmSelection
+                : null,
+            icon: _resolvingAddress
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white24),
+                  )
+                : const Icon(Icons.check_rounded, size: 18),
+            label: Text(
+              _resolvingAddress ? 'RESOLVING…' : 'CONFIRM',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
             style: TextButton.styleFrom(
-              foregroundColor: _selectedLocation != null
+              foregroundColor: (_selectedLocation != null && !_resolvingAddress)
                   ? const Color(0xFF14FFEC)
                   : Colors.white24,
             ),
@@ -674,6 +704,18 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                             color: Colors.white70, fontSize: 12, height: 1.4),
                       ),
                     ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      icon: const Icon(Icons.clear_rounded,
+                          color: Colors.white38, size: 16),
+                      tooltip: 'Clear pin',
+                      onPressed: _clearSelection,
+                      padding: EdgeInsets.zero,
+                      constraints:
+                          const BoxConstraints(maxWidth: 28, maxHeight: 28),
+                      visualDensity: VisualDensity.compact,
+                      splashRadius: 16,
+                    ),
                   ]),
                   if (_resolvingAddress) ...[
                     const SizedBox(height: 6),
@@ -708,7 +750,7 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
               SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Tap anywhere on the map to drop a pin. Drag the pin to fine-tune. Search above to find named places.',
+                  'Tap anywhere on the map to drop a pin. Drag the pin to fine-tune. Search above to find named places. Tap ✕ on the info bar above to clear a mis-placed pin.',
                   style: TextStyle(color: Colors.white38, fontSize: 11, height: 1.4),
                 ),
               ),
@@ -792,11 +834,6 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
         try {
           _mapController = ctrl;
           _loadWatchdog?.cancel();
-          // If we have a pre-selected location, show it
-          if (_selectedLocation != null) {
-            _setSelectedLocation(_selectedLocation!,
-                preResolvedAddress: _resolvedAddress);
-          }
         } catch (e) {
           final info = _parseMapError(e, context: 'Map Creation');
           debugPrint('❌ [MapPicker] ${info.technicalDetails}');

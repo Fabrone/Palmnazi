@@ -36,7 +36,7 @@ final Logger _log = Logger(
 //   2 — Categories CRUD
 //   3 — Places CRUD
 //   4 — Blog
-//   5 — Role Requests (MainAdmin only — live badge dot on pending count)
+//   5 — Role Requests (Admin & MainAdmin — live badge dot on pending count)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AdminDashboard extends StatefulWidget {
@@ -115,13 +115,15 @@ class _AdminDashboardState extends State<AdminDashboard>
 
         // The Firestore snapshot is already mapped and trimmed above, but we
         // trim again here as a permanent safety net.
-        final cleanRole    = role.trim();
-        final wasMainAdmin = _adminRole?.trim() == 'MainAdmin';
+        final cleanRole = role.trim();
+
+        final wasQualified = _adminRole == 'Admin' || _adminRole == 'MainAdmin';
+        final isQualified  = cleanRole  == 'Admin' || cleanRole  == 'MainAdmin';
 
         setState(() => _adminRole = cleanRole);
 
-        if (cleanRole == 'MainAdmin' && !wasMainAdmin) {
-          _log.i('🔐 [AdminDashboard._initRbac] Role confirmed as MainAdmin — starting listeners');
+        if (isQualified && !wasQualified) {
+          _log.i('🔐 [AdminDashboard._initRbac] Role confirmed as "$cleanRole" — starting Role Requests listeners');
           _pendingCountSub?.cancel();
           _pendingCountSub = RbacService.pendingRequestsCountStream().listen(
             (count) {
@@ -131,10 +133,10 @@ class _AdminDashboardState extends State<AdminDashboard>
           );
           NotificationService.startAdminRequestsListener();
 
-        } else if (cleanRole == 'MainAdmin' && wasMainAdmin) {
+        } else if (isQualified && wasQualified) {
           // Role re-confirmed, no action needed
-        } else if (cleanRole != 'MainAdmin' && wasMainAdmin) {
-          _log.w('⚠️ [AdminDashboard._initRbac] Role downgraded from MainAdmin → "$cleanRole" — cancelling listeners');
+        } else if (!isQualified && wasQualified) {
+          _log.w('⚠️ [AdminDashboard._initRbac] Role downgraded to "$cleanRole" — cancelling Role Requests listeners');
           _pendingCountSub?.cancel();
           _pendingCountSub = null;
           setState(() => _pendingRequestsCount = 0);
@@ -200,7 +202,7 @@ class _AdminDashboardState extends State<AdminDashboard>
     });
   }
 
-  bool get _isMainAdmin => _adminRole?.trim() == 'MainAdmin';
+  bool get _canManageRoleRequests => _adminRole == 'Admin' || _adminRole == 'MainAdmin';
 
   @override
   Widget build(BuildContext context) {
@@ -217,14 +219,14 @@ class _AdminDashboardState extends State<AdminDashboard>
         children: [
           if (isTablet)
             _AdminSidebar(
-              items:                _navItems,
-              selectedIndex:        _selectedIndex,
-              isExpanded:           isDesktop,
-              onTap:                _onNavTap,
-              filterCity:           _filterCity,
-              filterCategory:       _filterCategory,
-              pendingRequestsCount: _isMainAdmin ? _pendingRequestsCount : 0,
-              isMainAdmin:          _isMainAdmin,
+              items:                 _navItems,
+              selectedIndex:         _selectedIndex,
+              isExpanded:            isDesktop,
+              onTap:                 _onNavTap,
+              filterCity:            _filterCity,
+              filterCategory:        _filterCategory,
+              pendingRequestsCount:  _canManageRoleRequests ? _pendingRequestsCount : 0,
+              canManageRoleRequests: _canManageRoleRequests,
             ),
           Expanded(
             child: Column(
@@ -249,7 +251,7 @@ class _AdminDashboardState extends State<AdminDashboard>
     final destinations = <NavigationDestination>[];
     for (int i = 0; i < _navItems.length; i++) {
       final item = _navItems[i];
-      if (i == 5 && !_isMainAdmin) continue;
+      if (i == 5 && !_canManageRoleRequests) continue;
 
       final isRoleRequests = i == 5;
       final hasBadge = isRoleRequests && _pendingRequestsCount > 0;
@@ -265,7 +267,7 @@ class _AdminDashboardState extends State<AdminDashboard>
       ));
     }
 
-    final logicalIndices = [0, 1, 2, 3, 4, if (_isMainAdmin) 5];
+    final logicalIndices = [0, 1, 2, 3, 4, if (_canManageRoleRequests) 5];
     final visualIndex = logicalIndices.contains(_selectedIndex)
         ? logicalIndices.indexOf(_selectedIndex)
         : 0;
@@ -323,11 +325,11 @@ class _AdminDashboardState extends State<AdminDashboard>
     switch (_selectedIndex) {
       case 0:
         return _DashboardOverview(
-          stats:                _stats,
-          isLoading:            _statsLoading,
-          onGoTo:               _onNavTap,
-          pendingRequestsCount: _isMainAdmin ? _pendingRequestsCount : 0,
-          isMainAdmin:          _isMainAdmin,
+          stats:                 _stats,
+          isLoading:             _statsLoading,
+          onGoTo:                _onNavTap,
+          pendingRequestsCount:  _canManageRoleRequests ? _pendingRequestsCount : 0,
+          canManageRoleRequests: _canManageRoleRequests,
         );
       case 1:
         return AdminResortCitiesScreen(
@@ -388,7 +390,7 @@ class _AdminDashboardState extends State<AdminDashboard>
               ),
               const SizedBox(height: 16),
               ..._navItems.asMap().entries
-                  .where((e) => e.key != 5 || _isMainAdmin)
+                  .where((e) => e.key != 5 || _canManageRoleRequests)
                   .map((e) {
                 final isRoleReq = e.key == 5;
                 return ListTile(
@@ -439,7 +441,7 @@ class _AdminSidebar extends StatelessWidget {
   final CityModel?        filterCity;
   final CategoryModel?    filterCategory;
   final int               pendingRequestsCount;
-  final bool              isMainAdmin;
+  final bool              canManageRoleRequests;
 
   const _AdminSidebar({
     required this.items,
@@ -449,7 +451,7 @@ class _AdminSidebar extends StatelessWidget {
     this.filterCity,
     this.filterCategory,
     this.pendingRequestsCount = 0,
-    this.isMainAdmin = false,
+    this.canManageRoleRequests = false,
   });
 
   @override
@@ -497,7 +499,7 @@ class _AdminSidebar extends StatelessWidget {
               child: Column(
                 children: [
                   ...items.asMap().entries.map((e) {
-                    if (e.key == 5 && !isMainAdmin) return const SizedBox.shrink();
+                    if (e.key == 5 && !canManageRoleRequests) return const SizedBox.shrink();
 
                     final isSelected = selectedIndex == e.key;
                     final isRoleReq  = e.key == 5;
@@ -843,14 +845,14 @@ class _DashboardOverview extends StatelessWidget {
   final bool                 isLoading;
   final ValueChanged<int>    onGoTo;
   final int                  pendingRequestsCount;
-  final bool                 isMainAdmin;
+  final bool                 canManageRoleRequests;
 
   const _DashboardOverview({
     required this.stats,
     required this.isLoading,
     required this.onGoTo,
     this.pendingRequestsCount = 0,
-    this.isMainAdmin = false,
+    this.canManageRoleRequests = false,
   });
 
   @override
@@ -917,7 +919,7 @@ class _DashboardOverview extends StatelessWidget {
                     cardWidth: statCardW,
                     onTap:    () => onGoTo(3),
                   ),
-                  if (isMainAdmin)
+                  if (canManageRoleRequests)
                     _StatCard(
                       icon:     Icons.manage_accounts_rounded,
                       label:    'Role Requests',
@@ -975,7 +977,7 @@ class _DashboardOverview extends StatelessWidget {
                     cardWidth:   actionCardW,
                     onTap:       () => onGoTo(4),
                   ),
-                  if (isMainAdmin)
+                  if (canManageRoleRequests)
                     _QuickAction(
                       icon:        Icons.manage_accounts_rounded,
                       label:       'Role Requests',
