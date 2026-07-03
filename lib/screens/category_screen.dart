@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:palmnazi/constants/tourism_labels.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/place_model.dart';
@@ -37,10 +38,10 @@ import 'package:palmnazi/services/api_client.dart';
 
 // ── Shared palette ─────────────────────────────────────────────────────────
 abstract final class _P {
-  static const Color aqua       = Color(0xFF00B8D4);
+  static const Color aqua = Color(0xFF00B8D4);
   static const Color aquaBright = Color(0xFF00E5FF);
   // deepNavy removed — was unused (warning: unused_field)
-  static const Color deepBlue   = Color(0xFF071829);
+  static const Color deepBlue = Color(0xFF071829);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -82,7 +83,7 @@ extension PlaceDisplayHelpers on PlaceModel {
     final v = attributes['isOpen'];
     if (v is bool) return v;
     if (v is String) {
-      if (v == 'true')  return true;
+      if (v == 'true') return true;
       if (v == 'false') return false;
     }
     return null;
@@ -133,16 +134,16 @@ class _CategoryApi {
     if (resp.statusCode != 200) return [];
 
     final body = jsonDecode(resp.body) as Map<String, dynamic>;
-    final data  = body['data'];
+    final data = body['data'];
 
     List<dynamic> raw;
     if (data is List) {
       raw = data;
     } else if (data is Map) {
       // Backend wraps as { places: [...], pagination: {...} }
-      raw = (data['places'] as List<dynamic>?)
-          ?? (data['data']   as List<dynamic>?)
-          ?? <dynamic>[];
+      raw = (data['places'] as List<dynamic>?) ??
+          (data['data'] as List<dynamic>?) ??
+          <dynamic>[];
     } else {
       raw = [];
     }
@@ -176,44 +177,60 @@ class CategoryScreen extends StatefulWidget {
 
 class _CategoryScreenState extends State<CategoryScreen>
     with TickerProviderStateMixin {
-
   // ── Scroll / animation ────────────────────────────────────────────────────
-  late final ScrollController    _scrollController;
+  late final ScrollController _scrollController;
   late final AnimationController _fadeController;
-  late final Animation<double>   _fadeAnimation;
+  late final Animation<double> _fadeAnimation;
   double _scrollOffset = 0;
 
   // ── Subcategory filter ────────────────────────────────────────────────────
   /// null means "All" — no subcategory filter applied.
   String? _selectedSubcatId;
 
+  // ── Live-typed name filter — client-side, since the full place list for
+  // this city+category is already loaded upfront (no new endpoint needed).
+  final _searchCtrl = TextEditingController();
+  String _nameQuery = '';
+
   // ── Live place data ───────────────────────────────────────────────────────
-  List<PlaceModel> _places  = [];
-  bool             _loading = true;
-  String?          _error;
+  List<PlaceModel> _places = [];
+  bool _loading = true;
+  String? _error;
 
-  // ── Derived list — filtered by active subcategory chip ───────────────────
+  // ── Derived list — filtered by active subcategory chip + live name query ─
   List<PlaceModel> get _filteredPlaces {
-    if (_selectedSubcatId == null) return _places;
+    Iterable<PlaceModel> result = _places;
 
-    // Match by primaryCategoryId (computed from categoryLinks.first).
-    // Fall back to matching category name if no links are present.
-    return _places.where((p) {
-      final pid = p.primaryCategoryId;
-      if (pid != null) return pid == _selectedSubcatId;
-
+    if (_selectedSubcatId != null) {
+      // Match by primaryCategoryId (computed from categoryLinks.first).
+      // Fall back to matching category name if no links are present.
       final childName = widget.category.children
           .firstWhere(
             (c) => c.id == _selectedSubcatId,
             orElse: () => CategoryModel(
-              id: '', name: '', slug: '',
-              isActive: false, children: [], sortOrder: 0,
+              id: '',
+              name: '',
+              slug: '',
+              isActive: false,
+              children: [],
+              sortOrder: 0,
             ),
           )
           .name
           .toLowerCase();
-      return (p.primaryCategoryName ?? '').toLowerCase() == childName;
-    }).toList();
+      result = result.where((p) {
+        final pid = p.primaryCategoryId;
+        if (pid != null) return pid == _selectedSubcatId;
+        return (p.primaryCategoryName ?? '').toLowerCase() == childName;
+      });
+    }
+
+    final q = _nameQuery.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      result = result.where((p) => p.name.toLowerCase().contains(q));
+    }
+
+    return result.toList();
   }
 
   @override
@@ -235,42 +252,49 @@ class _CategoryScreenState extends State<CategoryScreen>
   void dispose() {
     _scrollController.dispose();
     _fadeController.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
   // ── Data loading ──────────────────────────────────────────────────────────
   Future<void> _loadPlaces() async {
     if (!mounted) return;
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final places = await _CategoryApi.fetchPlaces(
-        cityId:     widget.city.id,
+        cityId: widget.city.id,
         categoryId: widget.category.id,
       );
       if (mounted) {
-        setState(() { _places = places; _loading = false; });
+        setState(() {
+          _places = places;
+          _loading = false;
+        });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error   = 'Could not load places. Tap to retry.';
+          _error =
+              'Could not load ${TourismLabels.placePlural.toLowerCase()}. Tap to retry.';
           _loading = false;
         });
       }
     }
   }
 
-  void _onScroll() =>
-      setState(() => _scrollOffset = _scrollController.offset);
+  void _onScroll() => setState(() => _scrollOffset = _scrollController.offset);
 
   void _navigateToPlaceDetails(PlaceModel place) {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PlaceDetailsScreen(
-          city:     widget.city,
+          city: widget.city,
           category: widget.category,
-          place:    place,
+          place: place,
         ),
       ),
     );
@@ -287,8 +311,7 @@ class _CategoryScreenState extends State<CategoryScreen>
 
           // ── Dark scrim ───────────────────────────────────────────────────
           Positioned.fill(
-            child: Container(
-                color: Colors.black.withValues(alpha: 0.50)),
+            child: Container(color: Colors.black.withValues(alpha: 0.50)),
           ),
 
           // ── Scrollable content ───────────────────────────────────────────
@@ -311,8 +334,14 @@ class _CategoryScreenState extends State<CategoryScreen>
               ),
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 24, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: _buildSearchField(),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                   child: _buildPlaceCount(),
                 ),
               ),
@@ -364,7 +393,9 @@ class _CategoryScreenState extends State<CategoryScreen>
   Widget _buildTopNav() {
     final navOpacity = (_scrollOffset / 80).clamp(0.0, 1.0);
     return Positioned(
-      top: 0, left: 0, right: 0,
+      top: 0,
+      left: 0,
+      right: 0,
       child: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -378,27 +409,28 @@ class _CategoryScreenState extends State<CategoryScreen>
         ),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
                 GestureDetector(
                   onTap: () => Navigator.pop(context),
                   child: Container(
-                    width: 36, height: 36,
+                    width: 36,
+                    height: 36,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color:  Colors.white.withValues(alpha: 0.15),
+                      color: Colors.white.withValues(alpha: 0.15),
                       border: Border.all(
                           color: Colors.white.withValues(alpha: 0.30)),
                     ),
-                    child: const Icon(
-                        Icons.arrow_back, color: Colors.white, size: 18),
+                    child: const Icon(Icons.arrow_back,
+                        color: Colors.white, size: 18),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Container(
-                  width: 36, height: 36,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: const LinearGradient(
@@ -409,12 +441,13 @@ class _CategoryScreenState extends State<CategoryScreen>
                     boxShadow: [
                       BoxShadow(
                         color: _P.aqua.withValues(alpha: 0.55),
-                        blurRadius: 10, spreadRadius: 1,
+                        blurRadius: 10,
+                        spreadRadius: 1,
                       ),
                     ],
                   ),
-                  child: const Icon(
-                      Icons.landscape, color: Colors.white, size: 18),
+                  child: const Icon(Icons.landscape,
+                      color: Colors.white, size: 18),
                 ),
                 const SizedBox(width: 10),
                 ShaderMask(
@@ -458,8 +491,7 @@ class _CategoryScreenState extends State<CategoryScreen>
           ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 6),
-            child: Icon(Icons.chevron_right,
-                color: Colors.white54, size: 16),
+            child: Icon(Icons.chevron_right, color: Colors.white54, size: 16),
           ),
           Flexible(
             child: Text(
@@ -490,8 +522,7 @@ class _CategoryScreenState extends State<CategoryScreen>
           ],
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-            color: _P.aqua.withValues(alpha: 0.40), width: 1.2),
+        border: Border.all(color: _P.aqua.withValues(alpha: 0.40), width: 1.2),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -531,9 +562,8 @@ class _CategoryScreenState extends State<CategoryScreen>
 
   // ── Subcategory filter chip row ───────────────────────────────────────────
   Widget _buildSubcategoryFilter() {
-    final activeChildren = widget.category.children
-        .where((c) => c.isActive)
-        .toList();
+    final activeChildren =
+        widget.category.children.where((c) => c.isActive).toList();
     if (activeChildren.isEmpty) return const SizedBox.shrink();
 
     return SizedBox(
@@ -553,11 +583,52 @@ class _CategoryScreenState extends State<CategoryScreen>
                 child: _SubcatChip(
                   label: child.name,
                   selected: _selectedSubcatId == child.id,
-                  onTap: () =>
-                      setState(() => _selectedSubcatId = child.id),
+                  onTap: () => setState(() => _selectedSubcatId = child.id),
                 ),
               )),
         ],
+      ),
+    );
+  }
+
+  // ── Live name search field ────────────────────────────────────────────────
+  Widget _buildSearchField() {
+    if (_loading || _error != null || _places.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+        ),
+        child: TextField(
+          controller: _searchCtrl,
+          onChanged: (v) => setState(() => _nameQuery = v),
+          style: const TextStyle(color: Colors.white, fontSize: 14),
+          decoration: InputDecoration(
+            hintText:
+                'Search ${TourismLabels.placePlural.toLowerCase()} in ${widget.category.name}…',
+            hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+            prefixIcon: const Icon(Icons.search_rounded,
+                color: _P.aquaBright, size: 18),
+            suffixIcon: _nameQuery.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.close_rounded,
+                        color: Colors.white38, size: 18),
+                    onPressed: () {
+                      _searchCtrl.clear();
+                      setState(() => _nameQuery = '');
+                    },
+                  )
+                : null,
+            border: InputBorder.none,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+          ),
+        ),
       ),
     );
   }
@@ -567,7 +638,7 @@ class _CategoryScreenState extends State<CategoryScreen>
     if (_loading || _error != null) return const SizedBox.shrink();
     final n = _filteredPlaces.length;
     return Text(
-      '$n ${n == 1 ? 'place' : 'places'} found',
+      '$n ${n == 1 ? TourismLabels.placeSingular.toLowerCase() : TourismLabels.placePlural.toLowerCase()} found',
       style: TextStyle(
         fontSize: 15,
         fontWeight: FontWeight.w600,
@@ -603,7 +674,7 @@ class _CategoryScreenState extends State<CategoryScreen>
                 const CircularProgressIndicator(
                     color: _P.aquaBright, strokeWidth: 2),
                 const SizedBox(height: 14),
-                Text('Loading places…',
+                Text('Loading ${TourismLabels.placePlural.toLowerCase()}…',
                     style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.55),
                         fontSize: 13)),
@@ -622,8 +693,8 @@ class _CategoryScreenState extends State<CategoryScreen>
             decoration: BoxDecoration(
               color: Colors.redAccent.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                  color: Colors.redAccent.withValues(alpha: 0.30)),
+              border:
+                  Border.all(color: Colors.redAccent.withValues(alpha: 0.30)),
             ),
             child: Column(
               children: [
@@ -633,8 +704,7 @@ class _CategoryScreenState extends State<CategoryScreen>
                 Text(
                   _error!,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color: Colors.white70, fontSize: 13),
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
                 const SizedBox(height: 8),
                 const Text(
@@ -657,24 +727,28 @@ class _CategoryScreenState extends State<CategoryScreen>
           child: Column(
             children: [
               Icon(Icons.place_outlined,
-                  size: 48,
-                  color: Colors.white.withValues(alpha: 0.30)),
+                  size: 48, color: Colors.white.withValues(alpha: 0.30)),
               const SizedBox(height: 12),
               Text(
-                'No places found in ${widget.category.name}'
-                '${_selectedSubcatId != null ? ' for this subcategory' : ''}.',
+                'No ${TourismLabels.placePlural.toLowerCase()} found in ${widget.category.name}'
+                '${_selectedSubcatId != null ? ' for this subcategory' : ''}'
+                '${_nameQuery.trim().isNotEmpty ? ' matching "${_nameQuery.trim()}"' : ''}.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.55),
-                    fontSize: 13),
+                    color: Colors.white.withValues(alpha: 0.55), fontSize: 13),
               ),
-              if (_selectedSubcatId != null) ...[
+              if (_selectedSubcatId != null ||
+                  _nameQuery.trim().isNotEmpty) ...[
                 const SizedBox(height: 8),
                 TextButton(
-                  onPressed: () =>
-                      setState(() => _selectedSubcatId = null),
-                  child: const Text('Show all places',
-                      style: TextStyle(
+                  onPressed: () => setState(() {
+                    _selectedSubcatId = null;
+                    _nameQuery = '';
+                    _searchCtrl.clear();
+                  }),
+                  child: Text(
+                      'Show all ${TourismLabels.placePlural.toLowerCase()}',
+                      style: const TextStyle(
                           color: _P.aquaBright,
                           fontSize: 12,
                           fontWeight: FontWeight.w600)),
@@ -694,12 +768,12 @@ class _CategoryScreenState extends State<CategoryScreen>
         decoration: BoxDecoration(
           color: _P.deepBlue,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-              color: _P.aqua.withValues(alpha: 0.20), width: 1),
+          border: Border.all(color: _P.aqua.withValues(alpha: 0.20), width: 1),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.40),
-              blurRadius: 16, spreadRadius: 2,
+              blurRadius: 16,
+              spreadRadius: 2,
               offset: const Offset(0, 6),
             ),
           ],
@@ -766,8 +840,7 @@ class _CategoryScreenState extends State<CategoryScreen>
                       children: [
                         Text(
                           // primaryCategoryName from extension (categoryLinks.first)
-                          place.primaryCategoryName
-                              ?? widget.category.name,
+                          place.primaryCategoryName ?? widget.category.name,
                           style: const TextStyle(
                             fontSize: 13,
                             color: _P.aquaBright,
@@ -779,15 +852,13 @@ class _CategoryScreenState extends State<CategoryScreen>
                           const SizedBox(width: 8),
                           Text('•',
                               style: TextStyle(
-                                  color: Colors.white
-                                      .withValues(alpha: 0.5))),
+                                  color: Colors.white.withValues(alpha: 0.5))),
                           const SizedBox(width: 8),
                           Text(
                             '${place.reviewCount} reviews',
                             style: TextStyle(
                               fontSize: 13,
-                              color: Colors.white
-                                  .withValues(alpha: 0.70),
+                              color: Colors.white.withValues(alpha: 0.70),
                             ),
                           ),
                         ],
@@ -813,24 +884,21 @@ class _CategoryScreenState extends State<CategoryScreen>
                     // Feature chips from taxonomy via extension
                     if (place.features.isNotEmpty) ...[
                       Wrap(
-                        spacing: 8, runSpacing: 8,
-                        children:
-                            place.features.take(4).map((f) {
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: place.features.take(4).map((f) {
                           return Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
-                              color: Colors.white
-                                  .withValues(alpha: 0.10),
+                              color: Colors.white.withValues(alpha: 0.10),
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
-                                  color: Colors.white
-                                      .withValues(alpha: 0.20)),
+                                  color: Colors.white.withValues(alpha: 0.20)),
                             ),
                             child: Text(f,
                                 style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.white70)),
+                                    fontSize: 11, color: Colors.white70)),
                           );
                         }).toList(),
                       ),
@@ -841,8 +909,7 @@ class _CategoryScreenState extends State<CategoryScreen>
                     SizedBox(
                       width: double.infinity,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            vertical: 12),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
                             colors: [_P.aquaBright, _P.aqua],
@@ -851,7 +918,8 @@ class _CategoryScreenState extends State<CategoryScreen>
                           boxShadow: [
                             BoxShadow(
                               color: _P.aqua.withValues(alpha: 0.40),
-                              blurRadius: 10, spreadRadius: 1,
+                              blurRadius: 10,
+                              spreadRadius: 1,
                             ),
                           ],
                         ),
@@ -898,15 +966,13 @@ class _CategoryScreenState extends State<CategoryScreen>
                 Image.network(
                   place.coverImage!,
                   fit: BoxFit.cover,
-                  frameBuilder: (ctx, child, frame, _) =>
-                      AnimatedOpacity(
+                  frameBuilder: (ctx, child, frame, _) => AnimatedOpacity(
                     opacity: frame == null ? 0.0 : 1.0,
                     duration: const Duration(milliseconds: 500),
                     curve: Curves.easeOut,
                     child: child,
                   ),
-                  errorBuilder: (_, __, ___) =>
-                      _imageFallback(place.name),
+                  errorBuilder: (_, __, ___) => _imageFallback(place.name),
                 )
               else
                 _imageFallback(place.name),
@@ -931,14 +997,13 @@ class _CategoryScreenState extends State<CategoryScreen>
               // Only shown when the attribute is explicitly set.
               if (place.isOpen != null)
                 Positioned(
-                  top: 12, right: 12,
+                  top: 12,
+                  right: 12,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: place.isOpen!
-                          ? Colors.green
-                          : Colors.red,
+                      color: place.isOpen! ? Colors.green : Colors.red,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
@@ -955,10 +1020,11 @@ class _CategoryScreenState extends State<CategoryScreen>
               // Price range badge — derived from place.pricing via extension
               if ((place.priceRange ?? '').isNotEmpty)
                 Positioned(
-                  top: 12, left: 12,
+                  top: 12,
+                  left: 12,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.60),
                       borderRadius: BorderRadius.circular(12),
@@ -1024,8 +1090,7 @@ class _SubcatChip extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
           color: selected
               ? _P.aqua.withValues(alpha: 0.22)
@@ -1042,8 +1107,7 @@ class _SubcatChip extends StatelessWidget {
           label,
           style: TextStyle(
             fontSize: 13,
-            fontWeight:
-                selected ? FontWeight.w700 : FontWeight.w500,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
             color: selected ? _P.aquaBright : Colors.white70,
           ),
         ),

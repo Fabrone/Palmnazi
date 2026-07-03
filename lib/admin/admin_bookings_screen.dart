@@ -14,7 +14,12 @@ import 'package:palmnazi/services/booking_service.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AdminBookingsScreen extends StatefulWidget {
-  const AdminBookingsScreen({super.key});
+  /// When set, shows only this place's bookings (Place Admin Panel usage) via
+  /// BookingService.streamForPlace — required for a place-scoped Admin's
+  /// query to satisfy firestore.rules. Null shows every booking (MainAdmin).
+  final String? placeId;
+
+  const AdminBookingsScreen({super.key, this.placeId});
 
   @override
   State<AdminBookingsScreen> createState() => _AdminBookingsScreenState();
@@ -83,7 +88,9 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
           const SizedBox(height: 16),
           Expanded(
             child: StreamBuilder<List<BookingModel>>(
-              stream: BookingService.streamAll(),
+              stream: widget.placeId != null
+                  ? BookingService.streamForPlace(widget.placeId!)
+                  : BookingService.streamAll(),
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
                   return const AdminLoader();

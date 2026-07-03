@@ -9,23 +9,26 @@ import 'package:palmnazi/admin/admin_blog_list_screen.dart';
 import 'package:palmnazi/admin/admin_role_requests_screen.dart';
 import 'package:palmnazi/admin/admin_payment_methods_screen.dart';
 import 'package:palmnazi/admin/admin_bookings_screen.dart';
+import 'package:palmnazi/admin/admin_reports_screen.dart';
+import 'package:palmnazi/admin/place_admin/place_admin_panel.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/services/notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:palmnazi/services/rbac_service.dart';
+import 'package:palmnazi/widgets/place_search_picker.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Logger
 // ─────────────────────────────────────────────────────────────────────────────
 final Logger _log = Logger(
   printer: PrettyPrinter(
-    methodCount:      0,
+    methodCount: 0,
     errorMethodCount: 8,
-    lineLength:       100,
-    colors:           true,
-    printEmojis:      true,
+    lineLength: 100,
+    colors: true,
+    printEmojis: true,
   ),
 );
 
@@ -56,7 +59,7 @@ class _AdminDashboardState extends State<AdminDashboard>
   late AnimationController _sidebarAnim;
 
   // Filter context for Places tab
-  CityModel?     _filterCity;
+  CityModel? _filterCity;
   CategoryModel? _filterCategory;
 
   final _apiService = AdminApiService();
@@ -64,26 +67,35 @@ class _AdminDashboardState extends State<AdminDashboard>
   bool _statsLoading = true;
 
   // ── RBAC — live role + pending requests counter ───────────────────────────
-  int                         _pendingRequestsCount = 0;
-  StreamSubscription<int>?    _pendingCountSub;
+  int _pendingRequestsCount = 0;
+  StreamSubscription<int>? _pendingCountSub;
   StreamSubscription<String>? _roleSub;
-  String?                     _adminRole; // 'Admin' or 'MainAdmin'
+  String? _adminRole; // 'Admin' or 'MainAdmin'
+
+  // ── Place-scoped Admin — the place they're limited to (null = unassigned,
+  // shown as an empty state rather than crashing) ───────────────────────────
+  String? _managedPlaceId;
+  String _managedPlaceName = '';
+  String _managedCityName = '';
+  bool _managedPlaceLoading = false;
 
   static const _navItems = [
-    _NavItem(Icons.dashboard_rounded,       'Dashboard'),
-    _NavItem(Icons.location_city_rounded,   'Resort Cities'),
-    _NavItem(Icons.category_rounded,        'Categories'),
-    _NavItem(Icons.place_rounded,           'Places'),
-    _NavItem(Icons.article_rounded,         'Blog'),
+    _NavItem(Icons.dashboard_rounded, 'Dashboard'),
+    _NavItem(Icons.location_city_rounded, 'Resort Cities'),
+    _NavItem(Icons.category_rounded, 'Categories'),
+    _NavItem(Icons.place_rounded, 'Places'),
+    _NavItem(Icons.article_rounded, 'Blog'),
     _NavItem(Icons.manage_accounts_rounded, 'Role Requests'),
-    _NavItem(Icons.payments_rounded,        'Payment Methods'),
-    _NavItem(Icons.calendar_month_rounded,  'Bookings'),
+    _NavItem(Icons.payments_rounded, 'Payment Methods'),
+    _NavItem(Icons.calendar_month_rounded, 'Bookings'),
+    _NavItem(Icons.bar_chart_rounded, 'Reports'),
   ];
 
   @override
   void initState() {
     super.initState();
-    _log.i('🏁 [AdminDashboard] initState — uid=${FirebaseAuth.instance.currentUser?.uid ?? "null"}');
+    _log.i(
+        '🏁 [AdminDashboard] initState — uid=${FirebaseAuth.instance.currentUser?.uid ?? "null"}');
     _sidebarAnim = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
@@ -101,11 +113,13 @@ class _AdminDashboardState extends State<AdminDashboard>
     if (!mounted) return;
 
     if (firebaseUid == null) {
-      _log.e('❌ [AdminDashboard._initRbac] Firebase uid still null after wait — RBAC listeners not started');
+      _log.e(
+          '❌ [AdminDashboard._initRbac] Firebase uid still null after wait — RBAC listeners not started');
       return;
     }
 
-    _log.i('🔐 [AdminDashboard._initRbac] Starting Firestore role stream for uid=$firebaseUid');
+    _log.i(
+        '🔐 [AdminDashboard._initRbac] Starting Firestore role stream for uid=$firebaseUid');
     _roleSub?.cancel();
 
     // Role is read directly from the Firestore Users/{firebaseUid} document —
@@ -123,40 +137,81 @@ class _AdminDashboardState extends State<AdminDashboard>
         // trim again here as a permanent safety net.
         final cleanRole = role.trim();
 
-        final wasQualified = _adminRole == 'Admin' || _adminRole == 'MainAdmin';
-        final isQualified  = cleanRole  == 'Admin' || cleanRole  == 'MainAdmin';
+        // Only MainAdmin approves/denies other admins — a place-scoped Admin
+        // has no reason to see or be notified about role requests.
+        final wasMainAdmin = _adminRole == 'MainAdmin';
+        final isMainAdmin = cleanRole == 'MainAdmin';
 
         setState(() => _adminRole = cleanRole);
 
-        if (isQualified && !wasQualified) {
-          _log.i('🔐 [AdminDashboard._initRbac] Role confirmed as "$cleanRole" — starting Role Requests listeners');
+        if (isMainAdmin && !wasMainAdmin) {
+          _log.i(
+              '🔐 [AdminDashboard._initRbac] Role confirmed as MainAdmin — starting Role Requests listeners');
           _pendingCountSub?.cancel();
           _pendingCountSub = RbacService.pendingRequestsCountStream().listen(
             (pendingCount) {
               if (mounted) setState(() => _pendingRequestsCount = pendingCount);
             },
-            onError: (e) => _log.w('⚠️ [AdminDashboard] pendingCountStream error: $e'),
+            onError: (e) =>
+                _log.w('⚠️ [AdminDashboard] pendingCountStream error: $e'),
           );
           NotificationService.startAdminRequestsListener();
-
-        } else if (isQualified && wasQualified) {
+        } else if (isMainAdmin && wasMainAdmin) {
           // Role re-confirmed, no action needed
-        } else if (!isQualified && wasQualified) {
-          _log.w('⚠️ [AdminDashboard._initRbac] Role downgraded to "$cleanRole" — cancelling Role Requests listeners');
+        } else if (!isMainAdmin && wasMainAdmin) {
+          _log.w(
+              '⚠️ [AdminDashboard._initRbac] Role downgraded from MainAdmin — cancelling Role Requests listeners');
           _pendingCountSub?.cancel();
           _pendingCountSub = null;
           setState(() => _pendingRequestsCount = 0);
+        }
+
+        if (cleanRole == 'Admin') {
+          _loadManagedPlace(firebaseUid);
         } else {
-          _log.w('⚠️ [AdminDashboard._initRbac] Role is "$cleanRole" — Role Requests UI hidden');
+          setState(() {
+            _managedPlaceId = null;
+            _managedPlaceName = '';
+            _managedCityName = '';
+          });
         }
       },
       onError: (e) {
-        _log.e('❌ [AdminDashboard._initRbac] Firestore role stream error: $e', error: e);
+        _log.e('❌ [AdminDashboard._initRbac] Firestore role stream error: $e',
+            error: e);
       },
       onDone: () {
-        _log.w('⚠️ [AdminDashboard._initRbac] Firestore role stream closed unexpectedly');
+        _log.w(
+            '⚠️ [AdminDashboard._initRbac] Firestore role stream closed unexpectedly');
       },
     );
+  }
+
+  // ── Fetch the place a plain 'Admin' is scoped to ──────────────────────────
+  Future<void> _loadManagedPlace(String firebaseUid) async {
+    setState(() => _managedPlaceLoading = true);
+    final place = await RbacService.getManagedPlace(firebaseUid);
+    if (!mounted) return;
+    setState(() {
+      _managedPlaceId = place?.placeId;
+      _managedPlaceName = place?.placeName ?? '';
+      _managedCityName = place?.cityName ?? '';
+      _managedPlaceLoading = false;
+    });
+  }
+
+  // ── MainAdmin: open the Place Admin Panel for any place they choose ──────
+  Future<void> _openPlaceAdminPicker() async {
+    final picked = await showPlaceSearchPicker(context);
+    if (picked == null || !mounted) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => PlaceAdminPanel(
+        placeId: picked.id,
+        placeName: picked.name,
+        cityName: picked.cityName,
+        isMainAdminView: true,
+      ),
+    ));
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -166,7 +221,8 @@ class _AdminDashboardState extends State<AdminDashboard>
     const tickMs = 200;
     int waited = 0;
     if (FirebaseAuth.instance.currentUser != null) return;
-    _log.w('⚠️ [AdminDashboard._waitForFirebaseAuth] Firebase user null — polling…');
+    _log.w(
+        '⚠️ [AdminDashboard._waitForFirebaseAuth] Firebase user null — polling…');
     while (FirebaseAuth.instance.currentUser == null && waited < maxWaitMs) {
       await Future<void>.delayed(const Duration(milliseconds: tickMs));
       waited += tickMs;
@@ -182,9 +238,15 @@ class _AdminDashboardState extends State<AdminDashboard>
   Future<void> _loadStats() async {
     try {
       final s = await _apiService.getDashboardStats();
-      if (mounted) setState(() { _stats = s; _statsLoading = false; });
+      if (mounted) {
+        setState(() {
+          _stats = s;
+          _statsLoading = false;
+        });
+      }
     } catch (e, st) {
-      _log.e('❌ [AdminDashboard._loadStats] getDashboardStats failed', error: e, stackTrace: st);
+      _log.e('❌ [AdminDashboard._loadStats] getDashboardStats failed',
+          error: e, stackTrace: st);
       if (mounted) setState(() => _statsLoading = false);
     }
   }
@@ -203,21 +265,81 @@ class _AdminDashboardState extends State<AdminDashboard>
       _selectedIndex = index;
       if (index != 3) {
         _filterCategory = null;
-        _filterCity     = null;
+        _filterCity = null;
       }
     });
   }
 
-  bool get _canManageRoleRequests => _adminRole == 'Admin' || _adminRole == 'MainAdmin';
+  // Only MainAdmin approves/denies other admins.
+  bool get _canManageRoleRequests => _adminRole == 'MainAdmin';
+
+  // ── Whole-screen body for a place-scoped Admin — no sidebar/nav at all ────
+  Widget _buildPlaceScopedBody() {
+    if (_managedPlaceLoading) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF0A0E1A),
+        body:
+            Center(child: CircularProgressIndicator(color: Color(0xFF14FFEC))),
+      );
+    }
+    if (_managedPlaceId == null || _managedPlaceId!.isEmpty) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0A0E1A),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.business_outlined,
+                    color: Colors.white24, size: 56),
+                const SizedBox(height: 16),
+                const Text('No place assigned yet',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                const Text(
+                  'A MainAdmin needs to link your account to a place before you can manage anything here.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white38, fontSize: 13),
+                ),
+                const SizedBox(height: 24),
+                TextButton.icon(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.arrow_back_rounded,
+                      color: Colors.white54, size: 16),
+                  label: const Text('Back to App',
+                      style: TextStyle(color: Colors.white54)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return PlaceAdminPanel(
+      placeId: _managedPlaceId!,
+      placeName: _managedPlaceName,
+      cityName: _managedCityName,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final w         = MediaQuery.of(context).size.width;
-    final h         = MediaQuery.of(context).size.height;
+    // A plain 'Admin' has no system-wide console — the Place Admin Panel for
+    // their one assigned place IS the whole app for them.
+    if (_adminRole == 'Admin') {
+      return _buildPlaceScopedBody();
+    }
+
+    final w = MediaQuery.of(context).size.width;
+    final h = MediaQuery.of(context).size.height;
     final isDesktop = w >= 1100;
     // A phone in landscape has w ≥ 700 but h < 500 — treat as mobile so the
     // bottom nav stays visible and the sidebar doesn't overflow.
-    final isTablet  = w >= 700 && h >= 500;
+    final isTablet = w >= 700 && h >= 500;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E1A),
@@ -225,21 +347,24 @@ class _AdminDashboardState extends State<AdminDashboard>
         children: [
           if (isTablet)
             _AdminSidebar(
-              items:                 _navItems,
-              selectedIndex:         _selectedIndex,
-              isExpanded:            isDesktop,
-              onTap:                 _onNavTap,
-              filterCity:            _filterCity,
-              filterCategory:        _filterCategory,
-              pendingRequestsCount:  _canManageRoleRequests ? _pendingRequestsCount : 0,
+              items: _navItems,
+              selectedIndex: _selectedIndex,
+              isExpanded: isDesktop,
+              onTap: _onNavTap,
+              filterCity: _filterCity,
+              filterCategory: _filterCategory,
+              pendingRequestsCount:
+                  _canManageRoleRequests ? _pendingRequestsCount : 0,
               canManageRoleRequests: _canManageRoleRequests,
+              onOpenPlaceAdmin:
+                  _adminRole == 'MainAdmin' ? _openPlaceAdminPicker : null,
             ),
           Expanded(
             child: Column(
               children: [
                 _AdminTopBar(
-                  title:     _pageTitle,
-                  subtitle:  _pageSubtitle,
+                  title: _pageTitle,
+                  subtitle: _pageSubtitle,
                   onMenuTap: isTablet ? null : () => _showMobileDrawer(context),
                 ),
                 Expanded(child: _buildBody()),
@@ -264,69 +389,104 @@ class _AdminDashboardState extends State<AdminDashboard>
 
       destinations.add(NavigationDestination(
         icon: hasBadge
-            ? _BadgedIcon(icon: item.icon, count: _pendingRequestsCount, color: Colors.white54)
+            ? _BadgedIcon(
+                icon: item.icon,
+                count: _pendingRequestsCount,
+                color: Colors.white54)
             : Icon(item.icon, color: Colors.white54),
         selectedIcon: hasBadge
-            ? _BadgedIcon(icon: item.icon, count: _pendingRequestsCount, color: const Color(0xFF14FFEC))
+            ? _BadgedIcon(
+                icon: item.icon,
+                count: _pendingRequestsCount,
+                color: const Color(0xFF14FFEC))
             : Icon(item.icon, color: const Color(0xFF14FFEC)),
         label: item.label,
       ));
     }
 
-    final logicalIndices = [0, 1, 2, 3, 4, if (_canManageRoleRequests) 5, 6, 7];
+    final logicalIndices = [
+      0,
+      1,
+      2,
+      3,
+      4,
+      if (_canManageRoleRequests) 5,
+      6,
+      7,
+      8
+    ];
     final visualIndex = logicalIndices.contains(_selectedIndex)
         ? logicalIndices.indexOf(_selectedIndex)
         : 0;
 
     return NavigationBar(
-      backgroundColor:      const Color(0xFF111827),
-      indicatorColor:       const Color(0xFF14FFEC).withValues(alpha: 0.15),
-      selectedIndex:        visualIndex,
+      backgroundColor: const Color(0xFF111827),
+      indicatorColor: const Color(0xFF14FFEC).withValues(alpha: 0.15),
+      selectedIndex: visualIndex,
       onDestinationSelected: (vi) => _onNavTap(logicalIndices[vi]),
-      destinations:         destinations,
+      destinations: destinations,
     );
   }
 
   // ── Page title / subtitle ─────────────────────────────────────────────────
   String get _pageTitle {
     switch (_selectedIndex) {
-      case 0:  return 'Admin Console';
-      case 1:  return 'Resort Cities';
-      case 2:  return 'Categories';
+      case 0:
+        return 'Admin Console';
+      case 1:
+        return 'Resort Cities';
+      case 2:
+        return 'Categories';
       case 3:
         if (_filterCategory != null && _filterCity != null) {
           return '${_filterCategory!.name} — ${_filterCity!.name}';
         }
-        if (_filterCity     != null) return 'Places — ${_filterCity!.name}';
+        if (_filterCity != null) return 'Places — ${_filterCity!.name}';
         if (_filterCategory != null) return 'Places — ${_filterCategory!.name}';
         return 'Places';
-      case 4:  return 'Blog';
-      case 5:  return 'Role Requests';
-      case 6:  return 'Payment Methods';
-      case 7:  return 'Bookings';
-      default: return 'Admin';
+      case 4:
+        return 'Blog';
+      case 5:
+        return 'Role Requests';
+      case 6:
+        return 'Payment Methods';
+      case 7:
+        return 'Bookings';
+      case 8:
+        return 'Reports';
+      default:
+        return 'Admin';
     }
   }
 
   String get _pageSubtitle {
     switch (_selectedIndex) {
-      case 0:  return 'System overview & quick actions';
-      case 1:  return 'Add, edit and remove resort destinations';
-      case 2:  return 'Manage global categories and subcategories';
+      case 0:
+        return 'System overview & quick actions';
+      case 1:
+        return 'Add, edit and remove resort destinations';
+      case 2:
+        return 'Manage global categories and subcategories';
       case 3:
         if (_filterCity != null && _filterCategory == null) {
           return 'Showing places in ${_filterCity!.name}';
         }
         return 'Manage listings and places';
-      case 4:  return 'Create, edit and publish blog articles';
+      case 4:
+        return 'Create, edit and publish blog articles';
       case 5:
         final c = _pendingRequestsCount;
         return c > 0
             ? '$c pending request${c == 1 ? '' : 's'} awaiting review'
             : 'Review and manage admin role requests';
-      case 6:  return 'Configure the payment options places can accept';
-      case 7:  return 'Review and manage tourist booking requests';
-      default: return '';
+      case 6:
+        return 'Configure the payment options places can accept';
+      case 7:
+        return 'Review and manage tourist booking requests';
+      case 8:
+        return 'System-wide bookings analytics';
+      default:
+        return '';
     }
   }
 
@@ -335,35 +495,37 @@ class _AdminDashboardState extends State<AdminDashboard>
     switch (_selectedIndex) {
       case 0:
         return _DashboardOverview(
-          stats:                 _stats,
-          isLoading:             _statsLoading,
-          onGoTo:                _onNavTap,
-          pendingRequestsCount:  _canManageRoleRequests ? _pendingRequestsCount : 0,
+          stats: _stats,
+          isLoading: _statsLoading,
+          onGoTo: _onNavTap,
+          pendingRequestsCount:
+              _canManageRoleRequests ? _pendingRequestsCount : 0,
           canManageRoleRequests: _canManageRoleRequests,
         );
       case 1:
         return AdminResortCitiesScreen(
-          apiService:               _apiService,
-          onCitySelected:           (city) => setState(() {
-            _filterCity     = city;
+          apiService: _apiService,
+          onCitySelected: (city) => setState(() {
+            _filterCity = city;
             _filterCategory = null;
-            _selectedIndex  = 3;
+            _selectedIndex = 3;
           }),
           onCityForCategoriesSelected: (city) => setState(() {
-            _filterCity     = city;
+            _filterCity = city;
             _filterCategory = null;
-            _selectedIndex  = 3;
+            _selectedIndex = 3;
           }),
         );
       case 2:
         return AdminCategoriesScreen(apiService: _apiService);
       case 3:
         return AdminPlacesScreen(
-          apiService:              _apiService,
-          filterCity:              _filterCity,
-          filterCategory:          _filterCategory,
-          onCityFilterChanged:     (city) => setState(() => _filterCity     = city),
-          onCategoryFilterChanged: (cat)  => setState(() => _filterCategory = cat),
+          apiService: _apiService,
+          filterCity: _filterCity,
+          filterCategory: _filterCategory,
+          onCityFilterChanged: (city) => setState(() => _filterCity = city),
+          onCategoryFilterChanged: (cat) =>
+              setState(() => _filterCategory = cat),
         );
       case 4:
         return AdminBlogListScreen(apiService: _apiService);
@@ -373,6 +535,8 @@ class _AdminDashboardState extends State<AdminDashboard>
         return const AdminPaymentMethodsScreen();
       case 7:
         return const AdminBookingsScreen();
+      case 8:
+        return const AdminReportsScreen();
       default:
         return const SizedBox.shrink();
     }
@@ -396,21 +560,24 @@ class _AdminDashboardState extends State<AdminDashboard>
             children: [
               const SizedBox(height: 12),
               Container(
-                width: 40, height: 4,
+                width: 40,
+                height: 4,
                 decoration: BoxDecoration(
                   color: Colors.white24,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
               const SizedBox(height: 16),
-              ..._navItems.asMap().entries
+              ..._navItems
+                  .asMap()
+                  .entries
                   .where((e) => e.key != 5 || _canManageRoleRequests)
                   .map((e) {
                 final isRoleReq = e.key == 5;
                 return ListTile(
                   leading: isRoleReq && _pendingRequestsCount > 0
                       ? _BadgedIcon(
-                          icon:  e.value.icon,
+                          icon: e.value.icon,
                           count: _pendingRequestsCount,
                           color: _selectedIndex == e.key
                               ? const Color(0xFF14FFEC)
@@ -435,6 +602,23 @@ class _AdminDashboardState extends State<AdminDashboard>
                   },
                 );
               }),
+              if (_adminRole == 'MainAdmin') ...[
+                const Divider(color: Colors.white12, height: 1),
+                ListTile(
+                  leading: const Icon(Icons.storefront_rounded,
+                      color: Color(0xFF14FFEC)),
+                  title: const Text('Place Admin',
+                      style: TextStyle(
+                          color: Color(0xFF14FFEC),
+                          fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Manage a specific place',
+                      style: TextStyle(color: Colors.white38, fontSize: 11)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _openPlaceAdminPicker();
+                  },
+                ),
+              ],
               const SizedBox(height: 16),
             ],
           ),
@@ -448,14 +632,15 @@ class _AdminDashboardState extends State<AdminDashboard>
 // Sidebar
 // ─────────────────────────────────────────────────────────────────────────────
 class _AdminSidebar extends StatelessWidget {
-  final List<_NavItem>    items;
-  final int               selectedIndex;
-  final bool              isExpanded;
+  final List<_NavItem> items;
+  final int selectedIndex;
+  final bool isExpanded;
   final ValueChanged<int> onTap;
-  final CityModel?        filterCity;
-  final CategoryModel?    filterCategory;
-  final int               pendingRequestsCount;
-  final bool              canManageRoleRequests;
+  final CityModel? filterCity;
+  final CategoryModel? filterCategory;
+  final int pendingRequestsCount;
+  final bool canManageRoleRequests;
+  final VoidCallback? onOpenPlaceAdmin;
 
   const _AdminSidebar({
     required this.items,
@@ -466,11 +651,12 @@ class _AdminSidebar extends StatelessWidget {
     this.filterCategory,
     this.pendingRequestsCount = 0,
     this.canManageRoleRequests = false,
+    this.onOpenPlaceAdmin,
   });
 
   @override
   Widget build(BuildContext context) {
-    final screenHeight  = MediaQuery.of(context).size.height;
+    final screenHeight = MediaQuery.of(context).size.height;
     final isShortScreen = screenHeight < 500;
 
     return AnimatedContainer(
@@ -486,11 +672,13 @@ class _AdminSidebar extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(children: [
               Container(
-                width: 36, height: 36,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
                   color: const Color(0xFF14FFEC).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF14FFEC).withValues(alpha: 0.3)),
+                  border: Border.all(
+                      color: const Color(0xFF14FFEC).withValues(alpha: 0.3)),
                 ),
                 child: const Icon(Icons.admin_panel_settings_rounded,
                     color: Color(0xFF14FFEC), size: 20),
@@ -513,19 +701,21 @@ class _AdminSidebar extends StatelessWidget {
               child: Column(
                 children: [
                   ...items.asMap().entries.map((e) {
-                    if (e.key == 5 && !canManageRoleRequests) return const SizedBox.shrink();
+                    if (e.key == 5 && !canManageRoleRequests) {
+                      return const SizedBox.shrink();
+                    }
 
                     final isSelected = selectedIndex == e.key;
-                    final isRoleReq  = e.key == 5;
-                    final hasBadge   = isRoleReq && pendingRequestsCount > 0;
+                    final isRoleReq = e.key == 5;
+                    final hasBadge = isRoleReq && pendingRequestsCount > 0;
 
                     return _SidebarItem(
-                      icon:       e.value.icon,
-                      label:      e.value.label,
+                      icon: e.value.icon,
+                      label: e.value.label,
                       isSelected: isSelected,
                       isExpanded: isExpanded,
                       badgeCount: hasBadge ? pendingRequestsCount : 0,
-                      onTap:      () => onTap(e.key),
+                      onTap: () => onTap(e.key),
                     );
                   }),
                 ],
@@ -545,19 +735,57 @@ class _AdminSidebar extends StatelessWidget {
                   const SizedBox(height: 6),
                   if (filterCity != null)
                     _ContextChip(
-                        icon:  Icons.location_city_rounded,
+                        icon: Icons.location_city_rounded,
                         label: filterCity!.name,
                         color: const Color(0xFF0D7377)),
                   if (filterCategory != null) ...[
                     const SizedBox(height: 4),
                     _ContextChip(
-                        icon:  Icons.category_rounded,
+                        icon: Icons.category_rounded,
                         label: filterCategory!.name,
                         color: const Color(0xFF2196F3)),
                   ],
                 ],
               ),
             ),
+          ],
+
+          // Place Admin — MainAdmin-only entry point to inspect any place's
+          // scoped panel without leaving their own account.
+          if (onOpenPlaceAdmin != null) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: GestureDetector(
+                onTap: onOpenPlaceAdmin,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: EdgeInsets.symmetric(
+                      horizontal: isExpanded ? 12 : 0, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF14FFEC).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: const Color(0xFF14FFEC).withValues(alpha: 0.25)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: isExpanded
+                        ? MainAxisAlignment.start
+                        : MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.storefront_rounded,
+                          size: 20, color: Color(0xFF14FFEC)),
+                      if (isExpanded) ...[
+                        const SizedBox(width: 12),
+                        const Text('Place Admin',
+                            style: TextStyle(
+                                color: Color(0xFF14FFEC), fontSize: 14)),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(height: isShortScreen ? 8 : 12),
           ],
 
           SizedBox(height: isShortScreen ? 8 : 24),
@@ -574,18 +802,21 @@ class _AdminSidebar extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.08)),
                 ),
                 child: Row(
                   mainAxisAlignment: isExpanded
                       ? MainAxisAlignment.start
                       : MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.logout_rounded, size: 20, color: Colors.white38),
+                    const Icon(Icons.logout_rounded,
+                        size: 20, color: Colors.white38),
                     if (isExpanded) ...[
                       const SizedBox(width: 12),
                       const Text('Back to App',
-                          style: TextStyle(color: Colors.white54, fontSize: 14)),
+                          style:
+                              TextStyle(color: Colors.white54, fontSize: 14)),
                     ],
                   ],
                 ),
@@ -603,11 +834,11 @@ class _AdminSidebar extends StatelessWidget {
 // Sidebar item — with optional live badge count
 // ─────────────────────────────────────────────────────────────────────────────
 class _SidebarItem extends StatelessWidget {
-  final IconData     icon;
-  final String       label;
-  final bool         isSelected;
-  final bool         isExpanded;
-  final int          badgeCount;
+  final IconData icon;
+  final String label;
+  final bool isSelected;
+  final bool isExpanded;
+  final int badgeCount;
   final VoidCallback onTap;
 
   const _SidebarItem({
@@ -625,45 +856,50 @@ class _SidebarItem extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        margin:  const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-        padding: EdgeInsets.symmetric(
-            horizontal: isExpanded ? 12 : 0, vertical: 12),
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+        padding:
+            EdgeInsets.symmetric(horizontal: isExpanded ? 12 : 0, vertical: 12),
         decoration: BoxDecoration(
           color: isSelected
               ? const Color(0xFF14FFEC).withValues(alpha: 0.1)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
           border: isSelected
-              ? Border.all(color: const Color(0xFF14FFEC).withValues(alpha: 0.2))
+              ? Border.all(
+                  color: const Color(0xFF14FFEC).withValues(alpha: 0.2))
               : null,
         ),
         child: Row(
-          mainAxisAlignment: isExpanded
-              ? MainAxisAlignment.start
-              : MainAxisAlignment.center,
+          mainAxisAlignment:
+              isExpanded ? MainAxisAlignment.start : MainAxisAlignment.center,
           children: [
             badgeCount > 0
                 ? _BadgedIcon(
-                    icon:  icon,
+                    icon: icon,
                     count: badgeCount,
-                    color: isSelected ? const Color(0xFF14FFEC) : Colors.white38,
+                    color:
+                        isSelected ? const Color(0xFF14FFEC) : Colors.white38,
                   )
                 : Icon(icon,
-                    size:  20,
-                    color: isSelected ? const Color(0xFF14FFEC) : Colors.white38),
-
+                    size: 20,
+                    color:
+                        isSelected ? const Color(0xFF14FFEC) : Colors.white38),
             if (isExpanded) ...[
               const SizedBox(width: 12),
               Expanded(
                 child: Text(label,
                     style: TextStyle(
-                        color: isSelected ? const Color(0xFF14FFEC) : Colors.white54,
+                        color: isSelected
+                            ? const Color(0xFF14FFEC)
+                            : Colors.white54,
                         fontSize: 14,
-                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal)),
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.normal)),
               ),
               if (badgeCount > 0)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFF9800),
                     borderRadius: BorderRadius.circular(20),
@@ -689,8 +925,8 @@ class _SidebarItem extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 class _BadgedIcon extends StatelessWidget {
   final IconData icon;
-  final int      count;
-  final Color    color;
+  final int count;
+  final Color color;
 
   const _BadgedIcon({
     required this.icon,
@@ -704,9 +940,11 @@ class _BadgedIcon extends StatelessWidget {
         children: [
           Icon(icon, size: 20, color: color),
           Positioned(
-            top: -4, right: -4,
+            top: -4,
+            right: -4,
             child: Container(
-              width: 14, height: 14,
+              width: 14,
+              height: 14,
               decoration: const BoxDecoration(
                 color: Color(0xFFFF9800),
                 shape: BoxShape.circle,
@@ -731,9 +969,10 @@ class _BadgedIcon extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 class _ContextChip extends StatelessWidget {
   final IconData icon;
-  final String   label;
-  final Color    color;
-  const _ContextChip({required this.icon, required this.label, required this.color});
+  final String label;
+  final Color color;
+  const _ContextChip(
+      {required this.icon, required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -750,9 +989,7 @@ class _ContextChip extends StatelessWidget {
             child: Text(label,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    color: color,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600)),
+                    color: color, fontSize: 10, fontWeight: FontWeight.w600)),
           ),
         ]),
       );
@@ -762,22 +999,24 @@ class _ContextChip extends StatelessWidget {
 // Top Bar
 // ─────────────────────────────────────────────────────────────────────────────
 class _AdminTopBar extends StatelessWidget {
-  final String        title;
-  final String        subtitle;
+  final String title;
+  final String subtitle;
   final VoidCallback? onMenuTap;
-  const _AdminTopBar({required this.title, required this.subtitle, this.onMenuTap});
+  const _AdminTopBar(
+      {required this.title, required this.subtitle, this.onMenuTap});
 
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final isNarrow    = screenWidth < 400;
+    final isNarrow = screenWidth < 400;
 
     return Container(
       constraints: const BoxConstraints(minHeight: 56),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
         color: const Color(0xFF111827),
-        border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.07))),
+        border: Border(
+            bottom: BorderSide(color: Colors.white.withValues(alpha: 0.07))),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -787,7 +1026,8 @@ class _AdminTopBar extends StatelessWidget {
               onPressed: onMenuTap,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-              icon: const Icon(Icons.menu_rounded, color: Colors.white54, size: 22),
+              icon: const Icon(Icons.menu_rounded,
+                  color: Colors.white54, size: 22),
             ),
             const SizedBox(width: 4),
           ],
@@ -811,8 +1051,7 @@ class _AdminTopBar extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        color: Colors.white38,
-                        fontSize: isNarrow ? 10 : 11),
+                        color: Colors.white38, fontSize: isNarrow ? 10 : 11),
                   ),
               ],
             ),
@@ -837,11 +1076,14 @@ class _AdminTopBar extends StatelessWidget {
                       fontSize: 13,
                       fontWeight: FontWeight.w500)),
               style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                backgroundColor: const Color(0xFF14FFEC).withValues(alpha: 0.08),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                backgroundColor:
+                    const Color(0xFF14FFEC).withValues(alpha: 0.08),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(color: const Color(0xFF14FFEC).withValues(alpha: 0.25)),
+                  side: BorderSide(
+                      color: const Color(0xFF14FFEC).withValues(alpha: 0.25)),
                 ),
               ),
             ),
@@ -856,10 +1098,10 @@ class _AdminTopBar extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 class _DashboardOverview extends StatelessWidget {
   final Map<String, dynamic> stats;
-  final bool                 isLoading;
-  final ValueChanged<int>    onGoTo;
-  final int                  pendingRequestsCount;
-  final bool                 canManageRoleRequests;
+  final bool isLoading;
+  final ValueChanged<int> onGoTo;
+  final int pendingRequestsCount;
+  final bool canManageRoleRequests;
 
   const _DashboardOverview({
     required this.stats,
@@ -902,46 +1144,48 @@ class _DashboardOverview extends StatelessWidget {
                 runSpacing: 16,
                 children: [
                   _StatCard(
-                    icon:     Icons.location_city_rounded,
-                    label:    'Resort Cities',
-                    value:    isLoading ? '…' : '${stats['cities_total'] ?? 0}',
-                    color:    const Color(0xFF0D7377),
+                    icon: Icons.location_city_rounded,
+                    label: 'Resort Cities',
+                    value: isLoading ? '…' : '${stats['cities_total'] ?? 0}',
+                    color: const Color(0xFF0D7377),
                     cardWidth: statCardW,
-                    onTap:    () => onGoTo(1),
+                    onTap: () => onGoTo(1),
                   ),
                   _StatCard(
-                    icon:     Icons.people_rounded,
-                    label:    'Registered Users',
-                    value:    isLoading ? '…' : '${stats['users_total'] ?? 0}',
-                    color:    const Color(0xFF2196F3),
+                    icon: Icons.people_rounded,
+                    label: 'Registered Users',
+                    value: isLoading ? '…' : '${stats['users_total'] ?? 0}',
+                    color: const Color(0xFF2196F3),
                     cardWidth: statCardW,
-                    onTap:    () => onGoTo(0),
+                    onTap: () => onGoTo(0),
                   ),
                   _StatCard(
-                    icon:     Icons.place_rounded,
-                    label:    'Active Places',
-                    value:    isLoading ? '…' : '${stats['places_active'] ?? 0}',
-                    color:    const Color(0xFF9C27B0),
+                    icon: Icons.place_rounded,
+                    label: 'Active Places',
+                    value: isLoading ? '…' : '${stats['places_active'] ?? 0}',
+                    color: const Color(0xFF9C27B0),
                     cardWidth: statCardW,
-                    onTap:    () => onGoTo(3),
+                    onTap: () => onGoTo(3),
                   ),
                   _StatCard(
-                    icon:     Icons.pending_actions_rounded,
-                    label:    'Pending Drafts',
-                    value:    isLoading ? '…' : '${stats['places_pending'] ?? 0}',
-                    color:    const Color(0xFFFF9800),
+                    icon: Icons.pending_actions_rounded,
+                    label: 'Pending Drafts',
+                    value: isLoading ? '…' : '${stats['places_pending'] ?? 0}',
+                    color: const Color(0xFFFF9800),
                     cardWidth: statCardW,
-                    onTap:    () => onGoTo(3),
+                    onTap: () => onGoTo(3),
                   ),
                   if (canManageRoleRequests)
                     _StatCard(
-                      icon:     Icons.manage_accounts_rounded,
-                      label:    'Role Requests',
-                      value:    '$pendingRequestsCount',
-                      color:    const Color(0xFFFF9800),
+                      icon: Icons.manage_accounts_rounded,
+                      label: 'Role Requests',
+                      value: '$pendingRequestsCount',
+                      color: const Color(0xFFFF9800),
                       cardWidth: statCardW,
-                      onTap:    () => onGoTo(5),
-                      badge:    pendingRequestsCount > 0 ? pendingRequestsCount : null,
+                      onTap: () => onGoTo(5),
+                      badge: pendingRequestsCount > 0
+                          ? pendingRequestsCount
+                          : null,
                     ),
                 ],
               ),
@@ -960,64 +1204,66 @@ class _DashboardOverview extends StatelessWidget {
                 runSpacing: 16,
                 children: [
                   _QuickAction(
-                    icon:        Icons.add_location_alt_rounded,
-                    label:       'Add Resort City',
+                    icon: Icons.add_location_alt_rounded,
+                    label: 'Add Resort City',
                     description: 'Create a new resort destination',
-                    color:       const Color(0xFF0D7377),
-                    cardWidth:   actionCardW,
-                    onTap:       () => onGoTo(1),
+                    color: const Color(0xFF0D7377),
+                    cardWidth: actionCardW,
+                    onTap: () => onGoTo(1),
                   ),
                   _QuickAction(
-                    icon:        Icons.add_box_rounded,
-                    label:       'Add Category',
+                    icon: Icons.add_box_rounded,
+                    label: 'Add Category',
                     description: 'Create a global service category',
-                    color:       const Color(0xFF2196F3),
-                    cardWidth:   actionCardW,
-                    onTap:       () => onGoTo(2),
+                    color: const Color(0xFF2196F3),
+                    cardWidth: actionCardW,
+                    onTap: () => onGoTo(2),
                   ),
                   _QuickAction(
-                    icon:        Icons.add_business_rounded,
-                    label:       'Add Place',
+                    icon: Icons.add_business_rounded,
+                    label: 'Add Place',
                     description: 'List a new place or business',
-                    color:       const Color(0xFF9C27B0),
-                    cardWidth:   actionCardW,
-                    onTap:       () => onGoTo(3),
+                    color: const Color(0xFF9C27B0),
+                    cardWidth: actionCardW,
+                    onTap: () => onGoTo(3),
                   ),
                   _QuickAction(
-                    icon:        Icons.edit_note_rounded,
-                    label:       'Write Blog Post',
+                    icon: Icons.edit_note_rounded,
+                    label: 'Write Blog Post',
                     description: 'Publish a new article or guide',
-                    color:       const Color(0xFFE91E8C),
-                    cardWidth:   actionCardW,
-                    onTap:       () => onGoTo(4),
+                    color: const Color(0xFFE91E8C),
+                    cardWidth: actionCardW,
+                    onTap: () => onGoTo(4),
                   ),
                   if (canManageRoleRequests)
                     _QuickAction(
-                      icon:        Icons.manage_accounts_rounded,
-                      label:       'Role Requests',
+                      icon: Icons.manage_accounts_rounded,
+                      label: 'Role Requests',
                       description: pendingRequestsCount > 0
                           ? '$pendingRequestsCount pending • tap to review'
                           : 'Review admin role applications',
-                      color:       const Color(0xFFFF9800),
-                      cardWidth:   actionCardW,
-                      onTap:       () => onGoTo(5),
-                      badge:       pendingRequestsCount > 0 ? pendingRequestsCount : null,
+                      color: const Color(0xFFFF9800),
+                      cardWidth: actionCardW,
+                      onTap: () => onGoTo(5),
+                      badge: pendingRequestsCount > 0
+                          ? pendingRequestsCount
+                          : null,
                     ),
                   _QuickAction(
-                    icon:        Icons.payments_rounded,
-                    label:       'Payment Methods',
+                    icon: Icons.payments_rounded,
+                    label: 'Payment Methods',
                     description: 'Configure accepted payment options',
-                    color:       const Color(0xFF0D7377),
-                    cardWidth:   actionCardW,
-                    onTap:       () => onGoTo(6),
+                    color: const Color(0xFF0D7377),
+                    cardWidth: actionCardW,
+                    onTap: () => onGoTo(6),
                   ),
                   _QuickAction(
-                    icon:        Icons.calendar_month_rounded,
-                    label:       'Bookings',
+                    icon: Icons.calendar_month_rounded,
+                    label: 'Bookings',
                     description: 'Review tourist booking requests',
-                    color:       const Color(0xFF2196F3),
-                    cardWidth:   actionCardW,
-                    onTap:       () => onGoTo(7),
+                    color: const Color(0xFF2196F3),
+                    cardWidth: actionCardW,
+                    onTap: () => onGoTo(7),
                   ),
                 ],
               ),
@@ -1036,13 +1282,13 @@ class _DashboardOverview extends StatelessWidget {
 // Stat Card — with optional badge
 // ─────────────────────────────────────────────────────────────────────────────
 class _StatCard extends StatelessWidget {
-  final IconData      icon;
-  final String        label;
-  final String        value;
-  final Color         color;
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
   final VoidCallback? onTap;
-  final int?          badge;
-  final double?       cardWidth;
+  final int? badge;
+  final double? cardWidth;
 
   const _StatCard({
     required this.icon,
@@ -1078,9 +1324,11 @@ class _StatCard extends StatelessWidget {
               ),
               if (badge != null && badge! > 0)
                 Positioned(
-                  top: -4, right: -4,
+                  top: -4,
+                  right: -4,
                   child: Container(
-                    width: 16, height: 16,
+                    width: 16,
+                    height: 16,
                     decoration: const BoxDecoration(
                         color: Color(0xFFFF9800), shape: BoxShape.circle),
                     child: Center(
@@ -1097,21 +1345,24 @@ class _StatCard extends StatelessWidget {
             ]),
             const SizedBox(width: 16),
             Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(value,
-                      style: TextStyle(
-                          color: color,
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold)),
-                ),
-                Text(label,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white54, fontSize: 12)),
-              ]),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(value,
+                          style: TextStyle(
+                              color: color,
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold)),
+                    ),
+                    Text(label,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white54, fontSize: 12)),
+                  ]),
             ),
           ]),
         ),
@@ -1122,13 +1373,13 @@ class _StatCard extends StatelessWidget {
 // Quick Action card — with optional live badge
 // ─────────────────────────────────────────────────────────────────────────────
 class _QuickAction extends StatelessWidget {
-  final IconData     icon;
-  final String       label;
-  final String       description;
-  final Color        color;
+  final IconData icon;
+  final String label;
+  final String description;
+  final Color color;
   final VoidCallback onTap;
-  final int?         badge;
-  final double?      cardWidth;
+  final int? badge;
+  final double? cardWidth;
 
   const _QuickAction({
     required this.icon,
@@ -1160,9 +1411,11 @@ class _QuickAction extends StatelessWidget {
                   Icon(icon, color: color, size: 28),
                   if (badge != null && badge! > 0)
                     Positioned(
-                      top: -6, right: -6,
+                      top: -6,
+                      right: -6,
                       child: Container(
-                        width: 16, height: 16,
+                        width: 16,
+                        height: 16,
                         decoration: const BoxDecoration(
                             color: Color(0xFFFF9800), shape: BoxShape.circle),
                         child: Center(
@@ -1218,39 +1471,47 @@ class _WorkflowGuide extends StatelessWidget {
                       fontSize: 15)),
             ]),
             const SizedBox(height: 20),
-            _step('1', 'Resort Cities',
+            _step(
+                '1',
+                'Resort Cities',
                 'Create each destination city (e.g. Mombasa, Nairobi).',
                 const Color(0xFF0D7377)),
-            _step('2', 'Categories',
+            _step(
+                '2',
+                'Categories',
                 'Create global categories (Accommodation, Dining, Wellness…).',
                 const Color(0xFF2196F3)),
-            _step('3', 'Places',
-                'Add each place via the 11-step wizard.',
+            _step('3', 'Places', 'Add each place via the 11-step wizard.',
                 const Color(0xFF9C27B0)),
-            _step('4', 'Blog',
-                'Publish articles, guides, and city highlights.',
+            _step('4', 'Blog', 'Publish articles, guides, and city highlights.',
                 const Color(0xFFE91E8C)),
-            _step('5', 'Role Requests',
+            _step(
+                '5',
+                'Role Requests',
                 'Review and approve admin role applications from users.',
                 const Color(0xFFFF9800)),
-            _step('6', 'Payment Methods',
+            _step(
+                '6',
+                'Payment Methods',
                 'Define which payment options places can accept (M-Pesa, Card, Cash…).',
                 const Color(0xFF0D7377)),
-            _step('7', 'Bookings',
+            _step(
+                '7',
+                'Bookings',
                 'Review and confirm booking requests submitted by tourists.',
                 const Color(0xFF2196F3)),
           ],
         ),
       );
 
-  Widget _step(String num, String title, String body, Color color) =>
-      Padding(
+  Widget _step(String num, String title, String body, Color color) => Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 28, height: 28,
+              width: 28,
+              height: 28,
               decoration: BoxDecoration(
                 color: color.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
@@ -1290,6 +1551,6 @@ class _WorkflowGuide extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 class _NavItem {
   final IconData icon;
-  final String   label;
+  final String label;
   const _NavItem(this.icon, this.label);
 }

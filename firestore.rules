@@ -30,6 +30,20 @@ service cloud.firestore {
       return isAuth() && callerRole() == 'MainAdmin';
     }
 
+    // The single place a plain 'Admin' is scoped to (see rbac_service.dart —
+    // set on Users/{uid}.managedPlaceId when their AdminRequest is approved).
+    function callerManagedPlaceId() {
+      return get(/databases/$(database)/documents/Users/$(request.auth.uid)).data.managedPlaceId;
+    }
+
+    // True when the caller is a plain 'Admin' scoped to exactly this place.
+    // MainAdmin is intentionally NOT included here — callers should combine
+    // this with isMainAdmin() explicitly, since MainAdmin's access isn't
+    // place-scoped at all.
+    function isPlaceAdminFor(placeId) {
+      return isAuth() && callerRole() == 'Admin' && callerManagedPlaceId() == placeId;
+    }
+
 
     // ── Anonymous / authenticated session backup ──────────────────────────────
     //
@@ -50,8 +64,11 @@ service cloud.firestore {
     //   READ   — own document, OR any Admin/MainAdmin (needed by RbacService
     //            .getUserRole and .userRoleStream which read Users/{firebaseUid}).
     //   CREATE — owner only; role must be absent or exactly "Tourist".
-    //   UPDATE — owner may update own doc but cannot change their role.
-    //            Admin/MainAdmin may update any doc (role promotion on accept).
+    //   UPDATE — owner may update own doc but cannot change their role or
+    //            managedPlaceId. Only MainAdmin may promote a role or assign
+    //            a place — a plain 'Admin' has no reason to touch any Users
+    //            doc (their own or anyone else's) beyond their own profile
+    //            fields, so it's MainAdmin-only rather than isAdmin().
     //   DELETE — never from the client.
     match /Users/{uid} {
 
@@ -66,8 +83,10 @@ service cloud.firestore {
       allow update:
         if (isOwner(uid)
             && (!('role' in request.resource.data)
-                || request.resource.data.role == resource.data.role))
-        || isAdmin();
+                || request.resource.data.role == resource.data.role)
+            && (!('managedPlaceId' in request.resource.data)
+                || request.resource.data.managedPlaceId == resource.data.managedPlaceId))
+        || isMainAdmin();
 
       allow delete: if false;
     }
@@ -102,7 +121,9 @@ service cloud.firestore {
       allow create:
         if isAuth()
         && request.resource.data.firebaseUid == request.auth.uid
-        && request.resource.data.status == 'pending';
+        && request.resource.data.status == 'pending'
+        && request.resource.data.placeId is string
+        && request.resource.data.placeId.size() > 0;
 
       allow update:
         if isMainAdmin();
@@ -134,11 +155,12 @@ service cloud.firestore {
     // resort_city_screen.dart → category_screen.dart → place_details_screen.dart)
     // entirely without signing in — this app has no anonymous Firebase Auth
     // session, so gating reads behind isAuth() would silently hide nested-item
-    // photos and payment methods from every logged-out visitor. Only
-    // Admin / MainAdmin may write.
+    // photos and payment methods from every logged-out visitor. Write is
+    // MainAdmin (any place) or a plain Admin scoped to exactly this place
+    // (Place Admin Panel's Payment Methods / nested-item-photo tools).
     match /Place_details/{placeId} {
       allow read:  if true;
-      allow write: if isAdmin();
+      allow write: if isMainAdmin() || isPlaceAdminFor(placeId);
     }
 
 
@@ -150,11 +172,13 @@ service cloud.firestore {
     // accept (M-Pesa, Card, Bank Transfer, Cash, …). Configuration only —
     // no payment processing happens through this collection.
     //
-    // PUBLIC read for the same reason as Place_details above. Only
-    // Admin / MainAdmin may write.
+    // PUBLIC read for the same reason as Place_details above. This is a
+    // global, system-wide catalogue — only MainAdmin configures it; a
+    // place-scoped Admin can only choose from it (via Place_details), not
+    // add to it.
     match /PaymentMethods/{methodId} {
       allow read:  if true;
-      allow write: if isAdmin();
+      allow write: if isMainAdmin();
     }
 
 
@@ -166,11 +190,11 @@ service cloud.firestore {
     // page's city grid and the admin Resort Cities list. Not part of the
     // /api/cities contract.
     //
-    // PUBLIC read for the same reason as Place_details above. Only
-    // Admin / MainAdmin may write.
+    // PUBLIC read for the same reason as Place_details above. Cities aren't
+    // owned by any single place-scoped Admin, so only MainAdmin may write.
     match /City_details/{cityId} {
       allow read:  if true;
-      allow write: if isAdmin();
+      allow write: if isMainAdmin();
     }
 
 
@@ -190,17 +214,21 @@ service cloud.firestore {
     //   createdAt, updatedAt
     //
     // Access matrix:
-    //   READ   — the requester (firebaseUid == caller uid), OR Admin/MainAdmin.
+    //   READ   — the requester (firebaseUid == caller uid), MainAdmin, or a
+    //            plain Admin scoped to this booking's place.
     //   CREATE — authenticated user; firebaseUid must equal caller uid;
     //            status must start as 'pending'.
-    //   UPDATE — Admin/MainAdmin (confirm/cancel/complete), OR the requester
-    //            cancelling their own still-pending booking.
+    //   UPDATE — MainAdmin or the scoped place Admin (confirm/cancel/
+    //            complete), OR the requester cancelling their own
+    //            still-pending booking.
     //   DELETE — never from the client.
     match /Bookings/{bookingId} {
 
       allow read:
         if isAuth()
-        && (resource.data.firebaseUid == request.auth.uid || isAdmin());
+        && (resource.data.firebaseUid == request.auth.uid
+            || isMainAdmin()
+            || isPlaceAdminFor(resource.data.placeId));
 
       allow create:
         if isAuth()
@@ -210,7 +238,8 @@ service cloud.firestore {
       // Cutoff before requestedDate under which a tourist may still cancel —
       // must mirror BookingModel.checkCancellationEligibility on the client.
       allow update:
-        if isAdmin()
+        if isMainAdmin()
+        || isPlaceAdminFor(resource.data.placeId)
         || (isAuth()
             && resource.data.firebaseUid == request.auth.uid
             && resource.data.status == 'pending'
@@ -235,13 +264,49 @@ service cloud.firestore {
     // write path exists, it isn't what actually blocks the Cloud Functions.
     //
     // READ — the tourist who initiated the payment (firebaseUid match), or
-    // Admin/MainAdmin (support/reconciliation).
+    // MainAdmin (support/reconciliation). A place-scoped Admin has no
+    // reconciliation role here — payments aren't yet linked to a placeId.
     match /Transactions/{transactionId} {
       allow read:
         if isAuth()
-        && (resource.data.firebaseUid == request.auth.uid || isAdmin());
+        && (resource.data.firebaseUid == request.auth.uid || isMainAdmin());
 
       allow write: if false;
+    }
+
+
+    // ── Place queries ─────────────────────────────────────────────────────────
+    //
+    // Collection: PlaceQueries
+    // Document id = auto-generated.
+    // A tourist's question about a place, answered by that place's Admin (or
+    // MainAdmin) from the Place Admin Panel. Fields: placeId, placeName,
+    // firebaseUid, userEmail, message, status ('open'|'answered'),
+    // adminReply, repliedBy, createdAt, repliedAt.
+    //
+    // READ   — the tourist who asked (firebaseUid == caller), MainAdmin, or
+    //          the Admin scoped to this query's place.
+    // CREATE — authenticated user; firebaseUid must equal caller uid;
+    //          status must start as 'open'.
+    // UPDATE — MainAdmin or the scoped place Admin only (replying).
+    // DELETE — never from the client.
+    match /PlaceQueries/{queryId} {
+
+      allow read:
+        if isAuth()
+        && (resource.data.firebaseUid == request.auth.uid
+            || isMainAdmin()
+            || isPlaceAdminFor(resource.data.placeId));
+
+      allow create:
+        if isAuth()
+        && request.resource.data.firebaseUid == request.auth.uid
+        && request.resource.data.status == 'open';
+
+      allow update:
+        if isMainAdmin() || isPlaceAdminFor(resource.data.placeId);
+
+      allow delete: if false;
     }
 
   }

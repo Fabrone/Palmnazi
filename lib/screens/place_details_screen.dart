@@ -2,15 +2,18 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:palmnazi/constants/tourism_labels.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/payment_method_model.dart';
 import 'package:palmnazi/models/place_model.dart';
+import 'package:palmnazi/models/place_query_model.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/booking_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/services/payment_methods_service.dart';
 import 'package:palmnazi/services/place_details_service.dart';
+import 'package:palmnazi/services/place_query_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // place_details_screen.dart
@@ -48,10 +51,10 @@ import 'package:palmnazi/services/place_details_service.dart';
 // ── Shared palette ─────────────────────────────────────────────────────────
 abstract final class _P {
   static const Color aquaBright = Color(0xFF00E5FF);
-  static const Color aqua       = Color(0xFF00B8D4);
+  static const Color aqua = Color(0xFF00B8D4);
   //static const Color amber      = Color(0xFFFFB300);
-  static const Color deepNavy   = Color(0xFF01263F);
-  static const Color deepBlue   = Color(0xFF071829);
+  static const Color deepNavy = Color(0xFF01263F);
+  static const Color deepBlue = Color(0xFF071829);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -160,18 +163,17 @@ class PlaceDetailsScreen extends StatefulWidget {
 
 class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     with TickerProviderStateMixin {
-
-  late ScrollController    _scrollController;
+  late ScrollController _scrollController;
   late AnimationController _fadeController;
-  late Animation<double>   _fadeAnimation;
+  late Animation<double> _fadeAnimation;
   double _scrollOffset = 0;
 
   // ── Full detail record (loaded from backend) ─────────────────────────────
   // Starts as the lean model from the list, upgraded once the detail fetch
   // completes.  All UI reads from [_place] so it always has something to show.
   late PlaceModel _place;
-  bool  _detailLoading = false;
-  bool  _detailError   = false;
+  bool _detailLoading = false;
+  bool _detailError = false;
 
   // ── Nested services (rooms / menu items / shows) — Place_details images ──
   //
@@ -182,7 +184,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
   List<Map<String, dynamic>> _nestedItems = [];
   List<List<String>> _nestedItemImages = [];
   String _nestedItemsLabel = '';
-  String _nestedItemsType = ''; // 'rooms' | 'menuItems' | 'shows' | 'exhibitions' | ''
+  String _nestedItemsType =
+      ''; // 'rooms' | 'menuItems' | 'shows' | 'exhibitions' | ''
   bool _loadingNestedItems = false;
   String _nestedItemsSearchQuery = '';
 
@@ -198,33 +201,40 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
   // ── Derived display helpers ───────────────────────────────────────────────
 
   /// First linked category name, or fall back to the category passed in.
-  String get _primaryCategoryName =>
-      _place.categoryLinks.isNotEmpty
-          ? _place.categoryLinks.first.categoryName
-          : widget.category.name;
+  String get _primaryCategoryName => _place.categoryLinks.isNotEmpty
+      ? _place.categoryLinks.first.categoryName
+      : widget.category.name;
 
   bool get _isAccommodationType => _place.taxonomy.any((t) =>
-      t.contains('accommodation') || t.contains('hotel') ||
-      t.contains('resort') || t.contains('lodge'));
+      t.contains('accommodation') ||
+      t.contains('hotel') ||
+      t.contains('resort') ||
+      t.contains('lodge'));
 
   bool get _isDiningType => _place.taxonomy.any((t) =>
-      t.contains('dining') || t.contains('restaurant') ||
-      t.contains('food') || t.contains('cafe'));
+      t.contains('dining') ||
+      t.contains('restaurant') ||
+      t.contains('food') ||
+      t.contains('cafe'));
 
   bool get _isEntertainmentType => _place.taxonomy.any((t) =>
-      t.contains('entertainment') || t.contains('event') ||
-      t.contains('show') || t.contains('cinema'));
+      t.contains('entertainment') ||
+      t.contains('event') ||
+      t.contains('show') ||
+      t.contains('cinema'));
 
   bool get _isCulturalType => _place.taxonomy.any((t) =>
-      t.contains('museum') || t.contains('cultural') ||
-      t.contains('heritage') || t.contains('art'));
+      t.contains('museum') ||
+      t.contains('cultural') ||
+      t.contains('heritage') ||
+      t.contains('art'));
 
   /// Human-readable price range built from PlacePricing, e.g. "KES 2,000–5,000/night".
   String? get _priceRangeLabel {
     final p = _place.pricing;
     if (p == null) return null;
     final currency = p.currency;
-    final unit     = p.unit;
+    final unit = p.unit;
     if (p.min != null && p.max != null) {
       return '$currency ${_fmt(p.min!)}–${_fmt(p.max!)}/$unit';
     }
@@ -234,9 +244,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
   }
 
   String _fmt(double v) =>
-      v.truncateToDouble() == v
-          ? v.toInt().toString()
-          : v.toStringAsFixed(0);
+      v.truncateToDouble() == v ? v.toInt().toString() : v.toStringAsFixed(0);
 
   /// Features derived from taxonomy tags + selected attributes.
   List<String> get _featureTags {
@@ -248,7 +256,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         tags.add(_attrLabel(key));
       } else if (value is String && value.isNotEmpty && value != 'false') {
         // Only short attribute values are worth showing as chips
-        if (value.length <= 30) tags.add('${ _attrLabel(key)}: $value');
+        if (value.length <= 30) tags.add('${_attrLabel(key)}: $value');
       }
     });
     return tags;
@@ -286,12 +294,14 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     super.dispose();
   }
 
-  void _onScroll() =>
-      setState(() => _scrollOffset = _scrollController.offset);
+  void _onScroll() => setState(() => _scrollOffset = _scrollController.offset);
 
   Future<void> _fetchDetail() async {
     if (!mounted) return;
-    setState(() { _detailLoading = true; _detailError = false; });
+    setState(() {
+      _detailLoading = true;
+      _detailError = false;
+    });
     final full = await _PlaceDetailApi.fetchPlace(widget.place.id);
     if (!mounted) return;
     setState(() {
@@ -317,15 +327,25 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     final String path;
     final String label;
     if (_isAccommodationType) {
-      type = 'rooms'; path = 'rooms'; label = 'Rooms';
+      type = 'rooms';
+      path = 'rooms';
+      label = 'Rooms';
     } else if (_isDiningType) {
-      type = 'menuItems'; path = 'menu-items'; label = 'Menu';
+      type = 'menuItems';
+      path = 'menu-items';
+      label = 'Menu';
     } else if (_isEntertainmentType) {
-      type = 'shows'; path = 'shows'; label = 'Shows';
+      type = 'shows';
+      path = 'shows';
+      label = 'Shows';
     } else if (_isCulturalType) {
-      type = 'exhibitions'; path = 'exhibitions'; label = 'Exhibitions';
+      type = 'exhibitions';
+      path = 'exhibitions';
+      label = 'Exhibitions';
     } else {
-      type = ''; path = ''; label = '';
+      type = '';
+      path = '';
+      label = '';
     }
 
     if (type.isNotEmpty) setState(() => _loadingNestedItems = true);
@@ -414,8 +434,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel',
-                  style: TextStyle(color: Colors.white54)),
+              child:
+                  const Text('Cancel', style: TextStyle(color: Colors.white54)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: _P.aquaBright),
@@ -448,6 +468,103 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     );
   }
 
+  // ── Ask a question ────────────────────────────────────────────────────────
+  Future<void> _askQuestion() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      final shouldSignIn = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: _P.deepNavy,
+          title: const Text('Sign in required',
+              style: TextStyle(color: Colors.white)),
+          content: const Text(
+            'You need an account to ask a question. Sign in (or create one), then come back to this place to continue.',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child:
+                  const Text('Cancel', style: TextStyle(color: Colors.white54)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: _P.aquaBright),
+              onPressed: () => Navigator.pop(context, true),
+              child:
+                  const Text('Sign In', style: TextStyle(color: _P.deepNavy)),
+            ),
+          ],
+        ),
+      );
+      if (shouldSignIn == true && mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AuthScreen(isLogin: true)),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+
+    final ctrl = TextEditingController();
+    final sent = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: _P.deepNavy,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Ask ${_place.name} a question',
+            style: const TextStyle(color: Colors.white, fontSize: 16)),
+        content: TextField(
+          controller: ctrl,
+          maxLines: 4,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'What would you like to know?',
+            hintStyle: const TextStyle(color: Colors.white38),
+            filled: true,
+            fillColor: Colors.white.withValues(alpha: 0.06),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _P.aquaBright),
+            onPressed: () async {
+              final message = ctrl.text.trim();
+              if (message.isEmpty) return;
+              await PlaceQueryService.submit(PlaceQueryModel(
+                id: '',
+                placeId: _place.id,
+                placeName: _place.name,
+                firebaseUid: user.uid,
+                userEmail: user.email ?? '',
+                message: message,
+              ));
+              if (dialogCtx.mounted) Navigator.pop(dialogCtx, true);
+            },
+            child: const Text('Send', style: TextStyle(color: _P.deepNavy)),
+          ),
+        ],
+      ),
+    );
+
+    if (sent == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Your question has been sent.'),
+        backgroundColor: Color(0xFF006064),
+      ));
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
@@ -459,8 +576,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
 
           // ── Dark scrim ────────────────────────────────────────────────────
           Positioned.fill(
-            child: Container(
-                color: Colors.black.withValues(alpha: 0.52)),
+            child: Container(color: Colors.black.withValues(alpha: 0.52)),
           ),
 
           // ── Scrollable content ────────────────────────────────────────────
@@ -468,7 +584,6 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             controller: _scrollController,
             slivers: [
               const SliverToBoxAdapter(child: SizedBox(height: 80)),
-
               SliverToBoxAdapter(
                 child: FadeTransition(
                   opacity: _fadeAnimation,
@@ -478,7 +593,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                       _buildBreadcrumb(),
                       _buildPlaceInfoCard(),
                       if (_detailLoading) _buildDetailLoadingBanner(),
-                      if (_detailError)   _buildDetailErrorBanner(),
+                      if (_detailError) _buildDetailErrorBanner(),
                       _buildQuickActions(),
                       _buildDescriptionSection(),
                       _buildImageGallery(),
@@ -548,7 +663,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
   Widget _buildTopNav() {
     final navOpacity = (_scrollOffset / 80).clamp(0.0, 1.0);
     return Positioned(
-      top: 0, left: 0, right: 0,
+      top: 0,
+      left: 0,
+      right: 0,
       child: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -562,15 +679,15 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         ),
         child: SafeArea(
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
                 // Back
                 GestureDetector(
                   onTap: () => Navigator.pop(context),
                   child: Container(
-                    width: 36, height: 36,
+                    width: 36,
+                    height: 36,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: Colors.white.withValues(alpha: 0.15),
@@ -585,7 +702,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
 
                 // Logo orb
                 Container(
-                  width: 36, height: 36,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: const LinearGradient(
@@ -622,8 +740,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                 // Place name pill
                 Flexible(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: _P.aqua.withValues(alpha: 0.85),
                       borderRadius: BorderRadius.circular(16),
@@ -764,8 +882,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               // Bookable badge
               if (_place.isBookable)
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: Colors.green.withValues(alpha: 0.85),
                     borderRadius: BorderRadius.circular(10),
@@ -788,8 +906,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             children: [
               if (_priceRangeLabel != null) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: _P.deepNavy,
                     borderRadius: BorderRadius.circular(12),
@@ -861,15 +979,15 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       child: Row(
         children: [
           const SizedBox(
-            width: 16, height: 16,
-            child: CircularProgressIndicator(
-                color: _P.aquaBright, strokeWidth: 2),
+            width: 16,
+            height: 16,
+            child:
+                CircularProgressIndicator(color: _P.aquaBright, strokeWidth: 2),
           ),
           const SizedBox(width: 10),
           Text('Loading full details…',
               style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.white.withValues(alpha: 0.60))),
+                  fontSize: 12, color: Colors.white.withValues(alpha: 0.60))),
         ],
       ),
     );
@@ -884,8 +1002,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         decoration: BoxDecoration(
           color: Colors.redAccent.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-              color: Colors.redAccent.withValues(alpha: 0.30)),
+          border: Border.all(color: Colors.redAccent.withValues(alpha: 0.30)),
         ),
         child: Row(
           children: [
@@ -896,8 +1013,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               child: Text(
                 'Could not load full details. Tap to retry.',
                 style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.white.withValues(alpha: 0.65)),
+                    fontSize: 12, color: Colors.white.withValues(alpha: 0.65)),
               ),
             ),
           ],
@@ -908,9 +1024,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
 
   // ── Quick actions ─────────────────────────────────────────────────────────
   Widget _buildQuickActions() {
-    final phone   = _place.contact?.phone   ?? '';
+    final phone = _place.contact?.phone ?? '';
     final website = _place.contact?.website ?? '';
-    final hasMap  = _place.hasLocation;
+    final hasMap = _place.hasLocation;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
@@ -918,8 +1034,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         children: [
           if (phone.isNotEmpty) ...[
             Expanded(
-              child: _buildQuickActionButton(
-                  Icons.phone, 'Call', _P.aqua, () {
+              child: _buildQuickActionButton(Icons.phone, 'Call', _P.aqua, () {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('Call $phone')),
                 );
@@ -930,8 +1045,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           if (hasMap) ...[
             Expanded(
               child: _buildQuickActionButton(
-                  Icons.directions, 'Directions', const Color(0xFF2979FF),
-                  () {
+                  Icons.directions, 'Directions', const Color(0xFF2979FF), () {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                       content: Text('Maps integration coming soon!')),
@@ -1006,9 +1120,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           const Text(
             'About',
             style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.white),
+                fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
           const SizedBox(height: 12),
           Text(
@@ -1033,9 +1145,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           child: Text(
             'Gallery',
             style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.white),
+                fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
         ),
         SizedBox(
@@ -1054,8 +1164,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                 margin: const EdgeInsets.only(right: 12),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                      color: _P.aqua.withValues(alpha: 0.25)),
+                  border: Border.all(color: _P.aqua.withValues(alpha: 0.25)),
                 ),
                 clipBehavior: Clip.hardEdge,
                 child: Stack(
@@ -1068,8 +1177,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                             frameBuilder: (ctx, child, frame, _) =>
                                 AnimatedOpacity(
                               opacity: frame == null ? 0.0 : 1.0,
-                              duration:
-                                  const Duration(milliseconds: 400),
+                              duration: const Duration(milliseconds: 400),
                               child: child,
                             ),
                             errorBuilder: (_, __, ___) => Container(
@@ -1087,7 +1195,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                           ),
                     if ((img.caption ?? '').isNotEmpty)
                       Positioned(
-                        bottom: 0, left: 0, right: 0,
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 6),
@@ -1130,9 +1240,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           const Text(
             'Features & Amenities',
             style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.white),
+                fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
           const SizedBox(height: 16),
           Wrap(
@@ -1140,8 +1248,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             runSpacing: 12,
             children: _featureTags.map((tag) {
               return Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
@@ -1150,8 +1258,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                     ],
                   ),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: _P.aqua.withValues(alpha: 0.50)),
+                  border: Border.all(color: _P.aqua.withValues(alpha: 0.50)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1229,7 +1336,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           if (visibleEntries.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text('No ${_nestedItemsLabel.toLowerCase()} match "$query".',
+              child: Text(
+                  'No ${_nestedItemsLabel.toLowerCase()} match "$query".',
                   style: const TextStyle(color: Colors.white38, fontSize: 13)),
             )
           else
@@ -1338,7 +1446,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
   Widget _buildContactSection() {
     final contact = _place.contact;
     final address = _place.address;
-    final area    = _place.area;
+    final area = _place.area;
 
     // Only render if there is something to show
     final hasAny = contact?.phone != null ||
@@ -1355,8 +1463,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-            color: Colors.white.withValues(alpha: 0.20)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1364,34 +1471,27 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           const Text(
             'Contact Information',
             style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.white),
+                fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
           const SizedBox(height: 16),
           if ((address ?? '').isNotEmpty) ...[
-            _buildContactItem(
-                Icons.location_on, 'Address', address!),
+            _buildContactItem(Icons.location_on, 'Address', address!),
             const SizedBox(height: 12),
           ],
           if ((area ?? '').isNotEmpty) ...[
-            _buildContactItem(
-                Icons.map_outlined, 'Area', area!),
+            _buildContactItem(Icons.map_outlined, 'Area', area!),
             const SizedBox(height: 12),
           ],
           if ((contact?.phone ?? '').isNotEmpty) ...[
-            _buildContactItem(
-                Icons.phone, 'Phone', contact!.phone!),
+            _buildContactItem(Icons.phone, 'Phone', contact!.phone!),
             const SizedBox(height: 12),
           ],
           if ((contact?.email ?? '').isNotEmpty) ...[
-            _buildContactItem(
-                Icons.email_outlined, 'Email', contact!.email!),
+            _buildContactItem(Icons.email_outlined, 'Email', contact!.email!),
             const SizedBox(height: 12),
           ],
           if ((contact?.website ?? '').isNotEmpty)
-            _buildContactItem(
-                Icons.language, 'Website', contact!.website!),
+            _buildContactItem(Icons.language, 'Website', contact!.website!),
         ],
       ),
     );
@@ -1414,8 +1514,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                       fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
               Text(value,
-                  style: const TextStyle(
-                      fontSize: 14, color: Colors.white)),
+                  style: const TextStyle(fontSize: 14, color: Colors.white)),
             ],
           ),
         ),
@@ -1441,8 +1540,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           ],
         ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-            color: _P.aqua.withValues(alpha: 0.35)),
+        border: Border.all(color: _P.aqua.withValues(alpha: 0.35)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1450,9 +1548,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           const Text(
             'Booking & Pricing',
             style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.white),
+                fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
           const SizedBox(height: 14),
           if (_priceRangeLabel != null) ...[
@@ -1460,23 +1556,23 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             const SizedBox(height: 10),
           ],
           if (bs?.advanceNotice != null) ...[
-            _buildInfoRow(Icons.schedule, 'Advance notice',
-                '${bs!.advanceNotice} hours'),
+            _buildInfoRow(
+                Icons.schedule, 'Advance notice', '${bs!.advanceNotice} hours'),
             const SizedBox(height: 10),
           ],
           if (bs?.minDuration != null) ...[
-            _buildInfoRow(Icons.timelapse, 'Min stay',
-                '${bs!.minDuration} nights'),
+            _buildInfoRow(
+                Icons.timelapse, 'Min stay', '${bs!.minDuration} nights'),
             const SizedBox(height: 10),
           ],
           if (bs?.maxDuration != null) ...[
-            _buildInfoRow(Icons.calendar_today, 'Max stay',
-                '${bs!.maxDuration} nights'),
+            _buildInfoRow(
+                Icons.calendar_today, 'Max stay', '${bs!.maxDuration} nights'),
             const SizedBox(height: 10),
           ],
           if ((bs?.cancellationPolicy ?? '').isNotEmpty)
-            _buildInfoRow(Icons.policy_outlined, 'Cancellation',
-                bs!.cancellationPolicy!),
+            _buildInfoRow(
+                Icons.policy_outlined, 'Cancellation', bs!.cancellationPolicy!),
         ],
       ),
     );
@@ -1509,12 +1605,10 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Categories',
-            style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Colors.white),
+          Text(
+            TourismLabels.categoryPlural,
+            style: const TextStyle(
+                fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
           ),
           const SizedBox(height: 10),
           Wrap(
@@ -1522,13 +1616,12 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             runSpacing: 8,
             children: _place.categoryLinks.map((link) {
               return Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                      color: _P.aqua.withValues(alpha: 0.30)),
+                  border: Border.all(color: _P.aqua.withValues(alpha: 0.30)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1541,12 +1634,10 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                             color: Colors.white.withValues(alpha: 0.50)),
                       ),
                       Padding(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: Icon(Icons.chevron_right,
                             size: 13,
-                            color:
-                                Colors.white.withValues(alpha: 0.40)),
+                            color: Colors.white.withValues(alpha: 0.40)),
                       ),
                     ],
                     Text(
@@ -1579,8 +1670,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                 icon: const Icon(Icons.calendar_today, size: 20),
                 label: const Text(
                   'Book Now',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _P.aquaBright,
@@ -1596,19 +1686,11 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           else
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Enquire feature coming soon!'),
-                      backgroundColor: Color(0xFF006064),
-                    ),
-                  );
-                },
+                onPressed: _askQuestion,
                 icon: const Icon(Icons.chat_bubble_outline, size: 20),
                 label: const Text(
                   'Enquire',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _P.aquaBright,
@@ -1619,6 +1701,21 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                 ),
               ),
             ),
+          if (_place.isBookable) ...[
+            const SizedBox(width: 12),
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: _P.aquaBright, width: 2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: IconButton(
+                onPressed: _askQuestion,
+                tooltip: 'Ask a Question',
+                icon: const Icon(Icons.chat_bubble_outline,
+                    color: _P.aquaBright, size: 20),
+              ),
+            ),
+          ],
           const SizedBox(width: 12),
           Container(
             decoration: BoxDecoration(
@@ -1726,8 +1823,7 @@ class _NestedServiceCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(_subtitle!,
                 style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.65),
-                    fontSize: 12)),
+                    color: Colors.white.withValues(alpha: 0.65), fontSize: 12)),
           ],
           if (images.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -1743,8 +1839,8 @@ class _NestedServiceCard extends StatelessWidget {
                     margin: const EdgeInsets.only(right: 8),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                          color: _P.aqua.withValues(alpha: 0.25)),
+                      border:
+                          Border.all(color: _P.aqua.withValues(alpha: 0.25)),
                     ),
                     clipBehavior: Clip.hardEdge,
                     child: safeUrl != null

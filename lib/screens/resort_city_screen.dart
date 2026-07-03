@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:palmnazi/constants/tourism_labels.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
@@ -37,10 +38,10 @@ import 'package:palmnazi/services/api_client.dart';
 
 // ── Shared palette ────────────────────────────────────────────────────────────
 abstract final class _P {
-  static const Color aqua       = Color(0xFF00B8D4);
+  static const Color aqua = Color(0xFF00B8D4);
   static const Color aquaBright = Color(0xFF00E5FF);
-  static const Color deepNavy   = Color(0xFF01263F);
-  static const Color deepBlue   = Color(0xFF071829);
+  static const Color deepNavy = Color(0xFF01263F);
+  static const Color deepBlue = Color(0xFF071829);
 }
 
 // ── Vivid category accent palette — cycles when there are more categories ─────
@@ -61,32 +62,52 @@ Color _accentFor(int index) =>
 // ── Icon resolver — maps category name / slug → IconData ──────────────────────
 IconData _iconFor(CategoryModel cat) {
   final n = '${cat.name} ${cat.slug}'.toLowerCase();
-  if (n.contains('accommodation') || n.contains('hotel') ||
-      n.contains('lodge') || n.contains('stay') || n.contains('resort')) {
+  if (n.contains('accommodation') ||
+      n.contains('hotel') ||
+      n.contains('lodge') ||
+      n.contains('stay') ||
+      n.contains('resort')) {
     return Icons.king_bed_outlined;
   }
-  if (n.contains('dining') || n.contains('food') ||
-      n.contains('restaurant') || n.contains('eat') || n.contains('cuisine')) {
+  if (n.contains('dining') ||
+      n.contains('food') ||
+      n.contains('restaurant') ||
+      n.contains('eat') ||
+      n.contains('cuisine')) {
     return Icons.restaurant_menu;
   }
-  if (n.contains('event') || n.contains('festival') ||
-      n.contains('entertainment') || n.contains('nightlife')) {
+  if (n.contains('event') ||
+      n.contains('festival') ||
+      n.contains('entertainment') ||
+      n.contains('nightlife')) {
     return Icons.celebration;
   }
-  if (n.contains('shop') || n.contains('market') ||
-      n.contains('mall') || n.contains('retail') || n.contains('craft')) {
+  if (n.contains('shop') ||
+      n.contains('market') ||
+      n.contains('mall') ||
+      n.contains('retail') ||
+      n.contains('craft')) {
     return Icons.shopping_bag_outlined;
   }
-  if (n.contains('adventure') || n.contains('outdoor') ||
-      n.contains('nature') || n.contains('hike') || n.contains('safari')) {
+  if (n.contains('adventure') ||
+      n.contains('outdoor') ||
+      n.contains('nature') ||
+      n.contains('hike') ||
+      n.contains('safari')) {
     return Icons.terrain;
   }
-  if (n.contains('wellness') || n.contains('spa') ||
-      n.contains('health') || n.contains('yoga') || n.contains('retreat')) {
+  if (n.contains('wellness') ||
+      n.contains('spa') ||
+      n.contains('health') ||
+      n.contains('yoga') ||
+      n.contains('retreat')) {
     return Icons.spa_outlined;
   }
-  if (n.contains('culture') || n.contains('art') ||
-      n.contains('museum') || n.contains('heritage') || n.contains('historic')) {
+  if (n.contains('culture') ||
+      n.contains('art') ||
+      n.contains('museum') ||
+      n.contains('heritage') ||
+      n.contains('historic')) {
     return Icons.account_balance_outlined;
   }
   if (n.contains('tour') || n.contains('excursion') || n.contains('guide')) {
@@ -101,7 +122,9 @@ IconData _iconFor(CategoryModel cat) {
   if (n.contains('sport') || n.contains('gym') || n.contains('fitness')) {
     return Icons.sports_tennis;
   }
-  if (n.contains('night') || n.contains('bar') || n.contains('club') ||
+  if (n.contains('night') ||
+      n.contains('bar') ||
+      n.contains('club') ||
       n.contains('lounge')) {
     return Icons.nightlife;
   }
@@ -121,22 +144,21 @@ class _ResortApi {
   /// the category card.
   static Future<List<CategoryModel>> fetchCategories() async {
     final uri = Uri.parse(
-      ApiEndpoints.url(
-          '/api/categories?isActive=true&includeChildren=true'),
+      ApiEndpoints.url('/api/categories?isActive=true&includeChildren=true'),
     );
     final resp = await http.get(uri).timeout(_timeout);
     if (resp.statusCode != 200) return [];
 
-    final body  = jsonDecode(resp.body) as Map<String, dynamic>;
-    final data  = body['data'];
+    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    final data = body['data'];
     List<dynamic> raw;
 
     if (data is List) {
       raw = data;
     } else if (data is Map) {
-      raw = (data['categories'] as List<dynamic>?)
-          ?? (data['data'] as List<dynamic>?)
-          ?? <dynamic>[];
+      raw = (data['categories'] as List<dynamic>?) ??
+          (data['data'] as List<dynamic>?) ??
+          <dynamic>[];
     } else {
       raw = [];
     }
@@ -148,8 +170,7 @@ class _ResortApi {
         .toList();
 
     // Respect backend sortOrder when present
-    categories.sort(
-        (a, b) => (a.sortOrder).compareTo(b.sortOrder));
+    categories.sort((a, b) => (a.sortOrder).compareTo(b.sortOrder));
 
     return categories;
   }
@@ -171,17 +192,16 @@ class ResortCityScreen extends StatefulWidget {
 
 class _ResortCityScreenState extends State<ResortCityScreen>
     with TickerProviderStateMixin {
-
   // ── Scroll / animation ────────────────────────────────────────────────────
-  late final ScrollController      _scrollController;
-  late final AnimationController   _fadeController;
-  late final Animation<double>     _fadeAnimation;
+  late final ScrollController _scrollController;
+  late final AnimationController _fadeController;
+  late final Animation<double> _fadeAnimation;
   double _scrollOffset = 0;
 
   // ── Live category data ────────────────────────────────────────────────────
-  List<CategoryModel> _categories     = [];
-  bool                _catsLoading    = true;
-  String?             _catsError;
+  List<CategoryModel> _categories = [];
+  bool _catsLoading = true;
+  String? _catsError;
 
   @override
   void initState() {
@@ -205,19 +225,23 @@ class _ResortCityScreenState extends State<ResortCityScreen>
 
   Future<void> _loadCategories() async {
     if (!mounted) return;
-    setState(() { _catsLoading = true; _catsError = null; });
+    setState(() {
+      _catsLoading = true;
+      _catsError = null;
+    });
     try {
       final cats = await _ResortApi.fetchCategories();
       if (mounted) {
         setState(() {
-          _categories  = cats;
+          _categories = cats;
           _catsLoading = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _catsError   = 'Could not load categories. Tap to retry.';
+          _catsError =
+              'Could not load ${TourismLabels.categoryPlural.toLowerCase()}. Tap to retry.';
           _catsLoading = false;
         });
       }
@@ -226,15 +250,14 @@ class _ResortCityScreenState extends State<ResortCityScreen>
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  void _onScroll() =>
-      setState(() => _scrollOffset = _scrollController.offset);
+  void _onScroll() => setState(() => _scrollOffset = _scrollController.offset);
 
   void _navigateToCategory(CategoryModel category) {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => CategoryScreen(
-          city:     widget.city,
+          city: widget.city,
           category: category,
         ),
       ),
@@ -337,7 +360,9 @@ class _ResortCityScreenState extends State<ResortCityScreen>
   Widget _buildTopNav() {
     final navOpacity = (_scrollOffset / 80).clamp(0.0, 1.0);
     return Positioned(
-      top: 0, left: 0, right: 0,
+      top: 0,
+      left: 0,
+      right: 0,
       child: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -361,10 +386,11 @@ class _ResortCityScreenState extends State<ResortCityScreen>
                   GestureDetector(
                     onTap: () => Navigator.pop(context),
                     child: Container(
-                      width: 36, height: 36,
+                      width: 36,
+                      height: 36,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color:  Colors.white.withValues(alpha: 0.15),
+                        color: Colors.white.withValues(alpha: 0.15),
                         border: Border.all(
                             color: Colors.white.withValues(alpha: 0.30)),
                       ),
@@ -376,7 +402,8 @@ class _ResortCityScreenState extends State<ResortCityScreen>
 
                   // Logo orb
                   Container(
-                    width: 36, height: 36,
+                    width: 36,
+                    height: 36,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: const LinearGradient(
@@ -387,7 +414,8 @@ class _ResortCityScreenState extends State<ResortCityScreen>
                       boxShadow: [
                         BoxShadow(
                           color: _P.aqua.withValues(alpha: 0.55),
-                          blurRadius: 10, spreadRadius: 1,
+                          blurRadius: 10,
+                          spreadRadius: 1,
                         ),
                       ],
                     ),
@@ -416,7 +444,8 @@ class _ResortCityScreenState extends State<ResortCityScreen>
                 // ── Right: Sign In | Blog | Get Started ───────────────
                 Row(children: [
                   TextButton(
-                    onPressed: () => Navigator.push(context,
+                    onPressed: () => Navigator.push(
+                        context,
                         MaterialPageRoute(
                             builder: (_) => const AuthScreen(isLogin: true))),
                     child: const Text('Sign In',
@@ -435,10 +464,10 @@ class _ResortCityScreenState extends State<ResortCityScreen>
                   ),
                   const SizedBox(width: 4),
                   ElevatedButton(
-                    onPressed: () => Navigator.push(context,
+                    onPressed: () => Navigator.push(
+                        context,
                         MaterialPageRoute(
-                            builder: (_) =>
-                                const AuthScreen(isLogin: false))),
+                            builder: (_) => const AuthScreen(isLogin: false))),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _P.aquaBright,
                       foregroundColor: _P.deepNavy,
@@ -470,11 +499,10 @@ class _ResortCityScreenState extends State<ResortCityScreen>
       if (city.totalPlaces > 0)
         _StatChipData(
             icon: Icons.place_outlined,
-            label: '${city.totalPlaces} Places'),
+            label: '${city.totalPlaces} ${TourismLabels.placePlural}'),
       if (city.totalEvents > 0)
         _StatChipData(
-            icon: Icons.event_outlined,
-            label: '${city.totalEvents} Events'),
+            icon: Icons.event_outlined, label: '${city.totalEvents} Events'),
     ];
 
     // If the backend also sends categoryCounts, surface the top ones
@@ -547,9 +575,7 @@ class _ResortCityScreenState extends State<ResortCityScreen>
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: statChips
-                  .map((s) => _buildStatChip(s))
-                  .toList(),
+              children: statChips.map((s) => _buildStatChip(s)).toList(),
             ),
           ],
         ],
@@ -560,10 +586,10 @@ class _ResortCityScreenState extends State<ResortCityScreen>
   Widget _buildStatChip(_StatChipData data) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color:  _P.aqua.withValues(alpha: 0.15),
+          color: _P.aqua.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-              color: _P.aqua.withValues(alpha: 0.45), width: 1.1),
+          border:
+              Border.all(color: _P.aqua.withValues(alpha: 0.45), width: 1.1),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -592,18 +618,18 @@ class _ResortCityScreenState extends State<ResortCityScreen>
               colors: [_P.aquaBright, Colors.white],
             ).createShader(bounds),
             child: Text(
-              'Explore Categories',
+              'Explore ${TourismLabels.categoryPlural}',
               style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                fontSize: 34,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
+                    fontSize: 34,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
               textAlign: TextAlign.center,
             ),
           ),
           const SizedBox(height: 12),
           Text(
-            'Choose a category to discover amazing places and experiences in ${widget.city.name}',
+            'Choose a ${TourismLabels.categorySingular.toLowerCase()} to discover amazing ${TourismLabels.placePlural.toLowerCase()} and experiences in ${widget.city.name}',
             style: TextStyle(
               fontSize: 14,
               color: Colors.white.withValues(alpha: 0.80),
@@ -623,10 +649,10 @@ class _ResortCityScreenState extends State<ResortCityScreen>
 
     return SliverGrid(
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent:  400,
-        childAspectRatio:    1.0,
-        crossAxisSpacing:    20,
-        mainAxisSpacing:     20,
+        maxCrossAxisExtent: 400,
+        childAspectRatio: 1.0,
+        crossAxisSpacing: 20,
+        mainAxisSpacing: 20,
       ),
       delegate: SliverChildBuilderDelegate(
         (context, index) {
@@ -649,9 +675,9 @@ class _ResortCityScreenState extends State<ResortCityScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 const CircularProgressIndicator(
-                  color: _P.aquaBright, strokeWidth: 2),
+                    color: _P.aquaBright, strokeWidth: 2),
                 const SizedBox(height: 14),
-                Text('Loading categories…',
+                Text('Loading ${TourismLabels.categoryPlural.toLowerCase()}…',
                     style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.55),
                         fontSize: 13)),
@@ -670,8 +696,8 @@ class _ResortCityScreenState extends State<ResortCityScreen>
             decoration: BoxDecoration(
               color: Colors.redAccent.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                  color: Colors.redAccent.withValues(alpha: 0.30)),
+              border:
+                  Border.all(color: Colors.redAccent.withValues(alpha: 0.30)),
             ),
             child: Column(
               children: [
@@ -704,15 +730,13 @@ class _ResortCityScreenState extends State<ResortCityScreen>
           child: Column(
             children: [
               Icon(Icons.category_outlined,
-                  size: 48,
-                  color: Colors.white.withValues(alpha: 0.30)),
+                  size: 48, color: Colors.white.withValues(alpha: 0.30)),
               const SizedBox(height: 12),
               Text(
-                'No categories available yet for ${widget.city.name}.',
+                'No ${TourismLabels.categoryPlural.toLowerCase()} available yet for ${widget.city.name}.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.55),
-                    fontSize: 13),
+                    color: Colors.white.withValues(alpha: 0.55), fontSize: 13),
               ),
             ],
           ),
@@ -722,13 +746,11 @@ class _ResortCityScreenState extends State<ResortCityScreen>
   // ── Category card ─────────────────────────────────────────────────────────
   Widget _buildCategoryCard(CategoryModel category, int index) {
     final accent = _accentFor(index);
-    final icon   = _iconFor(category);
+    final icon = _iconFor(category);
 
     // Collect subcategory names from children (if the API returned them)
-    final subcats = category.children
-        .where((c) => c.isActive)
-        .map((c) => c.name)
-        .toList();
+    final subcats =
+        category.children.where((c) => c.isActive).map((c) => c.name).toList();
 
     return GestureDetector(
       onTap: () => _navigateToCategory(category),
@@ -738,7 +760,8 @@ class _ResortCityScreenState extends State<ResortCityScreen>
           boxShadow: [
             BoxShadow(
               color: accent.withValues(alpha: 0.45),
-              blurRadius: 18, spreadRadius: 2,
+              blurRadius: 18,
+              spreadRadius: 2,
               offset: const Offset(0, 6),
             ),
           ],
@@ -791,15 +814,15 @@ class _ResortCityScreenState extends State<ResortCityScreen>
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color:  accent.withValues(alpha: 0.25),
-                          shape:  BoxShape.circle,
+                          color: accent.withValues(alpha: 0.25),
+                          shape: BoxShape.circle,
                           border: Border.all(
-                              color: accent.withValues(alpha: 0.80),
-                              width: 2),
+                              color: accent.withValues(alpha: 0.80), width: 2),
                           boxShadow: [
                             BoxShadow(
                               color: accent.withValues(alpha: 0.35),
-                              blurRadius: 12, spreadRadius: 1,
+                              blurRadius: 12,
+                              spreadRadius: 1,
                             ),
                           ],
                         ),
@@ -834,22 +857,27 @@ class _ResortCityScreenState extends State<ResortCityScreen>
                       if (subcats.isNotEmpty) ...[
                         const SizedBox(height: 10),
                         Wrap(
-                          spacing: 5, runSpacing: 4,
-                          children: subcats.take(4).map((s) => Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 7, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: accent.withValues(alpha: 0.18),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(
-                                  color: accent.withValues(alpha: 0.40)),
-                            ),
-                            child: Text(s,
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w500)),
-                          )).toList(),
+                          spacing: 5,
+                          runSpacing: 4,
+                          children: subcats
+                              .take(4)
+                              .map((s) => Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 7, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: accent.withValues(alpha: 0.18),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                          color:
+                                              accent.withValues(alpha: 0.40)),
+                                    ),
+                                    child: Text(s,
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w500)),
+                                  ))
+                              .toList(),
                         ),
                       ],
 
@@ -865,7 +893,8 @@ class _ResortCityScreenState extends State<ResortCityScreen>
                           boxShadow: [
                             BoxShadow(
                               color: accent.withValues(alpha: 0.55),
-                              blurRadius: 10, spreadRadius: 1,
+                              blurRadius: 10,
+                              spreadRadius: 1,
                             ),
                           ],
                         ),
@@ -925,7 +954,8 @@ class _ResortCityScreenState extends State<ResortCityScreen>
           // Nav links
           Wrap(
             alignment: WrapAlignment.center,
-            spacing: 8, runSpacing: 4,
+            spacing: 8,
+            runSpacing: 4,
             children: ['About', 'Contact', 'Privacy', 'Terms']
                 .map((t) => TextButton(
                       onPressed: () {},
@@ -975,10 +1005,10 @@ String _capitalize(String s) =>
 // a constructor parameter. createdAt / updatedAt are server-assigned timestamps
 // and are also absent from the constructor. sortOrder defaults to 0 (int).
 CategoryModel _placeholderCategory(String name) => CategoryModel(
-      id:          '',
-      name:        name,
-      slug:        name.toLowerCase(),
-      isActive:    true,
-      children:    [],
-      sortOrder:   0,
+      id: '',
+      name: name,
+      slug: name.toLowerCase(),
+      isActive: true,
+      children: [],
+      sortOrder: 0,
     );

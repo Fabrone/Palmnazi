@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-import 'dart:async';         // Timer for debounce
+import 'dart:async'; // Timer for debounce
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -218,7 +218,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     try {
       _storage = FirebaseStorage.instance;
     } catch (storageErr, storageSt) {
-      debugPrint('Failed to pre-cache FirebaseStorage: $storageErr\n$storageSt');
+      debugPrint(
+          'Failed to pre-cache FirebaseStorage: $storageErr\n$storageSt');
     }
   }
 
@@ -247,15 +248,19 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     //   3. First categoryLink slug — last resort
     if (p.taxonomy.isNotEmpty) {
       _primaryCategorySlug = p.taxonomy.first;
-      debugPrint('[Wizard/preload] _primaryCategorySlug from taxonomy: $_primaryCategorySlug');
+      debugPrint(
+          '[Wizard/preload] _primaryCategorySlug from taxonomy: $_primaryCategorySlug');
     } else {
       final rootLink = p.categoryLinks
           .where((l) => l.parentName == null)
           .cast<PlaceCategoryLink?>()
           .firstOrNull;
-      _primaryCategorySlug = rootLink?.categorySlug
-          ?? (p.categoryLinks.isNotEmpty ? p.categoryLinks.first.categorySlug : null);
-      debugPrint('[Wizard/preload] _primaryCategorySlug from categoryLinks: $_primaryCategorySlug '
+      _primaryCategorySlug = rootLink?.categorySlug ??
+          (p.categoryLinks.isNotEmpty
+              ? p.categoryLinks.first.categorySlug
+              : null);
+      debugPrint(
+          '[Wizard/preload] _primaryCategorySlug from categoryLinks: $_primaryCategorySlug '
           '(taxonomy was empty — check that backend populates taxonomy on draft creation)');
     }
     _shortDescCtrl.text = p.shortDescription ?? '';
@@ -273,8 +278,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     _maxPriceCtrl.text = p.pricing?.max?.toString() ?? '';
     _priceUnit = p.pricing?.unit ?? 'night';
     _currency = p.pricing?.currency ?? 'KES';
-    _cancellationPolicy =
-        p.bookingSettings?.cancellationPolicy ?? 'flexible';
+    _cancellationPolicy = p.bookingSettings?.cancellationPolicy ?? 'flexible';
     for (final link in p.categoryLinks) {
       _selectedCategoryIds.add(link.categoryId);
     }
@@ -287,8 +291,9 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     // that _saveStep5 writes so round-tripping is lossless.
     final attrs = p.attributes;
     if (attrs.isNotEmpty) {
-      debugPrint('[Wizard/preload] Restoring ${attrs.length} attribute(s): ${attrs.keys.toList()}');
-      _checkInCtrl.text  = (attrs['checkInTime']  as String?) ?? '';
+      debugPrint(
+          '[Wizard/preload] Restoring ${attrs.length} attribute(s): ${attrs.keys.toList()}');
+      _checkInCtrl.text = (attrs['checkInTime'] as String?) ?? '';
       _checkOutCtrl.text = (attrs['checkOutTime'] as String?) ?? '';
       final star = attrs['starRating'];
       if (star != null) _starRatingCtrl.text = star.toString();
@@ -336,8 +341,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     final c = p.contact;
     if (c != null &&
         ((c.phone?.isNotEmpty ?? false) ||
-         (c.email?.isNotEmpty ?? false) ||
-         (c.website?.isNotEmpty ?? false))) {
+            (c.email?.isNotEmpty ?? false) ||
+            (c.website?.isNotEmpty ?? false))) {
       _completedSteps.add(3);
     }
 
@@ -369,7 +374,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       _completedSteps.add(10);
     }
 
-    debugPrint('[Wizard/infer] Completed steps for existing place: $_completedSteps');
+    debugPrint(
+        '[Wizard/infer] Completed steps for existing place: $_completedSteps');
   }
 
   // ── Reload nested data (rooms / menu items / shows) when editing ─────────
@@ -391,7 +397,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         if (index >= saved.length) return <String>[];
         final entry = saved[index];
         if (entry is Map<String, dynamic>) {
-          return List<String>.from((entry['images'] as List<dynamic>?) ?? const []);
+          return List<String>.from(
+              (entry['images'] as List<dynamic>?) ?? const []);
         }
         return <String>[];
       }
@@ -401,20 +408,29 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         final savedRooms = (details?['rooms'] as List<dynamic>?) ?? const [];
         if (mounted) {
           setState(() {
-            _rooms..clear()..addAll(rooms);
-            _roomImages..clear()..addAll(
-                List.generate(rooms.length, (i) => imagesAt(savedRooms, i)));
+            _rooms
+              ..clear()
+              ..addAll(rooms);
+            _roomImages
+              ..clear()
+              ..addAll(
+                  List.generate(rooms.length, (i) => imagesAt(savedRooms, i)));
             _existingRoomCount = rooms.length;
           });
         }
       } else if (_isDiningType) {
         final items = await widget.apiService.getMenuItems(place.id);
-        final savedItems = (details?['menuItems'] as List<dynamic>?) ?? const [];
+        final savedItems =
+            (details?['menuItems'] as List<dynamic>?) ?? const [];
         if (mounted) {
           setState(() {
-            _menuItems..clear()..addAll(items);
-            _menuItemImages..clear()..addAll(
-                List.generate(items.length, (i) => imagesAt(savedItems, i)));
+            _menuItems
+              ..clear()
+              ..addAll(items);
+            _menuItemImages
+              ..clear()
+              ..addAll(
+                  List.generate(items.length, (i) => imagesAt(savedItems, i)));
             _existingMenuItemCount = items.length;
           });
         }
@@ -423,9 +439,13 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         final savedShows = (details?['shows'] as List<dynamic>?) ?? const [];
         if (mounted) {
           setState(() {
-            _shows..clear()..addAll(shows);
-            _showImages..clear()..addAll(
-                List.generate(shows.length, (i) => imagesAt(savedShows, i)));
+            _shows
+              ..clear()
+              ..addAll(shows);
+            _showImages
+              ..clear()
+              ..addAll(
+                  List.generate(shows.length, (i) => imagesAt(savedShows, i)));
             _existingShowCount = shows.length;
           });
         }
@@ -438,19 +458,28 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
             (details?['artifacts'] as List<dynamic>?) ?? const [];
         if (mounted) {
           setState(() {
-            _exhibitions..clear()..addAll(exhibitions);
-            _exhibitionImages..clear()..addAll(List.generate(
-                exhibitions.length, (i) => imagesAt(savedExhibitions, i)));
+            _exhibitions
+              ..clear()
+              ..addAll(exhibitions);
+            _exhibitionImages
+              ..clear()
+              ..addAll(List.generate(
+                  exhibitions.length, (i) => imagesAt(savedExhibitions, i)));
             _existingExhibitionCount = exhibitions.length;
-            _artifacts..clear()..addAll(artifacts);
-            _artifactImages..clear()..addAll(List.generate(
-                artifacts.length, (i) => imagesAt(savedArtifacts, i)));
+            _artifacts
+              ..clear()
+              ..addAll(artifacts);
+            _artifactImages
+              ..clear()
+              ..addAll(List.generate(
+                  artifacts.length, (i) => imagesAt(savedArtifacts, i)));
             _existingArtifactCount = artifacts.length;
           });
         }
       }
     } catch (e, st) {
-      debugPrint('⚠️ [Wizard/LoadNestedData] Failed to load existing nested data: $e\n$st');
+      debugPrint(
+          '⚠️ [Wizard/LoadNestedData] Failed to load existing nested data: $e\n$st');
     } finally {
       if (mounted) setState(() => _loadingNestedData = false);
     }
@@ -491,21 +520,21 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   // Used to highlight which progress-bar segments are invalid after the
   // backend validation endpoint returns missing field names.
   static const Map<String, int> _fieldToStep = {
-    'description':         1,
-    'shortDescription':    1,
-    'address':             2,
-    'location':            2,
-    'coordinates':         2,
-    'latitude':            2,
-    'longitude':           2,
-    'contact':             3,
-    'phone':               3,
-    'email':               3,
-    'attributes':          4,
-    'cover':               6,
-    'image':               6,
-    'media':               6,
-    'categor':             8,
+    'description': 1,
+    'shortDescription': 1,
+    'address': 2,
+    'location': 2,
+    'coordinates': 2,
+    'latitude': 2,
+    'longitude': 2,
+    'contact': 3,
+    'phone': 3,
+    'email': 3,
+    'attributes': 4,
+    'cover': 6,
+    'image': 6,
+    'media': 6,
+    'categor': 8,
   };
 
   /// Steps that the backend says are incomplete (from the latest validation).
@@ -538,15 +567,30 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   void dispose() {
     //_placeSearchCtrl.dispose();
     //_debounceTimer?.cancel();
-    _nameCtrl.dispose(); _shortDescCtrl.dispose(); _descCtrl.dispose();
-    _areaCtrl.dispose(); _addressCtrl.dispose(); _latCtrl.dispose();
-    _lngCtrl.dispose(); _phoneCtrl.dispose(); _emailCtrl.dispose();
-    _websiteCtrl.dispose(); _coverImageCtrl.dispose();
-    _checkInCtrl.dispose(); _checkOutCtrl.dispose(); _starRatingCtrl.dispose();
-    _amenitiesCtrl.dispose(); _cuisineCtrl.dispose(); _seatingCapCtrl.dispose();
-    _openingHoursCtrl.dispose(); _minPriceCtrl.dispose(); _maxPriceCtrl.dispose();
+    _nameCtrl.dispose();
+    _shortDescCtrl.dispose();
+    _descCtrl.dispose();
+    _areaCtrl.dispose();
+    _addressCtrl.dispose();
+    _latCtrl.dispose();
+    _lngCtrl.dispose();
+    _phoneCtrl.dispose();
+    _emailCtrl.dispose();
+    _websiteCtrl.dispose();
+    _coverImageCtrl.dispose();
+    _checkInCtrl.dispose();
+    _checkOutCtrl.dispose();
+    _starRatingCtrl.dispose();
+    _amenitiesCtrl.dispose();
+    _cuisineCtrl.dispose();
+    _seatingCapCtrl.dispose();
+    _openingHoursCtrl.dispose();
+    _minPriceCtrl.dispose();
+    _maxPriceCtrl.dispose();
     _nestedSearchCtrl.dispose();
-    for (final c in _imageUrlCtrls) { c.dispose(); }
+    for (final c in _imageUrlCtrls) {
+      c.dispose();
+    }
     // _galleryBytes / _galleryUploading / _galleryProgress are plain lists —
     // no extra dispose needed; they GC with the state.
     super.dispose();
@@ -556,26 +600,34 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
 
   bool get _isAccommodationType {
     final slug = _primaryCategorySlug ?? '';
-    return slug.contains('accommodation') || slug.contains('hotel') ||
-        slug.contains('resort') || slug.contains('lodge');
+    return slug.contains('accommodation') ||
+        slug.contains('hotel') ||
+        slug.contains('resort') ||
+        slug.contains('lodge');
   }
 
   bool get _isDiningType {
     final slug = _primaryCategorySlug ?? '';
-    return slug.contains('dining') || slug.contains('restaurant') ||
-        slug.contains('food') || slug.contains('cafe');
+    return slug.contains('dining') ||
+        slug.contains('restaurant') ||
+        slug.contains('food') ||
+        slug.contains('cafe');
   }
 
   bool get _isEntertainmentType {
     final slug = _primaryCategorySlug ?? '';
-    return slug.contains('entertainment') || slug.contains('event') ||
-        slug.contains('show') || slug.contains('cinema');
+    return slug.contains('entertainment') ||
+        slug.contains('event') ||
+        slug.contains('show') ||
+        slug.contains('cinema');
   }
 
   bool get _isCulturalType {
     final slug = _primaryCategorySlug ?? '';
-    return slug.contains('museum') || slug.contains('cultural') ||
-        slug.contains('heritage') || slug.contains('art');
+    return slug.contains('museum') ||
+        slug.contains('cultural') ||
+        slug.contains('heritage') ||
+        slug.contains('art');
   }
 
   String get _nestedDataLabel {
@@ -633,10 +685,12 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
 
     try {
       final ref = storage.ref(storagePath);
-      final task = ref.putData(bytes, SettableMetadata(contentType: contentType));
+      final task =
+          ref.putData(bytes, SettableMetadata(contentType: contentType));
       task.snapshotEvents.listen((s) {
         if (mounted && s.totalBytes > 0) {
-          setState(() => _coverUploadProgress = s.bytesTransferred / s.totalBytes);
+          setState(
+              () => _coverUploadProgress = s.bytesTransferred / s.totalBytes);
         }
       });
       await task;
@@ -707,10 +761,12 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
 
     try {
       final ref = storage.ref(storagePath);
-      final task = ref.putData(bytes, SettableMetadata(contentType: contentType));
+      final task =
+          ref.putData(bytes, SettableMetadata(contentType: contentType));
       task.snapshotEvents.listen((s) {
         if (mounted && s.totalBytes > 0) {
-          setState(() => _galleryProgress[index] = s.bytesTransferred / s.totalBytes);
+          setState(() =>
+              _galleryProgress[index] = s.bytesTransferred / s.totalBytes);
         }
       });
       await task;
@@ -762,7 +818,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       return;
     }
 
-    final result = await FilePicker.pickFiles(type: FileType.image, withData: true);
+    final result =
+        await FilePicker.pickFiles(type: FileType.image, withData: true);
     if (result == null || result.files.isEmpty) return;
 
     final file = result.files.single;
@@ -804,7 +861,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Photos', style: TextStyle(color: Colors.white54, fontSize: 12)),
+        const Text('Photos',
+            style: TextStyle(color: Colors.white54, fontSize: 12)),
         const SizedBox(height: 6),
         if (images.isNotEmpty)
           Padding(
@@ -821,8 +879,11 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                       borderRadius: BorderRadius.circular(8),
                       child: safeUrl != null
                           ? Image.network(safeUrl,
-                              width: 56, height: 56, fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => _nestedImageBrokenTile())
+                              width: 56,
+                              height: 56,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  _nestedImageBrokenTile())
                           : _nestedImageBrokenTile(),
                     ),
                     Positioned(
@@ -854,7 +915,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                 },
           icon: uploading
               ? const SizedBox(
-                  width: 14, height: 14,
+                  width: 14,
+                  height: 14,
                   child: CircularProgressIndicator(
                       strokeWidth: 2, color: Color(0xFF14FFEC)))
               : const Icon(Icons.add_photo_alternate_outlined,
@@ -862,9 +924,11 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           label: Text(uploading ? 'Uploading…' : 'Add Photo',
               style: const TextStyle(fontSize: 12, color: Color(0xFF14FFEC))),
           style: OutlinedButton.styleFrom(
-            side: BorderSide(color: const Color(0xFF14FFEC).withValues(alpha: 0.5)),
+            side: BorderSide(
+                color: const Color(0xFF14FFEC).withValues(alpha: 0.5)),
             padding: const EdgeInsets.symmetric(vertical: 8),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
           ),
         ),
       ],
@@ -872,9 +936,11 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   }
 
   Widget _nestedImageBrokenTile() => Container(
-        width: 56, height: 56,
+        width: 56,
+        height: 56,
         color: Colors.white12,
-        child: const Icon(Icons.broken_image_rounded, color: Colors.white24, size: 20),
+        child: const Icon(Icons.broken_image_rounded,
+            color: Colors.white24, size: 20),
       );
 
   // ── Gallery slot management (keeps parallel lists in sync) ────────────────
@@ -913,10 +979,14 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
 
   String _mimeFor(String ext) {
     switch (ext) {
-      case 'png': return 'image/png';
-      case 'webp': return 'image/webp';
-      case 'gif': return 'image/gif';
-      default: return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'webp':
+        return 'image/webp';
+      case 'gif':
+        return 'image/gif';
+      default:
+        return 'image/jpeg';
     }
   }
 
@@ -924,9 +994,13 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
 
   Future<void> _saveCurrentStep() async {
     if (_saving) return;
-    setState(() { _saving = true; _stepError = null; });
+    setState(() {
+      _saving = true;
+      _stepError = null;
+    });
 
-    debugPrint('🔄 [Wizard] _saveCurrentStep  step=$_step (${_stepLabel(_step)})');
+    debugPrint(
+        '🔄 [Wizard] _saveCurrentStep  step=$_step (${_stepLabel(_step)})');
 
     try {
       switch (_step) {
@@ -969,18 +1043,31 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       }
 
       debugPrint('✅ [Wizard] Step $_step saved — advancing to ${_step + 1}');
-      if (mounted && _step < 10) setState(() { _completedSteps.add(_step); _step++; });
-
+      if (mounted && _step < 10) {
+        setState(() {
+          _completedSteps.add(_step);
+          _step++;
+        });
+      }
     } on AdminApiException catch (e) {
-      debugPrint('❌ [Wizard] AdminApiException on step $_step: ${e.message}  (${e.statusCode})');
-      if (mounted) setState(() { _stepError = e.message; _saving = false; });
+      debugPrint(
+          '❌ [Wizard] AdminApiException on step $_step: ${e.message}  (${e.statusCode})');
+      if (mounted) {
+        setState(() {
+          _stepError = e.message;
+          _saving = false;
+        });
+      }
       return; // prevent finally from double-clearing
-
     } catch (e, st) {
       debugPrint('💥 [Wizard] Unexpected error on step $_step: $e\n$st');
-      if (mounted) setState(() { _stepError = e.toString(); _saving = false; });
+      if (mounted) {
+        setState(() {
+          _stepError = e.toString();
+          _saving = false;
+        });
+      }
       return; // prevent finally from double-clearing
-
     } finally {
       // ── CRITICAL FIX ─────────────────────────────────────────────────────
       // The old guard was `_step <= 9`, but by the time finally runs, `_step`
@@ -998,8 +1085,17 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   /// Human-readable label for debug output — mirrors the progress-bar labels.
   static String _stepLabel(int step) {
     const labels = [
-      'Draft', 'BasicInfo', 'Location', 'Contact', 'Attributes',
-      'NestedData', 'Media', 'Booking', 'Categories', 'Validate', 'Submit'
+      'Draft',
+      'BasicInfo',
+      'Location',
+      'Contact',
+      'Attributes',
+      'NestedData',
+      'Media',
+      'Booking',
+      'Categories',
+      'Validate',
+      'Submit'
     ];
     return step >= 0 && step < labels.length ? labels[step] : 'Unknown';
   }
@@ -1050,35 +1146,61 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   // main save button is never blocked.
   Future<void> _autoValidate() async {
     if (_place == null || _validating || _saving) return;
-    debugPrint('🔍 [Wizard/AutoValidate] Triggering background validation for placeId=${_place!.id}');
-    setState(() { _validating = true; _stepError = null; });
+    debugPrint(
+        '🔍 [Wizard/AutoValidate] Triggering background validation for placeId=${_place!.id}');
+    setState(() {
+      _validating = true;
+      _stepError = null;
+    });
     try {
       final result = await widget.apiService.validatePlace(_place!.id);
       debugPrint('   ↳ isValid=${result.isValid}  missing=${result.missing}');
-      if (mounted) setState(() { _validationResult = result; _validating = false; });
+      if (mounted) {
+        setState(() {
+          _validationResult = result;
+          _validating = false;
+        });
+      }
     } catch (e, st) {
       debugPrint('❌ [Wizard/AutoValidate] Failed: $e\n$st');
-      if (mounted) setState(() { _validating = false; });
+      if (mounted) {
+        setState(() {
+          _validating = false;
+        });
+      }
     }
   }
 
   Future<void> _saveStep1() async {
-    debugPrint('📝 [Wizard/Step1] Creating draft — name="${_nameCtrl.text.trim()}"  cityId=$_selectedCityId  primaryCategory=$_primaryCategorySlug');
-    if (_nameCtrl.text.trim().isEmpty) throw AdminApiException(message: 'Name is required');
-    if (_selectedCityId == null) throw AdminApiException(message: 'Select a resort city');
-    if (_primaryCategorySlug == null) throw AdminApiException(message: 'Select a primary category');
+    debugPrint(
+        '📝 [Wizard/Step1] Creating draft — name="${_nameCtrl.text.trim()}"  cityId=$_selectedCityId  primaryCategory=$_primaryCategorySlug');
+    if (_nameCtrl.text.trim().isEmpty) {
+      throw AdminApiException(message: 'Name is required');
+    }
+    if (_selectedCityId == null) {
+      throw AdminApiException(message: 'Select a resort city');
+    }
+    if (_primaryCategorySlug == null) {
+      throw AdminApiException(message: 'Select a primary category');
+    }
     _place = await widget.apiService.createPlaceDraft(
       name: _nameCtrl.text.trim(),
       cityId: _selectedCityId!,
       primaryCategory: _primaryCategorySlug!,
     );
-    debugPrint('✅ [Wizard/Step1] Draft created — placeId=${_place?.id}  status=${_place?.status}');
+    debugPrint(
+        '✅ [Wizard/Step1] Draft created — placeId=${_place?.id}  status=${_place?.status}');
   }
 
   Future<void> _saveStep2() async {
-    if (_place == null) { debugPrint('⚠️ [Wizard/Step2] Skipped — _place is null'); return; }
+    if (_place == null) {
+      debugPrint('⚠️ [Wizard/Step2] Skipped — _place is null');
+      return;
+    }
     debugPrint('📝 [Wizard/Step2] Saving basic info — placeId=${_place!.id}');
-    if (_descCtrl.text.trim().isEmpty) throw AdminApiException(message: 'Description is required');
+    if (_descCtrl.text.trim().isEmpty) {
+      throw AdminApiException(message: 'Description is required');
+    }
     _place = await widget.apiService.updatePlaceBasicInfo(_place!.id, {
       'shortDescription': _shortDescCtrl.text.trim(),
       'description': _descCtrl.text.trim(),
@@ -1088,12 +1210,17 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   }
 
   Future<void> _saveStep3() async {
-    if (_place == null) { debugPrint('⚠️ [Wizard/Step3] Skipped — _place is null'); return; }
+    if (_place == null) {
+      debugPrint('⚠️ [Wizard/Step3] Skipped — _place is null');
+      return;
+    }
     final lat = double.tryParse(_latCtrl.text.trim());
     final lng = double.tryParse(_lngCtrl.text.trim());
-    debugPrint('📝 [Wizard/Step3] Saving location — placeId=${_place!.id}  address="${_addressCtrl.text.trim()}"  lat=$lat  lng=$lng');
+    debugPrint(
+        '📝 [Wizard/Step3] Saving location — placeId=${_place!.id}  address="${_addressCtrl.text.trim()}"  lat=$lat  lng=$lng');
     _place = await widget.apiService.updatePlaceLocation(_place!.id, {
-      if (_addressCtrl.text.trim().isNotEmpty) 'address': _addressCtrl.text.trim(),
+      if (_addressCtrl.text.trim().isNotEmpty)
+        'address': _addressCtrl.text.trim(),
       if (lat != null) 'latitude': lat,
       if (lng != null) 'longitude': lng,
       if (_areaCtrl.text.trim().isNotEmpty) 'area': _areaCtrl.text.trim(),
@@ -1102,36 +1229,58 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   }
 
   Future<void> _saveStep4() async {
-    if (_place == null) { debugPrint('⚠️ [Wizard/Step4] Skipped — _place is null'); return; }
-    debugPrint('📝 [Wizard/Step4] Saving contact — placeId=${_place!.id}  phone="${_phoneCtrl.text.trim()}"  email="${_emailCtrl.text.trim()}"');
+    if (_place == null) {
+      debugPrint('⚠️ [Wizard/Step4] Skipped — _place is null');
+      return;
+    }
+    debugPrint(
+        '📝 [Wizard/Step4] Saving contact — placeId=${_place!.id}  phone="${_phoneCtrl.text.trim()}"  email="${_emailCtrl.text.trim()}"');
     _place = await widget.apiService.updatePlaceContact(_place!.id, {
       'contact': {
         if (_phoneCtrl.text.trim().isNotEmpty) 'phone': _phoneCtrl.text.trim(),
         if (_emailCtrl.text.trim().isNotEmpty) 'email': _emailCtrl.text.trim(),
-        if (_websiteCtrl.text.trim().isNotEmpty) 'website': _websiteCtrl.text.trim(),
+        if (_websiteCtrl.text.trim().isNotEmpty)
+          'website': _websiteCtrl.text.trim(),
       },
     });
     debugPrint('✅ [Wizard/Step4] Contact saved — placeId=${_place?.id}');
   }
 
   Future<void> _saveStep5() async {
-    if (_place == null) { debugPrint('⚠️ [Wizard/Step5] Skipped — _place is null'); return; }
+    if (_place == null) {
+      debugPrint('⚠️ [Wizard/Step5] Skipped — _place is null');
+      return;
+    }
     final attributes = <String, dynamic>{};
     if (_isAccommodationType) {
-      if (_checkInCtrl.text.isNotEmpty) attributes['checkInTime'] = _checkInCtrl.text.trim();
-      if (_checkOutCtrl.text.isNotEmpty) attributes['checkOutTime'] = _checkOutCtrl.text.trim();
+      if (_checkInCtrl.text.isNotEmpty) {
+        attributes['checkInTime'] = _checkInCtrl.text.trim();
+      }
+      if (_checkOutCtrl.text.isNotEmpty) {
+        attributes['checkOutTime'] = _checkOutCtrl.text.trim();
+      }
       if (_starRatingCtrl.text.isNotEmpty) {
         attributes['starRating'] = int.tryParse(_starRatingCtrl.text) ?? 0;
       }
-      final amenities = _amenitiesCtrl.text.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+      final amenities = _amenitiesCtrl.text
+          .split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
       if (amenities.isNotEmpty) attributes['generalAmenities'] = amenities;
     } else if (_isDiningType) {
-      final cuisines = _cuisineCtrl.text.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+      final cuisines = _cuisineCtrl.text
+          .split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
       if (cuisines.isNotEmpty) attributes['cuisine'] = cuisines;
       if (_seatingCapCtrl.text.isNotEmpty) {
         attributes['seatingCapacity'] = int.tryParse(_seatingCapCtrl.text) ?? 0;
       }
-      if (_openingHoursCtrl.text.isNotEmpty) attributes['openingHoursNote'] = _openingHoursCtrl.text.trim();
+      if (_openingHoursCtrl.text.isNotEmpty) {
+        attributes['openingHoursNote'] = _openingHoursCtrl.text.trim();
+      }
     } else {
       // ── Generic fallback ─────────────────────────────────────────────────
       //
@@ -1143,7 +1292,11 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       //
       // Collect it here under "generalAmenities" — the same key used by the
       // accommodation branch — so the _preloadFromExisting round-trip is lossless.
-      final amenities = _amenitiesCtrl.text.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+      final amenities = _amenitiesCtrl.text
+          .split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
       if (amenities.isNotEmpty) attributes['generalAmenities'] = amenities;
       if (attributes.isEmpty) {
         debugPrint(
@@ -1154,11 +1307,14 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       }
     }
     if (attributes.isNotEmpty) {
-      debugPrint('📝 [Wizard/Step5] Saving attributes — placeId=${_place!.id}  keys=${attributes.keys.toList()}');
-      _place = await widget.apiService.updatePlaceAttributes(_place!.id, attributes);
+      debugPrint(
+          '📝 [Wizard/Step5] Saving attributes — placeId=${_place!.id}  keys=${attributes.keys.toList()}');
+      _place =
+          await widget.apiService.updatePlaceAttributes(_place!.id, attributes);
       debugPrint('✅ [Wizard/Step5] Attributes saved — placeId=${_place?.id}');
     } else {
-      debugPrint('⏭️ [Wizard/Step5] No attributes to save for category "$_primaryCategorySlug" — skipping PATCH');
+      debugPrint(
+          '⏭️ [Wizard/Step5] No attributes to save for category "$_primaryCategorySlug" — skipping PATCH');
     }
   }
 
@@ -1166,10 +1322,12 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   /// PlaceDetailsService persists to Firestore: [{name, images}, ...].
   List<Map<String, dynamic>> _zipNamesImages(
       List<Map<String, dynamic>> items, List<List<String>> images) {
-    return List.generate(items.length, (i) => {
-          'name': items[i]['name'],
-          'images': i < images.length ? images[i] : const <String>[],
-        });
+    return List.generate(
+        items.length,
+        (i) => {
+              'name': items[i]['name'],
+              'images': i < images.length ? images[i] : const <String>[],
+            });
   }
 
   /// Entries of [items] matching _nestedSearchQuery by name, keeping each
@@ -1180,8 +1338,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     final entries = items.asMap().entries;
     if (_nestedSearchQuery.trim().isEmpty) return entries;
     final q = _nestedSearchQuery.toLowerCase();
-    return entries
-        .where((e) => (e.value['name'] as String? ?? '').toLowerCase().contains(q));
+    return entries.where(
+        (e) => (e.value['name'] as String? ?? '').toLowerCase().contains(q));
   }
 
   /// Search box shown above a nested-item list once it has enough entries to
@@ -1196,10 +1354,12 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(color: Colors.white24, fontSize: 12),
-          prefixIcon: const Icon(Icons.search_rounded, color: Colors.white38, size: 16),
+          prefixIcon:
+              const Icon(Icons.search_rounded, color: Colors.white38, size: 16),
           suffixIcon: _nestedSearchQuery.isNotEmpty
               ? IconButton(
-                  icon: const Icon(Icons.clear_rounded, color: Colors.white38, size: 14),
+                  icon: const Icon(Icons.clear_rounded,
+                      color: Colors.white38, size: 14),
                   onPressed: () => setState(() {
                     _nestedSearchCtrl.clear();
                     _nestedSearchQuery = '';
@@ -1212,15 +1372,20 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
             borderRadius: BorderRadius.circular(8),
             borderSide: const BorderSide(color: Colors.white12),
           ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         ),
       ),
     );
   }
 
   Future<void> _saveStep6() async {
-    if (_place == null) { debugPrint('⚠️ [Wizard/Step6] Skipped — _place is null'); return; }
-    debugPrint('📝 [Wizard/Step6] Saving nested data — placeId=${_place!.id}  type: accommodation=$_isAccommodationType  dining=$_isDiningType  entertainment=$_isEntertainmentType');
+    if (_place == null) {
+      debugPrint('⚠️ [Wizard/Step6] Skipped — _place is null');
+      return;
+    }
+    debugPrint(
+        '📝 [Wizard/Step6] Saving nested data — placeId=${_place!.id}  type: accommodation=$_isAccommodationType  dining=$_isDiningType  entertainment=$_isEntertainmentType');
 
     // Only the items added since the last successful save are new — the
     // create endpoints are additive, not upserts, so re-sending
@@ -1230,9 +1395,12 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       final newRooms = _rooms.sublist(_existingRoomCount);
       if (newRooms.isNotEmpty) {
         debugPrint('   ↳ POSTing ${newRooms.length} room(s)');
-        final created = await widget.apiService.createRooms(_place!.id, newRooms);
+        final created =
+            await widget.apiService.createRooms(_place!.id, newRooms);
         // Merge server-assigned ids back so a later delete can target them.
-        for (var i = 0; i < created.length && (_existingRoomCount + i) < _rooms.length; i++) {
+        for (var i = 0;
+            i < created.length && (_existingRoomCount + i) < _rooms.length;
+            i++) {
           _rooms[_existingRoomCount + i] = created[i];
         }
         debugPrint('✅ [Wizard/Step6] Rooms saved');
@@ -1299,12 +1467,16 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       }
       _existingArtifactCount = _artifacts.length;
     } else {
-      debugPrint('⏭️ [Wizard/Step6] No nested data to save for this category — skipping');
+      debugPrint(
+          '⏭️ [Wizard/Step6] No nested data to save for this category — skipping');
     }
   }
 
   Future<void> _saveStep7() async {
-    if (_place == null) { debugPrint('⚠️ [Wizard/Step7] Skipped — _place is null'); return; }
+    if (_place == null) {
+      debugPrint('⚠️ [Wizard/Step7] Skipped — _place is null');
+      return;
+    }
     final imageList = _imageUrlCtrls
         .asMap()
         .entries
@@ -1315,61 +1487,83 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
               order: e.key + 1,
             ).toJson())
         .toList();
-    final cover = _coverImageCtrl.text.trim().isNotEmpty ? _coverImageCtrl.text.trim() : null;
-    debugPrint('📝 [Wizard/Step7] Saving media — placeId=${_place!.id}  cover=${cover != null ? "set" : "null"}  galleryImages=${imageList.length}');
+    final cover = _coverImageCtrl.text.trim().isNotEmpty
+        ? _coverImageCtrl.text.trim()
+        : null;
+    debugPrint(
+        '📝 [Wizard/Step7] Saving media — placeId=${_place!.id}  cover=${cover != null ? "set" : "null"}  galleryImages=${imageList.length}');
     _place = await widget.apiService.updatePlaceMedia(
       _place!.id,
       coverImage: cover,
       images: imageList,
     );
-    debugPrint('✅ [Wizard/Step7] Media saved — placeId=${_place?.id}  coverImage=${_place?.coverImage != null ? "set" : "null"}');
+    debugPrint(
+        '✅ [Wizard/Step7] Media saved — placeId=${_place?.id}  coverImage=${_place?.coverImage != null ? "set" : "null"}');
   }
 
   Future<void> _saveStep8() async {
-    if (_place == null) { debugPrint('⚠️ [Wizard/Step8] Skipped — _place is null'); return; }
-    debugPrint('📝 [Wizard/Step8] Saving booking — placeId=${_place!.id}  isBookable=$_isBookable  currency=$_currency  unit=$_priceUnit');
+    if (_place == null) {
+      debugPrint('⚠️ [Wizard/Step8] Skipped — _place is null');
+      return;
+    }
+    debugPrint(
+        '📝 [Wizard/Step8] Saving booking — placeId=${_place!.id}  isBookable=$_isBookable  currency=$_currency  unit=$_priceUnit');
     _place = await widget.apiService.updatePlaceBooking(_place!.id, {
       'isBookable': _isBookable,
-      if (_isBookable) 'pricing': {
-        if (_minPriceCtrl.text.isNotEmpty)
-          'min': double.tryParse(_minPriceCtrl.text) ?? 0,
-        if (_maxPriceCtrl.text.isNotEmpty)
-          'max': double.tryParse(_maxPriceCtrl.text) ?? 0,
-        'unit': _priceUnit,
-        'currency': _currency,
-      },
-      if (_isBookable) 'bookingSettings': {
-        'cancellationPolicy': _cancellationPolicy,
-      },
+      if (_isBookable)
+        'pricing': {
+          if (_minPriceCtrl.text.isNotEmpty)
+            'min': double.tryParse(_minPriceCtrl.text) ?? 0,
+          if (_maxPriceCtrl.text.isNotEmpty)
+            'max': double.tryParse(_maxPriceCtrl.text) ?? 0,
+          'unit': _priceUnit,
+          'currency': _currency,
+        },
+      if (_isBookable)
+        'bookingSettings': {
+          'cancellationPolicy': _cancellationPolicy,
+        },
     });
-    debugPrint('✅ [Wizard/Step8] Booking saved — placeId=${_place?.id}  isBookable=${_place?.isBookable}');
+    debugPrint(
+        '✅ [Wizard/Step8] Booking saved — placeId=${_place?.id}  isBookable=${_place?.isBookable}');
 
     // Accepted payment methods aren't part of the /api/places booking
     // contract yet — persisted separately to Firestore.
     await PlaceDetailsService.savePaymentMethods(
         _place!.id, _selectedPaymentMethodIds.toList());
-    debugPrint('✅ [Wizard/Step8] Payment methods saved — count=${_selectedPaymentMethodIds.length}');
+    debugPrint(
+        '✅ [Wizard/Step8] Payment methods saved — count=${_selectedPaymentMethodIds.length}');
   }
 
   Future<void> _saveStep9() async {
-    if (_place == null) { debugPrint('⚠️ [Wizard/Step9] Skipped — _place is null'); return; }
-    debugPrint('📝 [Wizard/Step9] Linking categories — placeId=${_place!.id}  selected=${_selectedCategoryIds.length}  ids=$_selectedCategoryIds');
+    if (_place == null) {
+      debugPrint('⚠️ [Wizard/Step9] Skipped — _place is null');
+      return;
+    }
+    debugPrint(
+        '📝 [Wizard/Step9] Linking categories — placeId=${_place!.id}  selected=${_selectedCategoryIds.length}  ids=$_selectedCategoryIds');
     if (_selectedCategoryIds.isNotEmpty) {
-      _place = await widget.apiService.linkPlaceCategories(
-          _place!.id, _selectedCategoryIds.toList());
-      debugPrint('✅ [Wizard/Step9] Categories linked — placeId=${_place?.id}  categoryLinks=${_place?.categoryLinks.length}');
+      _place = await widget.apiService
+          .linkPlaceCategories(_place!.id, _selectedCategoryIds.toList());
+      debugPrint(
+          '✅ [Wizard/Step9] Categories linked — placeId=${_place?.id}  categoryLinks=${_place?.categoryLinks.length}');
     } else {
       debugPrint('⏭️ [Wizard/Step9] No categories selected — skipping PUT');
     }
   }
 
   Future<void> _runValidation() async {
-    if (_place == null) { debugPrint('⚠️ [Wizard/Validate] Skipped — _place is null'); return; }
-    debugPrint('🔍 [Wizard/Validate] Running GET validation — placeId=${_place!.id}');
+    if (_place == null) {
+      debugPrint('⚠️ [Wizard/Validate] Skipped — _place is null');
+      return;
+    }
+    debugPrint(
+        '🔍 [Wizard/Validate] Running GET validation — placeId=${_place!.id}');
 
     final result = await widget.apiService.validatePlace(_place!.id);
 
-    debugPrint('   ↳ isValid=${result.isValid}  missing=${result.missing.length} field(s)');
+    debugPrint(
+        '   ↳ isValid=${result.isValid}  missing=${result.missing.length} field(s)');
     if (result.missing.isNotEmpty) {
       debugPrint('   ↳ Missing: ${result.missing.join(", ")}');
     }
@@ -1380,22 +1574,29 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     if (mounted) setState(() => _validationResult = result);
 
     if (!result.isValid) {
-      debugPrint('❌ [Wizard/Validate] Place is NOT valid — blocking advance to Submit step');
+      debugPrint(
+          '❌ [Wizard/Validate] Place is NOT valid — blocking advance to Submit step');
       throw AdminApiException(message: 'Missing required fields — see below');
     }
-    debugPrint('✅ [Wizard/Validate] Validation passed — proceeding to Submit step');
+    debugPrint(
+        '✅ [Wizard/Validate] Validation passed — proceeding to Submit step');
   }
 
   Future<void> _submitPlace() async {
-    if (_place == null) { debugPrint('⚠️ [Wizard/Submit] Skipped — _place is null'); return; }
+    if (_place == null) {
+      debugPrint('⚠️ [Wizard/Submit] Skipped — _place is null');
+      return;
+    }
 
     // NOTE: _saveCurrentStep already set _saving=true before calling us.
     // We do NOT set it again here (was a redundant double-setState).
-    debugPrint('🚀 [Wizard/Submit] Submitting place — placeId=${_place!.id}  name="${_place!.name}"');
+    debugPrint(
+        '🚀 [Wizard/Submit] Submitting place — placeId=${_place!.id}  name="${_place!.name}"');
 
     try {
       final submitted = await widget.apiService.submitPlace(_place!.id);
-      debugPrint('✅ [Wizard/Submit] Place submitted successfully — placeId=${submitted.id}  status=${submitted.status}');
+      debugPrint(
+          '✅ [Wizard/Submit] Place submitted successfully — placeId=${submitted.id}  status=${submitted.status}');
       if (mounted) {
         // Dismiss the spinner before we pop so the user sees the snackbar.
         setState(() => _saving = false);
@@ -1407,11 +1608,22 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         Navigator.of(context).pop(true);
       }
     } on AdminApiException catch (e) {
-      debugPrint('❌ [Wizard/Submit] AdminApiException — ${e.statusCode}: ${e.message}');
-      if (mounted) setState(() { _stepError = e.message; _saving = false; });
+      debugPrint(
+          '❌ [Wizard/Submit] AdminApiException — ${e.statusCode}: ${e.message}');
+      if (mounted) {
+        setState(() {
+          _stepError = e.message;
+          _saving = false;
+        });
+      }
     } catch (e, st) {
       debugPrint('💥 [Wizard/Submit] Unexpected error — $e\n$st');
-      if (mounted) setState(() { _stepError = 'Submission failed: $e'; _saving = false; });
+      if (mounted) {
+        setState(() {
+          _stepError = 'Submission failed: $e';
+          _saving = false;
+        });
+      }
     }
   }
 
@@ -1479,7 +1691,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                       decoration: BoxDecoration(
                         color: Colors.red.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.4)),
+                        border: Border.all(
+                            color: Colors.redAccent.withValues(alpha: 0.4)),
                       ),
                       child: Row(children: [
                         const Icon(Icons.error_outline_rounded,
@@ -1487,7 +1700,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                         const SizedBox(width: 10),
                         Expanded(
                             child: Text(_stepError!,
-                                style: const TextStyle(color: Colors.redAccent, fontSize: 13))),
+                                style: const TextStyle(
+                                    color: Colors.redAccent, fontSize: 13))),
                       ]),
                     ),
                     const SizedBox(height: 16),
@@ -1506,16 +1720,20 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
             totalSteps: 11,
             saving: _saving,
             hasPlace: _place != null,
-            onBack: _step > 0 ? () => setState(() { _step--; _stepError = null; }) : null,
+            onBack: _step > 0
+                ? () => setState(() {
+                      _step--;
+                      _stepError = null;
+                    })
+                : null,
             // Skip: free forward navigation without saving.
             // Unavailable on step 0 (draft not yet created) and the last step.
             onSkip: (_step == 0 && _place == null) || _step == 10
                 ? null
                 : _skipToNextStep,
             onContinue: _saveCurrentStep,
-            onSaveExit: _place != null
-                ? () => Navigator.of(context).pop(false)
-                : null,
+            onSaveExit:
+                _place != null ? () => Navigator.of(context).pop(false) : null,
           ),
         ],
       ),
@@ -1524,18 +1742,30 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
 
   Widget _buildStepContent() {
     switch (_step) {
-      case 0: return _buildStep1();
-      case 1: return _buildStep2();
-      case 2: return _buildStep3();
-      case 3: return _buildStep4();
-      case 4: return _buildStep5();
-      case 5: return _buildStep6();
-      case 6: return _buildStep7();
-      case 7: return _buildStep8();
-      case 8: return _buildStep9();
-      case 9: return _buildStep10();
-      case 10: return _buildStep11();
-      default: return const SizedBox.shrink();
+      case 0:
+        return _buildStep1();
+      case 1:
+        return _buildStep2();
+      case 2:
+        return _buildStep3();
+      case 3:
+        return _buildStep4();
+      case 4:
+        return _buildStep5();
+      case 5:
+        return _buildStep6();
+      case 6:
+        return _buildStep7();
+      case 7:
+        return _buildStep8();
+      case 8:
+        return _buildStep9();
+      case 9:
+        return _buildStep10();
+      case 10:
+        return _buildStep11();
+      default:
+        return const SizedBox.shrink();
     }
   }
 
@@ -1547,24 +1777,35 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AdminField(ctrl: _nameCtrl, label: 'Place Name', hint: 'e.g. Serena Beach Resort & Spa', required: true),
-
+        AdminField(
+            ctrl: _nameCtrl,
+            label: 'Place Name',
+            hint: 'e.g. Serena Beach Resort & Spa',
+            required: true),
         const SizedBox(height: 4),
         const Text('Resort City',
-            style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500)),
+            style: TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
         _AdminDropdown<String>(
           value: _selectedCityId,
           hint: 'Select the city this place is in',
-          items: widget.cities.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
+          items: widget.cities
+              .map((c) => DropdownMenuItem(value: c.id, child: Text(c.name)))
+              .toList(),
           onChanged: (v) => setState(() => _selectedCityId = v),
         ),
         const SizedBox(height: 16),
-
         const Text('Primary Category',
-            style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500)),
+            style: TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.w500)),
         const SizedBox(height: 4),
-        const Text('Used to determine what kind of nested data this place supports.',
+        const Text(
+            'Used to determine what kind of nested data this place supports.',
             style: TextStyle(color: Colors.white38, fontSize: 11)),
         const SizedBox(height: 8),
         _AdminDropdown<String>(
@@ -1591,12 +1832,20 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   Widget _buildStep2() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AdminField(ctrl: _shortDescCtrl, label: 'Short Description',
-              hint: 'One sentence summary (max 300 chars)', maxLines: 2),
-          AdminField(ctrl: _descCtrl, label: 'Full Description',
+          AdminField(
+              ctrl: _shortDescCtrl,
+              label: 'Short Description',
+              hint: 'One sentence summary (max 300 chars)',
+              maxLines: 2),
+          AdminField(
+              ctrl: _descCtrl,
+              label: 'Full Description',
               hint: 'Detailed description of this place (min 100 chars)',
-              maxLines: 5, required: true),
-          AdminField(ctrl: _areaCtrl, label: 'Area / Neighbourhood',
+              maxLines: 5,
+              required: true),
+          AdminField(
+              ctrl: _areaCtrl,
+              label: 'Area / Neighbourhood',
               hint: 'e.g. Shanzu, Westlands'),
         ],
       );
@@ -1723,26 +1972,29 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                 child: ElevatedButton.icon(
                   onPressed: _openMapPicker,
                   icon: Icon(
-                    hasCoords ? Icons.edit_location_alt_rounded : Icons.map_rounded,
+                    hasCoords
+                        ? Icons.edit_location_alt_rounded
+                        : Icons.map_rounded,
                     size: 16,
                   ),
                   label: Text(
                     hasCoords ? 'Adjust on Map' : 'Open Map Picker',
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 13),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: hasCoords
                         ? const Color(0xFF14FFEC).withValues(alpha: 0.12)
                         : const Color(0xFF14FFEC),
-                    foregroundColor: hasCoords
-                        ? const Color(0xFF14FFEC)
-                        : Colors.black,
+                    foregroundColor:
+                        hasCoords ? const Color(0xFF14FFEC) : Colors.black,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(9)),
                     side: hasCoords
                         ? BorderSide(
-                            color: const Color(0xFF14FFEC).withValues(alpha: 0.4))
+                            color:
+                                const Color(0xFF14FFEC).withValues(alpha: 0.4))
                         : BorderSide.none,
                   ),
                 ),
@@ -1821,17 +2073,16 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     );
   }
 
-    Future<void> _openMapPicker() async {
+  Future<void> _openMapPicker() async {
     final existingLat = double.tryParse(_latCtrl.text.trim());
     final existingLng = double.tryParse(_lngCtrl.text.trim());
 
     final result = await Navigator.of(context).push<PlaceLocationResult>(
       MaterialPageRoute(
         builder: (_) => AdminPlaceMapPicker(
-          initialSelectedLocation:
-              existingLat != null && existingLng != null
-                  ? LatLng(existingLat, existingLng)
-                  : null,
+          initialSelectedLocation: existingLat != null && existingLng != null
+              ? LatLng(existingLat, existingLng)
+              : null,
         ),
       ),
     );
@@ -1858,12 +2109,21 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   Widget _buildStep4() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AdminField(ctrl: _phoneCtrl, label: 'Phone Number',
-              hint: '+254722123456', keyboardType: TextInputType.phone),
-          AdminField(ctrl: _emailCtrl, label: 'Email Address',
-              hint: 'reservations@example.co.ke', keyboardType: TextInputType.emailAddress),
-          AdminField(ctrl: _websiteCtrl, label: 'Website URL',
-              hint: 'https://www.example.co.ke', keyboardType: TextInputType.url),
+          AdminField(
+              ctrl: _phoneCtrl,
+              label: 'Phone Number',
+              hint: '+254722123456',
+              keyboardType: TextInputType.phone),
+          AdminField(
+              ctrl: _emailCtrl,
+              label: 'Email Address',
+              hint: 'reservations@example.co.ke',
+              keyboardType: TextInputType.emailAddress),
+          AdminField(
+              ctrl: _websiteCtrl,
+              label: 'Website URL',
+              hint: 'https://www.example.co.ke',
+              keyboardType: TextInputType.url),
         ],
       );
 
@@ -1872,33 +2132,54 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     if (_isAccommodationType) {
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Expanded(child: AdminField(ctrl: _checkInCtrl, label: 'Check-in Time', hint: '14:00')),
+          Expanded(
+              child: AdminField(
+                  ctrl: _checkInCtrl, label: 'Check-in Time', hint: '14:00')),
           const SizedBox(width: 12),
-          Expanded(child: AdminField(ctrl: _checkOutCtrl, label: 'Check-out Time', hint: '11:00')),
+          Expanded(
+              child: AdminField(
+                  ctrl: _checkOutCtrl, label: 'Check-out Time', hint: '11:00')),
         ]),
-        AdminField(ctrl: _starRatingCtrl, label: 'Star Rating',
-            hint: '4', keyboardType: TextInputType.number,
+        AdminField(
+            ctrl: _starRatingCtrl,
+            label: 'Star Rating',
+            hint: '4',
+            keyboardType: TextInputType.number,
             helperText: 'Enter 1–5'),
-        AdminField(ctrl: _amenitiesCtrl, label: 'General Amenities',
+        AdminField(
+            ctrl: _amenitiesCtrl,
+            label: 'General Amenities',
             hint: 'Pool, Spa, Restaurant, Beach Access, WiFi',
-            helperText: 'Comma-separated list', maxLines: 3),
+            helperText: 'Comma-separated list',
+            maxLines: 3),
       ]);
     }
     if (_isDiningType) {
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        AdminField(ctrl: _cuisineCtrl, label: 'Cuisine Types',
+        AdminField(
+            ctrl: _cuisineCtrl,
+            label: 'Cuisine Types',
             hint: 'Seafood, Italian, Swahili',
             helperText: 'Comma-separated'),
-        AdminField(ctrl: _seatingCapCtrl, label: 'Seating Capacity',
-            hint: '120', keyboardType: TextInputType.number),
-        AdminField(ctrl: _openingHoursCtrl, label: 'Opening Hours',
-            hint: 'Mon–Fri: 11:00–23:00, Sat–Sun: 11:00–00:00', maxLines: 2),
+        AdminField(
+            ctrl: _seatingCapCtrl,
+            label: 'Seating Capacity',
+            hint: '120',
+            keyboardType: TextInputType.number),
+        AdminField(
+            ctrl: _openingHoursCtrl,
+            label: 'Opening Hours',
+            hint: 'Mon–Fri: 11:00–23:00, Sat–Sun: 11:00–00:00',
+            maxLines: 2),
       ]);
     }
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      AdminField(ctrl: _amenitiesCtrl, label: 'Key Features / Amenities',
+      AdminField(
+          ctrl: _amenitiesCtrl,
+          label: 'Key Features / Amenities',
           hint: 'Free Parking, WiFi, Accessible',
-          helperText: 'Comma-separated list', maxLines: 3),
+          helperText: 'Comma-separated list',
+          maxLines: 3),
       const SizedBox(height: 8),
       Container(
         padding: const EdgeInsets.all(12),
@@ -1954,28 +2235,40 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(children: [
-          const Expanded(child: Text('Rooms',
-              style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600))),
+          const Expanded(
+              child: Text('Rooms',
+                  style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600))),
           TextButton.icon(
             onPressed: _showAddRoomDialog,
-            icon: const Icon(Icons.add_rounded, size: 16, color: Color(0xFF14FFEC)),
-            label: const Text('Add Room', style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+            icon: const Icon(Icons.add_rounded,
+                size: 16, color: Color(0xFF14FFEC)),
+            label: const Text('Add Room',
+                style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
           ),
         ]),
         const SizedBox(height: 8),
         if (_loadingNestedData)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF14FFEC))),
+            child: Center(
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Color(0xFF14FFEC))),
           )
         else if (_rooms.isEmpty)
-          _EmptyNestedState(label: 'No rooms added yet', onAdd: _showAddRoomDialog)
+          _EmptyNestedState(
+              label: 'No rooms added yet', onAdd: _showAddRoomDialog)
         else ...[
-          if (_rooms.length > 3) _buildNestedSearchField('Search rooms by name…'),
+          if (_rooms.length > 3)
+            _buildNestedSearchField('Search rooms by name…'),
           ..._filteredNestedEntries(_rooms).map((e) => _NestedItemRow(
                 title: e.value['name'] as String? ?? 'Room ${e.key + 1}',
-                subtitle: '${e.value['roomType'] ?? ''} · KES ${e.value['basePrice'] ?? 0}',
-                imageCount: e.key < _roomImages.length ? _roomImages[e.key].length : 0,
+                subtitle:
+                    '${e.value['roomType'] ?? ''} · KES ${e.value['basePrice'] ?? 0}',
+                imageCount:
+                    e.key < _roomImages.length ? _roomImages[e.key].length : 0,
                 onDelete: () => _deleteRoom(e.key),
               )),
         ],
@@ -2031,22 +2324,39 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         return AlertDialog(
           backgroundColor: const Color(0xFF111827),
           title: const Text('Add Room', style: TextStyle(color: Colors.white)),
-          content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-            _SimpleField(ctrl: nameCtrl, label: 'Room Name', hint: 'Deluxe Ocean View Room'),
+          content: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+            _SimpleField(
+                ctrl: nameCtrl,
+                label: 'Room Name',
+                hint: 'Deluxe Ocean View Room'),
             const SizedBox(height: 12),
-            const Text('Room Type', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            const Text('Room Type',
+                style: TextStyle(color: Colors.white54, fontSize: 12)),
             const SizedBox(height: 4),
             _AdminDropdown<String>(
               value: roomType,
-              items: ['SINGLE', 'DOUBLE', 'TWIN', 'SUITE', 'FAMILY', 'PENTHOUSE', 'VILLA']
-                  .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-                  .toList(),
+              items: [
+                'SINGLE',
+                'DOUBLE',
+                'TWIN',
+                'SUITE',
+                'FAMILY',
+                'PENTHOUSE',
+                'VILLA'
+              ].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
               onChanged: (v) => setSt(() => roomType = v ?? 'DOUBLE'),
             ),
             const SizedBox(height: 12),
-            _SimpleField(ctrl: guestsCtrl, label: 'Max Guests', hint: '2',
+            _SimpleField(
+                ctrl: guestsCtrl,
+                label: 'Max Guests',
+                hint: '2',
                 keyboardType: TextInputType.number),
-            _SimpleField(ctrl: priceCtrl, label: 'Base Price (KES)', hint: '15000',
+            _SimpleField(
+                ctrl: priceCtrl,
+                label: 'Base Price (KES)',
+                hint: '15000',
                 keyboardType: TextInputType.number),
             const SizedBox(height: 4),
             _buildNestedImagePicker(
@@ -2058,11 +2368,17 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
             ),
           ])),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2196F3)),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2196F3)),
               onPressed: () {
-                if (nameCtrl.text.trim().isEmpty || priceCtrl.text.trim().isEmpty) return;
+                if (nameCtrl.text.trim().isEmpty ||
+                    priceCtrl.text.trim().isEmpty) {
+                  return;
+                }
                 setState(() {
                   _rooms.add({
                     'name': nameCtrl.text.trim(),
@@ -2070,7 +2386,9 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                     'maxGuests': int.tryParse(guestsCtrl.text) ?? 2,
                     'maxAdults': int.tryParse(guestsCtrl.text) ?? 2,
                     'maxChildren': 1,
-                    'beds': [{'bedType': 'DOUBLE', 'quantity': 1}],
+                    'beds': [
+                      {'bedType': 'DOUBLE', 'quantity': 1}
+                    ],
                     'amenities': ['WiFi', 'Air Conditioning'],
                     'basePrice': double.tryParse(priceCtrl.text) ?? 0,
                     'currency': 'KES',
@@ -2093,28 +2411,41 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(children: [
-          const Expanded(child: Text('Menu Items',
-              style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600))),
+          const Expanded(
+              child: Text('Menu Items',
+                  style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600))),
           TextButton.icon(
             onPressed: _showAddMenuItemDialog,
-            icon: const Icon(Icons.add_rounded, size: 16, color: Color(0xFF14FFEC)),
-            label: const Text('Add Item', style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+            icon: const Icon(Icons.add_rounded,
+                size: 16, color: Color(0xFF14FFEC)),
+            label: const Text('Add Item',
+                style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
           ),
         ]),
         const SizedBox(height: 8),
         if (_loadingNestedData)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF14FFEC))),
+            child: Center(
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Color(0xFF14FFEC))),
           )
         else if (_menuItems.isEmpty)
-          _EmptyNestedState(label: 'No menu items added yet', onAdd: _showAddMenuItemDialog)
+          _EmptyNestedState(
+              label: 'No menu items added yet', onAdd: _showAddMenuItemDialog)
         else ...[
-          if (_menuItems.length > 3) _buildNestedSearchField('Search menu items by name…'),
+          if (_menuItems.length > 3)
+            _buildNestedSearchField('Search menu items by name…'),
           ..._filteredNestedEntries(_menuItems).map((e) => _NestedItemRow(
                 title: e.value['name'] as String? ?? 'Item ${e.key + 1}',
-                subtitle: '${e.value['mealType'] ?? ''} · KES ${e.value['price'] ?? 0}',
-                imageCount: e.key < _menuItemImages.length ? _menuItemImages[e.key].length : 0,
+                subtitle:
+                    '${e.value['mealType'] ?? ''} · KES ${e.value['price'] ?? 0}',
+                imageCount: e.key < _menuItemImages.length
+                    ? _menuItemImages[e.key].length
+                    : 0,
                 onDelete: () => _deleteMenuItem(e.key),
               )),
         ],
@@ -2169,21 +2500,34 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       builder: (_) => StatefulBuilder(builder: (ctx, setSt) {
         return AlertDialog(
           backgroundColor: const Color(0xFF111827),
-          title: const Text('Add Menu Item', style: TextStyle(color: Colors.white)),
-          content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-            _SimpleField(ctrl: nameCtrl, label: 'Item Name', hint: 'Grilled Lobster'),
+          title: const Text('Add Menu Item',
+              style: TextStyle(color: Colors.white)),
+          content: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+            _SimpleField(
+                ctrl: nameCtrl, label: 'Item Name', hint: 'Grilled Lobster'),
             const SizedBox(height: 12),
-            const Text('Meal Type', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            const Text('Meal Type',
+                style: TextStyle(color: Colors.white54, fontSize: 12)),
             const SizedBox(height: 4),
             _AdminDropdown<String>(
               value: mealType,
-              items: ['BREAKFAST', 'LUNCH', 'DINNER', 'BRUNCH', 'SNACK', 'DESSERT', 'BEVERAGE']
-                  .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-                  .toList(),
+              items: [
+                'BREAKFAST',
+                'LUNCH',
+                'DINNER',
+                'BRUNCH',
+                'SNACK',
+                'DESSERT',
+                'BEVERAGE'
+              ].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
               onChanged: (v) => setSt(() => mealType = v ?? 'LUNCH'),
             ),
             const SizedBox(height: 12),
-            _SimpleField(ctrl: priceCtrl, label: 'Price (KES)', hint: '1500',
+            _SimpleField(
+                ctrl: priceCtrl,
+                label: 'Price (KES)',
+                hint: '1500',
                 keyboardType: TextInputType.number),
             const SizedBox(height: 4),
             _buildNestedImagePicker(
@@ -2195,11 +2539,17 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
             ),
           ])),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF50057)),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFF50057)),
               onPressed: () {
-                if (nameCtrl.text.trim().isEmpty || priceCtrl.text.trim().isEmpty) return;
+                if (nameCtrl.text.trim().isEmpty ||
+                    priceCtrl.text.trim().isEmpty) {
+                  return;
+                }
                 setState(() {
                   _menuItems.add({
                     'name': nameCtrl.text.trim(),
@@ -2225,26 +2575,38 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Expanded(child: Text('Shows / Events',
-                style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600))),
+            const Expanded(
+                child: Text('Shows / Events',
+                    style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600))),
             TextButton.icon(
               onPressed: _showAddShowDialog,
-              icon: const Icon(Icons.add_rounded, size: 16, color: Color(0xFF14FFEC)),
-              label: const Text('Add Show', style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+              icon: const Icon(Icons.add_rounded,
+                  size: 16, color: Color(0xFF14FFEC)),
+              label: const Text('Add Show',
+                  style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
             ),
           ]),
           if (_loadingNestedData)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF14FFEC))),
+              child: Center(
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Color(0xFF14FFEC))),
             )
           else if (_shows.isEmpty)
-            _EmptyNestedState(label: 'No shows added', onAdd: _showAddShowDialog)
+            _EmptyNestedState(
+                label: 'No shows added', onAdd: _showAddShowDialog)
           else
             ..._shows.asMap().entries.map((e) => _NestedItemRow(
                   title: e.value['name'] as String? ?? 'Show ${e.key + 1}',
-                  subtitle: '${e.value['category'] ?? ''} · ${e.value['durationMinutes']} min',
-                  imageCount: e.key < _showImages.length ? _showImages[e.key].length : 0,
+                  subtitle:
+                      '${e.value['category'] ?? ''} · ${e.value['durationMinutes']} min',
+                  imageCount: e.key < _showImages.length
+                      ? _showImages[e.key].length
+                      : 0,
                   // No delete endpoint exists for shows on the backend — removing
                   // a show here only clears it locally, so items already POSTed
                   // this session cannot be un-saved. See createShows/getShows.
@@ -2271,22 +2633,38 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         return AlertDialog(
           backgroundColor: const Color(0xFF111827),
           title: const Text('Add Show', style: TextStyle(color: Colors.white)),
-          content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-            _SimpleField(ctrl: nameCtrl, label: 'Show Name', hint: 'Sunset Beach Concert'),
+          content: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+            _SimpleField(
+                ctrl: nameCtrl,
+                label: 'Show Name',
+                hint: 'Sunset Beach Concert'),
             const SizedBox(height: 12),
-            const Text('Category', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            const Text('Category',
+                style: TextStyle(color: Colors.white54, fontSize: 12)),
             const SizedBox(height: 4),
             _AdminDropdown<String>(
               value: category,
-              items: ['CONCERT', 'DANCE', 'THEATRE', 'CULTURAL', 'COMEDY', 'FESTIVAL']
-                  .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-                  .toList(),
+              items: [
+                'CONCERT',
+                'DANCE',
+                'THEATRE',
+                'CULTURAL',
+                'COMEDY',
+                'FESTIVAL'
+              ].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
               onChanged: (v) => setSt(() => category = v ?? 'CONCERT'),
             ),
             const SizedBox(height: 12),
-            _SimpleField(ctrl: durationCtrl, label: 'Duration (minutes)', hint: '90',
+            _SimpleField(
+                ctrl: durationCtrl,
+                label: 'Duration (minutes)',
+                hint: '90',
                 keyboardType: TextInputType.number),
-            _SimpleField(ctrl: priceCtrl, label: 'Standard Ticket Price (KES)', hint: '1000',
+            _SimpleField(
+                ctrl: priceCtrl,
+                label: 'Standard Ticket Price (KES)',
+                hint: '1000',
                 keyboardType: TextInputType.number),
             const SizedBox(height: 4),
             _buildNestedImagePicker(
@@ -2298,9 +2676,12 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
             ),
           ])),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2196F3)),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2196F3)),
               onPressed: () {
                 if (nameCtrl.text.trim().isEmpty) return;
                 setState(() {
@@ -2308,7 +2689,9 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                     'name': nameCtrl.text.trim(),
                     'category': category,
                     'durationMinutes': int.tryParse(durationCtrl.text) ?? 90,
-                    'ticketPricing': {'standard': double.tryParse(priceCtrl.text) ?? 1000},
+                    'ticketPricing': {
+                      'standard': double.tryParse(priceCtrl.text) ?? 1000
+                    },
                   });
                   _showImages.add(List<String>.from(images));
                 });
@@ -2326,32 +2709,48 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Expanded(child: Text('Exhibitions',
-                style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600))),
+            const Expanded(
+                child: Text('Exhibitions',
+                    style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600))),
             TextButton.icon(
               onPressed: _showAddExhibitionDialog,
-              icon: const Icon(Icons.add_rounded, size: 16, color: Color(0xFF14FFEC)),
-              label: const Text('Add Exhibition', style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+              icon: const Icon(Icons.add_rounded,
+                  size: 16, color: Color(0xFF14FFEC)),
+              label: const Text('Add Exhibition',
+                  style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
             ),
           ]),
           if (_loadingNestedData)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF14FFEC))),
+              child: Center(
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Color(0xFF14FFEC))),
             )
           else if (_exhibitions.isEmpty)
-            _EmptyNestedState(label: 'No exhibitions added', onAdd: _showAddExhibitionDialog)
+            _EmptyNestedState(
+                label: 'No exhibitions added', onAdd: _showAddExhibitionDialog)
           else
             ..._exhibitions.asMap().entries.map((e) => _NestedItemRow(
-                  title: e.value['name'] as String? ?? 'Exhibition ${e.key + 1}',
+                  title:
+                      e.value['name'] as String? ?? 'Exhibition ${e.key + 1}',
                   subtitle: (e.value['description'] as String?) ?? '',
-                  imageCount: e.key < _exhibitionImages.length ? _exhibitionImages[e.key].length : 0,
+                  imageCount: e.key < _exhibitionImages.length
+                      ? _exhibitionImages[e.key].length
+                      : 0,
                   // No delete endpoint exists for exhibitions on the backend —
                   // removing one here only clears it locally.
                   onDelete: () => setState(() {
                     _exhibitions.removeAt(e.key);
-                    if (e.key < _exhibitionImages.length) _exhibitionImages.removeAt(e.key);
-                    if (e.key < _existingExhibitionCount) _existingExhibitionCount--;
+                    if (e.key < _exhibitionImages.length) {
+                      _exhibitionImages.removeAt(e.key);
+                    }
+                    if (e.key < _existingExhibitionCount) {
+                      _existingExhibitionCount--;
+                    }
                   }),
                 )),
         ],
@@ -2368,11 +2767,19 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       builder: (_) => StatefulBuilder(builder: (ctx, setSt) {
         return AlertDialog(
           backgroundColor: const Color(0xFF111827),
-          title: const Text('Add Exhibition', style: TextStyle(color: Colors.white)),
-          content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-            _SimpleField(ctrl: nameCtrl, label: 'Exhibition Name', hint: 'Ancient Swahili Trade Routes'),
+          title: const Text('Add Exhibition',
+              style: TextStyle(color: Colors.white)),
+          content: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+            _SimpleField(
+                ctrl: nameCtrl,
+                label: 'Exhibition Name',
+                hint: 'Ancient Swahili Trade Routes'),
             const SizedBox(height: 12),
-            _SimpleField(ctrl: descCtrl, label: 'Description', hint: 'Short description (optional)'),
+            _SimpleField(
+                ctrl: descCtrl,
+                label: 'Description',
+                hint: 'Short description (optional)'),
             const SizedBox(height: 4),
             _buildNestedImagePicker(
               itemType: 'exhibitions',
@@ -2383,15 +2790,19 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
             ),
           ])),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2196F3)),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2196F3)),
               onPressed: () {
                 if (nameCtrl.text.trim().isEmpty) return;
                 setState(() {
                   _exhibitions.add({
                     'name': nameCtrl.text.trim(),
-                    if (descCtrl.text.trim().isNotEmpty) 'description': descCtrl.text.trim(),
+                    if (descCtrl.text.trim().isNotEmpty)
+                      'description': descCtrl.text.trim(),
                   });
                   _exhibitionImages.add(List<String>.from(images));
                 });
@@ -2409,32 +2820,47 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Expanded(child: Text('Artifacts',
-                style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600))),
+            const Expanded(
+                child: Text('Artifacts',
+                    style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600))),
             TextButton.icon(
               onPressed: _showAddArtifactDialog,
-              icon: const Icon(Icons.add_rounded, size: 16, color: Color(0xFF14FFEC)),
-              label: const Text('Add Artifact', style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+              icon: const Icon(Icons.add_rounded,
+                  size: 16, color: Color(0xFF14FFEC)),
+              label: const Text('Add Artifact',
+                  style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
             ),
           ]),
           if (_loadingNestedData)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF14FFEC))),
+              child: Center(
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Color(0xFF14FFEC))),
             )
           else if (_artifacts.isEmpty)
-            _EmptyNestedState(label: 'No artifacts added', onAdd: _showAddArtifactDialog)
+            _EmptyNestedState(
+                label: 'No artifacts added', onAdd: _showAddArtifactDialog)
           else
             ..._artifacts.asMap().entries.map((e) => _NestedItemRow(
                   title: e.value['name'] as String? ?? 'Artifact ${e.key + 1}',
                   subtitle: (e.value['description'] as String?) ?? '',
-                  imageCount: e.key < _artifactImages.length ? _artifactImages[e.key].length : 0,
+                  imageCount: e.key < _artifactImages.length
+                      ? _artifactImages[e.key].length
+                      : 0,
                   // No delete endpoint exists for artifacts on the backend —
                   // removing one here only clears it locally.
                   onDelete: () => setState(() {
                     _artifacts.removeAt(e.key);
-                    if (e.key < _artifactImages.length) _artifactImages.removeAt(e.key);
-                    if (e.key < _existingArtifactCount) _existingArtifactCount--;
+                    if (e.key < _artifactImages.length) {
+                      _artifactImages.removeAt(e.key);
+                    }
+                    if (e.key < _existingArtifactCount) {
+                      _existingArtifactCount--;
+                    }
                   }),
                 )),
         ],
@@ -2451,11 +2877,19 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       builder: (_) => StatefulBuilder(builder: (ctx, setSt) {
         return AlertDialog(
           backgroundColor: const Color(0xFF111827),
-          title: const Text('Add Artifact', style: TextStyle(color: Colors.white)),
-          content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-            _SimpleField(ctrl: nameCtrl, label: 'Artifact Name', hint: 'Carved Ivory Tusk'),
+          title:
+              const Text('Add Artifact', style: TextStyle(color: Colors.white)),
+          content: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+            _SimpleField(
+                ctrl: nameCtrl,
+                label: 'Artifact Name',
+                hint: 'Carved Ivory Tusk'),
             const SizedBox(height: 12),
-            _SimpleField(ctrl: descCtrl, label: 'Description / Origin', hint: 'Short description (optional)'),
+            _SimpleField(
+                ctrl: descCtrl,
+                label: 'Description / Origin',
+                hint: 'Short description (optional)'),
             const SizedBox(height: 4),
             _buildNestedImagePicker(
               itemType: 'artifacts',
@@ -2466,15 +2900,19 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
             ),
           ])),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2196F3)),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2196F3)),
               onPressed: () {
                 if (nameCtrl.text.trim().isEmpty) return;
                 setState(() {
                   _artifacts.add({
                     'name': nameCtrl.text.trim(),
-                    if (descCtrl.text.trim().isNotEmpty) 'description': descCtrl.text.trim(),
+                    if (descCtrl.text.trim().isNotEmpty)
+                      'description': descCtrl.text.trim(),
                   });
                   _artifactImages.add(List<String>.from(images));
                 });
@@ -2514,7 +2952,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           uploading: _uploadingCover,
           uploadProgress: _coverUploadProgress,
           label: 'Cover Photo',
-          onPickTap: (_saving || anyUploading) ? null : _pickAndUploadCoverImage,
+          onPickTap:
+              (_saving || anyUploading) ? null : _pickAndUploadCoverImage,
         ),
 
         const SizedBox(height: 8),
@@ -2553,8 +2992,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                   children: [
                     Text(
                       i == 0 ? 'Image 1 — Primary' : 'Image ${i + 1}',
-                      style: const TextStyle(
-                          color: Colors.white54, fontSize: 12),
+                      style:
+                          const TextStyle(color: Colors.white54, fontSize: 12),
                     ),
                     const Spacer(),
                     // Remove button — only shown when more than one slot
@@ -2569,20 +3008,19 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                   ],
                 ),
                 const SizedBox(height: 6),
-
                 _ImageUploadTile(
                   imageBytes: _galleryBytes[i],
                   existingUrl: _imageUrlCtrls[i].text,
                   uploading: _galleryUploading[i],
                   uploadProgress: _galleryProgress[i],
-                  label: i == 0 ? 'Primary Gallery Photo' : 'Gallery Photo ${i + 1}',
+                  label: i == 0
+                      ? 'Primary Gallery Photo'
+                      : 'Gallery Photo ${i + 1}',
                   onPickTap: (_saving || anyUploading)
                       ? null
                       : () => _pickAndUploadGalleryImage(i),
                 ),
-
                 const SizedBox(height: 6),
-
                 _SimpleField(
                   ctrl: _imageUrlCtrls[i],
                   label: 'Image URL',
@@ -2622,36 +3060,90 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   Widget _buildStep8() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            const Expanded(child: Text('Enable Booking',
-                style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w500))),
-            Switch(
-              value: _isBookable,
-              activeThumbColor: Colors.greenAccent,
-              onChanged: (v) => setState(() => _isBookable = v),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: (_isBookable ? Colors.greenAccent : Colors.orangeAccent)
+                  .withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                  color:
+                      (_isBookable ? Colors.greenAccent : Colors.orangeAccent)
+                          .withValues(alpha: 0.35)),
             ),
-          ]),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Icon(
+                    _isBookable
+                        ? Icons.event_available_rounded
+                        : Icons.event_busy_rounded,
+                    color:
+                        _isBookable ? Colors.greenAccent : Colors.orangeAccent,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text('Enable Booking',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                  Switch(
+                    value: _isBookable,
+                    activeThumbColor: Colors.greenAccent,
+                    onChanged: (v) => setState(() => _isBookable = v),
+                  ),
+                ]),
+                const SizedBox(height: 4),
+                Text(
+                  _isBookable
+                      ? 'Tourists will see a "Book Now" button on this place.'
+                      : 'OFF — tourists cannot book this place until this is switched on.',
+                  style: TextStyle(
+                      color: (_isBookable
+                              ? Colors.greenAccent
+                              : Colors.orangeAccent)
+                          .withValues(alpha: 0.85),
+                      fontSize: 12),
+                ),
+              ],
+            ),
+          ),
           if (_isBookable) ...[
             const Divider(color: Colors.white12, height: 24),
             const Text('Pricing',
-                style: TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 1)),
+                style: TextStyle(
+                    color: Colors.white54, fontSize: 12, letterSpacing: 1)),
             const SizedBox(height: 10),
             Row(children: [
-              Expanded(child: AdminField(ctrl: _minPriceCtrl, label: 'Min Price',
-                  hint: '5000', keyboardType: TextInputType.number)),
+              Expanded(
+                  child: AdminField(
+                      ctrl: _minPriceCtrl,
+                      label: 'Min Price',
+                      hint: '5000',
+                      keyboardType: TextInputType.number)),
               const SizedBox(width: 12),
-              Expanded(child: AdminField(ctrl: _maxPriceCtrl, label: 'Max Price',
-                  hint: '50000', keyboardType: TextInputType.number)),
+              Expanded(
+                  child: AdminField(
+                      ctrl: _maxPriceCtrl,
+                      label: 'Max Price',
+                      hint: '50000',
+                      keyboardType: TextInputType.number)),
             ]),
             Row(children: [
-              Expanded(child: _LabeledDropdown(
+              Expanded(
+                  child: _LabeledDropdown(
                 label: 'Price Unit',
                 value: _priceUnit,
                 items: const ['night', 'hour', 'person', 'session'],
                 onChanged: (v) => setState(() => _priceUnit = v ?? 'night'),
               )),
               const SizedBox(width: 12),
-              Expanded(child: _LabeledDropdown(
+              Expanded(
+                  child: _LabeledDropdown(
                 label: 'Currency',
                 value: _currency,
                 items: const ['KES', 'USD', 'EUR', 'GBP'],
@@ -2663,7 +3155,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
               label: 'Cancellation Policy',
               value: _cancellationPolicy,
               items: const ['flexible', 'moderate', 'strict'],
-              onChanged: (v) => setState(() => _cancellationPolicy = v ?? 'flexible'),
+              onChanged: (v) =>
+                  setState(() => _cancellationPolicy = v ?? 'flexible'),
             ),
           ],
           const Divider(color: Colors.white12, height: 24),
@@ -2677,16 +3170,18 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text('Accepted Payment Methods',
-            style: TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 1)),
+            style: TextStyle(
+                color: Colors.white54, fontSize: 12, letterSpacing: 1)),
         const SizedBox(height: 4),
-        const Text(
-            'Which payment options can customers use at this place?',
+        const Text('Which payment options can customers use at this place?',
             style: TextStyle(color: Colors.white38, fontSize: 11)),
         const SizedBox(height: 10),
         if (_loadingPaymentMethods)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF14FFEC))),
+            child: Center(
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Color(0xFF14FFEC))),
           )
         else if (_paymentMethods.isEmpty)
           Container(
@@ -2747,24 +3242,27 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           decoration: BoxDecoration(
             color: const Color(0xFF0D1117),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFF2196F3).withValues(alpha: 0.3)),
+            border: Border.all(
+                color: const Color(0xFF2196F3).withValues(alpha: 0.3)),
           ),
           child: const Row(children: [
-            Icon(Icons.info_outline_rounded, color: Color(0xFF2196F3), size: 14),
+            Icon(Icons.info_outline_rounded,
+                color: Color(0xFF2196F3), size: 14),
             SizedBox(width: 8),
-            Expanded(child: Text(
-                'Select every category this place offers. A hotel that offers accommodation AND dining AND wellness should have all three selected.',
-                style: TextStyle(color: Colors.white54, fontSize: 12, height: 1.4))),
+            Expanded(
+                child: Text(
+                    'Select every category this place offers. A hotel that offers accommodation AND dining AND wellness should have all three selected.',
+                    style: TextStyle(
+                        color: Colors.white54, fontSize: 12, height: 1.4))),
           ]),
         ),
         const SizedBox(height: 20),
-
         ...roots.map((root) {
-          final childrenOfRoot = widget.categories
-              .where((c) => c.parentId == root.id)
-              .toList();
+          final childrenOfRoot =
+              widget.categories.where((c) => c.parentId == root.id).toList();
           final allIds = [root.id, ...childrenOfRoot.map((c) => c.id)];
-          final anySelected = allIds.any((id) => _selectedCategoryIds.contains(id));
+          final anySelected =
+              allIds.any((id) => _selectedCategoryIds.contains(id));
 
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
@@ -2785,12 +3283,15 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                   if (root.icon != null)
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
-                      child: Text(root.icon!, style: const TextStyle(fontSize: 16)),
+                      child: Text(root.icon!,
+                          style: const TextStyle(fontSize: 16)),
                     ),
                   Expanded(
                     child: Text(root.name,
                         style: const TextStyle(
-                            color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14)),
                   ),
                   Checkbox(
                     value: _selectedCategoryIds.contains(root.id),
@@ -2815,7 +3316,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                         const SizedBox(width: 4),
                         Expanded(
                             child: Text(child.name,
-                                style: const TextStyle(color: Colors.white54, fontSize: 13))),
+                                style: const TextStyle(
+                                    color: Colors.white54, fontSize: 13))),
                         Checkbox(
                           value: _selectedCategoryIds.contains(child.id),
                           activeColor: const Color(0xFF2196F3),
@@ -2834,10 +3336,10 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
             ),
           );
         }),
-
         if (_selectedCategoryIds.isNotEmpty) ...[
           const SizedBox(height: 8),
-          Text('${_selectedCategoryIds.length} categor${_selectedCategoryIds.length == 1 ? 'y' : 'ies'} selected',
+          Text(
+              '${_selectedCategoryIds.length} categor${_selectedCategoryIds.length == 1 ? 'y' : 'ies'} selected',
               style: const TextStyle(color: Color(0xFF14FFEC), fontSize: 12)),
         ],
       ],
@@ -2858,7 +3360,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(
-              width: 40, height: 40,
+              width: 40,
+              height: 40,
               child: CircularProgressIndicator(
                   strokeWidth: 3, color: Color(0xFF14FFEC)),
             ),
@@ -2894,8 +3397,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
               const SizedBox(height: 8),
               const Text(
                 'This checks that all required fields are filled in before you submit the place.',
-                style: TextStyle(
-                    color: Colors.white54, fontSize: 13, height: 1.5),
+                style:
+                    TextStyle(color: Colors.white54, fontSize: 13, height: 1.5),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 20),
@@ -2905,8 +3408,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                   onPressed: (_saving || _validating) ? null : _autoValidate,
                   icon: const Icon(Icons.play_arrow_rounded, size: 18),
                   label: const Text('Run Validation',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 14)),
+                      style:
+                          TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF14FFEC),
                     foregroundColor: Colors.black,
@@ -2986,8 +3489,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
               onTap: target != null ? () => _jumpToStep(target!) : null,
               child: Container(
                 margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.orange.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(8),
@@ -3044,8 +3547,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                     _autoValidate();
                   },
             icon: const Icon(Icons.refresh_rounded, size: 16),
-            label: const Text('Re-run Validation',
-                style: TextStyle(fontSize: 13)),
+            label:
+                const Text('Re-run Validation', style: TextStyle(fontSize: 13)),
             style: OutlinedButton.styleFrom(
               foregroundColor: const Color(0xFF14FFEC),
               side: BorderSide(
@@ -3079,19 +3582,24 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
               const SizedBox(height: 16),
               Text(_place?.name ?? '',
                   style: const TextStyle(
-                      color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center),
               const SizedBox(height: 8),
               const Text(
                   'Tapping "Submit & Activate" will change this place from PENDING to ACTIVE, making it visible in the user-facing app.',
-                  style: TextStyle(color: Colors.white54, fontSize: 13, height: 1.5),
+                  style: TextStyle(
+                      color: Colors.white54, fontSize: 13, height: 1.5),
                   textAlign: TextAlign.center),
               if (_place != null) ...[
                 const SizedBox(height: 20),
                 Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                   _SummaryPill(
                       icon: Icons.location_on_rounded,
-                      label: _place!.cityName.isNotEmpty ? _place!.cityName : 'City set'),
+                      label: _place!.cityName.isNotEmpty
+                          ? _place!.cityName
+                          : 'City set'),
                   const SizedBox(width: 8),
                   _SummaryPill(
                       icon: Icons.category_rounded,
@@ -3117,6 +3625,7 @@ class _StepProgressBar extends StatelessWidget {
   final int totalSteps;
   final Set<int> completedSteps;
   final Set<int> invalidSteps;
+
   /// Called when the user taps a step segment. Null = tapping is disabled.
   final void Function(int step)? onStepTap;
 
@@ -3131,8 +3640,17 @@ class _StepProgressBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const labels = [
-      'Draft', 'Info', 'Location', 'Contact', 'Attrs', 'Data',
-      'Media', 'Booking', 'Categories', 'Validate', 'Submit'
+      'Draft',
+      'Info',
+      'Location',
+      'Contact',
+      'Attrs',
+      'Data',
+      'Media',
+      'Booking',
+      'Categories',
+      'Validate',
+      'Submit'
     ];
 
     return Container(
@@ -3143,9 +3661,9 @@ class _StepProgressBar extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: List.generate(totalSteps, (i) {
-            final isCurrent  = i == currentStep;
-            final isSaved    = completedSteps.contains(i);
-            final isInvalid  = invalidSteps.contains(i);
+            final isCurrent = i == currentStep;
+            final isSaved = completedSteps.contains(i);
+            final isInvalid = invalidSteps.contains(i);
             // A step is accessible if it is saved, invalid (has been visited),
             // or is the current step.
             final isAccessible = isSaved || isInvalid || isCurrent;
@@ -3168,7 +3686,8 @@ class _StepProgressBar extends StatelessWidget {
               dot = const SizedBox(width: 4, height: 4);
             } else if (isInvalid) {
               dot = Container(
-                width: 5, height: 5,
+                width: 5,
+                height: 5,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: Colors.orangeAccent.withValues(alpha: 0.9),
@@ -3176,7 +3695,8 @@ class _StepProgressBar extends StatelessWidget {
               );
             } else if (isSaved) {
               dot = Container(
-                width: 5, height: 5,
+                width: 5,
+                height: 5,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: const Color(0xFF14FFEC).withValues(alpha: 0.6),
@@ -3187,7 +3707,8 @@ class _StepProgressBar extends StatelessWidget {
             }
 
             return Expanded(
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              child:
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Expanded(
                   child: GestureDetector(
                     onTap: (onStepTap != null && isAccessible)
@@ -3250,21 +3771,29 @@ class _StepProgressBar extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 if (completedSteps.isNotEmpty) ...[
-                  Container(width: 6, height: 6, decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFF14FFEC).withValues(alpha: 0.6),
-                  )),
+                  Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFF14FFEC).withValues(alpha: 0.6),
+                      )),
                   const SizedBox(width: 4),
-                  const Text('Saved', style: TextStyle(color: Colors.white24, fontSize: 9)),
+                  const Text('Saved',
+                      style: TextStyle(color: Colors.white24, fontSize: 9)),
                   const SizedBox(width: 12),
                 ],
                 if (invalidSteps.isNotEmpty) ...[
-                  Container(width: 6, height: 6, decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.orangeAccent.withValues(alpha: 0.9),
-                  )),
+                  Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.orangeAccent.withValues(alpha: 0.9),
+                      )),
                   const SizedBox(width: 4),
-                  const Text('Needs attention', style: TextStyle(color: Colors.white24, fontSize: 9)),
+                  const Text('Needs attention',
+                      style: TextStyle(color: Colors.white24, fontSize: 9)),
                 ],
               ],
             ),
@@ -3296,8 +3825,17 @@ class _IncompleteStepsStrip extends StatelessWidget {
   });
 
   static const _stepNames = [
-    'Draft', 'Basic Info', 'Location', 'Contact', 'Attributes',
-    'Nested Data', 'Media', 'Booking', 'Categories', 'Validate', 'Submit',
+    'Draft',
+    'Basic Info',
+    'Location',
+    'Contact',
+    'Attributes',
+    'Nested Data',
+    'Media',
+    'Booking',
+    'Categories',
+    'Validate',
+    'Submit',
   ];
 
   @override
@@ -3360,8 +3898,9 @@ class _IncompleteStepsStrip extends StatelessWidget {
                           Icon(
                             Icons.arrow_forward_ios_rounded,
                             size: 9,
-                            color:
-                                isInvalid ? Colors.orangeAccent : Colors.white38,
+                            color: isInvalid
+                                ? Colors.orangeAccent
+                                : Colors.white38,
                           ),
                         ]),
                       ),
@@ -3383,9 +3922,17 @@ class _StepHeader extends StatelessWidget {
   const _StepHeader({required this.step, required this.nestedLabel});
 
   static const _titles = [
-    'Create Draft', 'Basic Information', 'Location', 'Contact Details',
-    'Attributes', '', 'Media & Images', 'Booking & Pricing',
-    'Link Categories', 'Validate', 'Submit & Activate'
+    'Create Draft',
+    'Basic Information',
+    'Location',
+    'Contact Details',
+    'Attributes',
+    '',
+    'Media & Images',
+    'Booking & Pricing',
+    'Link Categories',
+    'Validate',
+    'Submit & Activate'
   ];
   static const _subs = [
     'Set the name, city, and primary category',
@@ -3404,7 +3951,9 @@ class _StepHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = step == 5 ? nestedLabel : _titles[step];
-    final sub = step == 5 ? 'Add ${nestedLabel.toLowerCase()} for this place (optional)' : _subs[step];
+    final sub = step == 5
+        ? 'Add ${nestedLabel.toLowerCase()} for this place (optional)'
+        : _subs[step];
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(title,
           style: const TextStyle(
@@ -3421,6 +3970,7 @@ class _WizardBottomBar extends StatelessWidget {
   final bool saving;
   final bool hasPlace;
   final VoidCallback? onBack;
+
   /// Navigate forward without saving. Null when not applicable (step 0 without
   /// a draft, or the final Submit step).
   final VoidCallback? onSkip;
@@ -3511,10 +4061,7 @@ class _WizardBottomBar extends StatelessWidget {
                   height: 14,
                   child: CircularProgressIndicator(
                       strokeWidth: 2, color: Colors.white))
-              : Icon(
-                  isLast
-                      ? Icons.rocket_launch_rounded
-                      : Icons.save_rounded,
+              : Icon(isLast ? Icons.rocket_launch_rounded : Icons.save_rounded,
                   size: 15),
           label: Text(
             saving
@@ -3528,10 +4075,9 @@ class _WizardBottomBar extends StatelessWidget {
             backgroundColor:
                 isLast ? Colors.greenAccent.shade700 : const Color(0xFF14FFEC),
             foregroundColor: Colors.black,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(9)),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
           ),
         ),
       ],
@@ -3582,7 +4128,8 @@ class _AdminDropdown<T> extends StatelessWidget {
   final List<DropdownMenuItem<T>> items;
   final ValueChanged<T?> onChanged;
 
-  const _AdminDropdown({this.value, this.hint, required this.items, required this.onChanged});
+  const _AdminDropdown(
+      {this.value, this.hint, required this.items, required this.onChanged});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -3599,7 +4146,8 @@ class _AdminDropdown<T> extends StatelessWidget {
           style: const TextStyle(color: Colors.white70, fontSize: 14),
           underline: const SizedBox.shrink(),
           hint: hint != null
-              ? Text(hint!, style: const TextStyle(color: Colors.white24, fontSize: 13))
+              ? Text(hint!,
+                  style: const TextStyle(color: Colors.white24, fontSize: 13))
               : null,
           onChanged: onChanged,
           items: items,
@@ -3612,18 +4160,27 @@ class _LabeledDropdown extends StatelessWidget {
   final String value;
   final List<String> items;
   final ValueChanged<String?> onChanged;
-  const _LabeledDropdown({required this.label, required this.value,
-      required this.items, required this.onChanged});
+  const _LabeledDropdown(
+      {required this.label,
+      required this.value,
+      required this.items,
+      required this.onChanged});
 
   @override
   Widget build(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500)),
+          Text(label,
+              style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           _AdminDropdown<String>(
             value: value,
-            items: items.map((i) => DropdownMenuItem(value: i, child: Text(i))).toList(),
+            items: items
+                .map((i) => DropdownMenuItem(value: i, child: Text(i)))
+                .toList(),
             onChanged: onChanged,
           ),
           const SizedBox(height: 16),
@@ -3636,14 +4193,18 @@ class _SimpleField extends StatelessWidget {
   final String label;
   final String hint;
   final TextInputType? keyboardType;
-  const _SimpleField({required this.ctrl, required this.label, required this.hint,
+  const _SimpleField(
+      {required this.ctrl,
+      required this.label,
+      required this.hint,
       this.keyboardType});
 
   @override
   Widget build(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          Text(label,
+              style: const TextStyle(color: Colors.white54, fontSize: 12)),
           const SizedBox(height: 6),
           TextFormField(
             controller: ctrl,
@@ -3654,13 +4215,17 @@ class _SimpleField extends StatelessWidget {
               hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
               filled: true,
               fillColor: const Color(0xFF0D1117),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
                   borderSide: const BorderSide(color: Colors.white12)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
                   borderSide: const BorderSide(color: Colors.white12)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
                   borderSide: const BorderSide(color: Color(0xFF14FFEC))),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),
           const SizedBox(height: 12),
@@ -3690,12 +4255,20 @@ class _NestedItemRow extends StatelessWidget {
           border: Border.all(color: Colors.white12),
         ),
         child: Row(children: [
-          const Icon(Icons.drag_handle_rounded, color: Colors.white24, size: 16),
+          const Icon(Icons.drag_handle_rounded,
+              color: Colors.white24, size: 16),
           const SizedBox(width: 10),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title, style: const TextStyle(color: Colors.white70, fontSize: 13)),
-            Text(subtitle, style: const TextStyle(color: Colors.white38, fontSize: 11)),
-          ])),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(title,
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 13)),
+                Text(subtitle,
+                    style:
+                        const TextStyle(color: Colors.white38, fontSize: 11)),
+              ])),
           if (imageCount > 0) ...[
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -3704,16 +4277,20 @@ class _NestedItemRow extends StatelessWidget {
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.photo_rounded, size: 11, color: Color(0xFF14FFEC)),
+                const Icon(Icons.photo_rounded,
+                    size: 11, color: Color(0xFF14FFEC)),
                 const SizedBox(width: 3),
-                Text('$imageCount', style: const TextStyle(color: Color(0xFF14FFEC), fontSize: 10)),
+                Text('$imageCount',
+                    style: const TextStyle(
+                        color: Color(0xFF14FFEC), fontSize: 10)),
               ]),
             ),
             const SizedBox(width: 8),
           ],
           IconButton(
             icon: Icon(Icons.delete_outline_rounded,
-                color: onDelete != null ? Colors.redAccent : Colors.white12, size: 16),
+                color: onDelete != null ? Colors.redAccent : Colors.white12,
+                size: 16),
             onPressed: onDelete,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
@@ -3737,12 +4314,14 @@ class _EmptyNestedState extends StatelessWidget {
           border: Border.all(color: Colors.white12, style: BorderStyle.solid),
         ),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text(label, style: const TextStyle(color: Colors.white38, fontSize: 13)),
+          Text(label,
+              style: const TextStyle(color: Colors.white38, fontSize: 13)),
           if (onAdd != null) ...[
             const SizedBox(height: 8),
             TextButton(
               onPressed: onAdd,
-              child: const Text('+ Add one now', style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+              child: const Text('+ Add one now',
+                  style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
             ),
           ],
         ]),
@@ -3757,10 +4336,17 @@ class _PlaceStatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     Color color;
     switch (status) {
-      case 'ACTIVE': color = Colors.greenAccent; break;
-      case 'SUSPENDED': color = Colors.orangeAccent; break;
-      case 'ARCHIVED': color = Colors.grey; break;
-      default: color = Colors.blueAccent; // PENDING
+      case 'ACTIVE':
+        color = Colors.greenAccent;
+        break;
+      case 'SUSPENDED':
+        color = Colors.orangeAccent;
+        break;
+      case 'ARCHIVED':
+        color = Colors.grey;
+        break;
+      default:
+        color = Colors.blueAccent; // PENDING
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -3770,7 +4356,8 @@ class _PlaceStatusBadge extends StatelessWidget {
         border: Border.all(color: color.withValues(alpha: 0.4)),
       ),
       child: Text(status,
-          style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+          style: TextStyle(
+              color: color, fontSize: 11, fontWeight: FontWeight.w600)),
     );
   }
 }
@@ -3791,7 +4378,8 @@ class _SummaryPill extends StatelessWidget {
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(icon, size: 12, color: const Color(0xFF14FFEC)),
           const SizedBox(width: 5),
-          Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+          Text(label,
+              style: const TextStyle(color: Colors.white54, fontSize: 11)),
         ]),
       );
 }
@@ -3871,7 +4459,8 @@ class _ImageUploadTile extends StatelessWidget {
                       value: uploadProgress,
                       minHeight: 5,
                       backgroundColor: Colors.white12,
-                      valueColor: const AlwaysStoppedAnimation(Color(0xFF14FFEC)),
+                      valueColor:
+                          const AlwaysStoppedAnimation(Color(0xFF14FFEC)),
                     ),
                   ),
                   const SizedBox(height: 5),
@@ -3970,8 +4559,8 @@ class _ImageUploadTile extends StatelessWidget {
   Widget _placeholder() => Container(
         color: Colors.white.withValues(alpha: 0.03),
         child: const Center(
-          child: Icon(Icons.broken_image_rounded,
-              color: Colors.white24, size: 36),
+          child:
+              Icon(Icons.broken_image_rounded, color: Colors.white24, size: 36),
         ),
       );
 }

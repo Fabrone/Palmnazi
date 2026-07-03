@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 // ignore: deprecated_member_use, avoid_web_libraries_in_flutter
-import 'dart:html' as html show window; // web-only: used for last-section storage
+import 'dart:html' as html
+    show window; // web-only: used for last-section storage
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -16,6 +18,7 @@ import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/services/city_details_service.dart';
 import 'package:palmnazi/services/firebase_service.dart';
 import 'package:palmnazi/admin/admin_dashboard.dart';
+import 'package:palmnazi/constants/tourism_labels.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Logger
@@ -63,8 +66,9 @@ abstract final class RC {
 // Keys are stored in window.localStorage so re-login can resume where the
 // user left off after their session expires.
 // ─────────────────────────────────────────────────────────────────────────────
-const String _kLastSectionKey  = 'pn_last_section';   // 'city' | 'account'
+const String _kLastSectionKey = 'pn_last_section'; // 'city' | 'account'
 const String _kLastCityPayload = 'pn_last_city_json'; // JSON of CityModel
+
 // ─────────────────────────────────────────────────────────────────────────────
 class BlogPost {
   final String id;
@@ -131,8 +135,19 @@ class BlogPost {
     try {
       final dt = DateTime.parse(publishedAt!).toLocal();
       const months = [
-        '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+        '',
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec'
       ];
       return '${months[dt.month]} ${dt.day}, ${dt.year}';
     } catch (_) {
@@ -201,8 +216,8 @@ class _LandingApi {
     int limit = 6,
     int page = 1,
   }) async {
-    final uri = Uri.parse(
-        ApiEndpoints.url('/api/blog?limit=$limit&page=$page&sortBy=publishedAt&order=desc'));
+    final uri = Uri.parse(ApiEndpoints.url(
+        '/api/blog?limit=$limit&page=$page&sortBy=publishedAt&order=desc'));
     final resp = await http.get(uri).timeout(_timeout);
     if (resp.statusCode != 200) return (posts: <BlogPost>[], total: 0);
     final body = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -364,14 +379,14 @@ class _LandingPageState extends State<LandingPage>
   bool _isLoggedIn = false;
 
   // ── Admin / Role gate ───────────────────────────────────────────────────────
-  bool  _isAdmin   = false;
+  bool _isAdmin = false;
   String? _userRole;
 
   // ── Data ──────────────────────────────────────────────────────────────────
   List<CityModel> _cities = [];
   List<BlogPost> _blogPosts = [];
   // FIX: was List<<CategoryModel>
-  List<CategoryModel> _cachedCategories = [];   // pre-fetched for instant overlay
+  List<CategoryModel> _cachedCategories = []; // pre-fetched for instant overlay
   bool _citiesLoading = true;
   bool _blogLoading = true;
   bool _blogLoadingMore = false;
@@ -463,7 +478,8 @@ class _LandingPageState extends State<LandingPage>
 
     // ── Role check from Firebase "Users" collection ───────────────────────
     if (nowLoggedIn) {
-      _log.d('LandingPage._loadAuthState: authenticated session detected — starting role check');
+      _log.d(
+          'LandingPage._loadAuthState: authenticated session detected — starting role check');
       await _checkAdminRole();
     } else {
       _log.d('LandingPage._loadAuthState: no session — clearing admin gate');
@@ -489,8 +505,14 @@ class _LandingPageState extends State<LandingPage>
       final userId = FirebaseService.currentUser?.uid;
 
       if (userId == null || userId.isEmpty) {
-        _log.d('LandingPage._checkAdminRole: Firebase Auth not ready — deferring role check');
-        if (mounted) setState(() { _isAdmin = false; _userRole = null; });
+        _log.d(
+            'LandingPage._checkAdminRole: Firebase Auth not ready — deferring role check');
+        if (mounted) {
+          setState(() {
+            _isAdmin = false;
+            _userRole = null;
+          });
+        }
         return;
       }
 
@@ -501,7 +523,8 @@ class _LandingPageState extends State<LandingPage>
       final role = doc.data()?['role'] as String?;
       final isAdmin = role == 'Admin' || role == 'MainAdmin';
 
-      _log.i('LandingPage._checkAdminRole: userId=$userId, role=$role, isAdmin=$isAdmin');
+      _log.i(
+          'LandingPage._checkAdminRole: userId=$userId, role=$role, isAdmin=$isAdmin');
 
       if (mounted) {
         setState(() {
@@ -510,7 +533,8 @@ class _LandingPageState extends State<LandingPage>
         });
       }
     } catch (e, st) {
-      _log.e('LandingPage._checkAdminRole: failed to fetch role', error: e, stackTrace: st);
+      _log.e('LandingPage._checkAdminRole: failed to fetch role',
+          error: e, stackTrace: st);
       if (mounted) {
         setState(() {
           _isAdmin = false;
@@ -607,7 +631,7 @@ class _LandingPageState extends State<LandingPage>
 
   void _goToCity(CityModel city) {
     _saveLastSection('city', cityJson: {
-      'id':   city.id,
+      'id': city.id,
       'name': city.name,
     });
     Navigator.push(
@@ -646,7 +670,7 @@ class _LandingPageState extends State<LandingPage>
     showDialog(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.75),
-      builder: (_) => const _SearchDialog(),
+      builder: (_) => _SearchDialog(onOpenCategories: _openCategoriesOverlay),
     );
   }
 
@@ -718,7 +742,8 @@ class _LandingPageState extends State<LandingPage>
               const Spacer(),
               if (!isMobile) ...[
                 _navLink('Destinations', onTap: () => _scrollToKey(_citiesKey)),
-                _navLink('Categories', onTap: _openCategoriesOverlay),
+                _navLink(TourismLabels.categoryPlural,
+                    onTap: _openCategoriesOverlay),
                 _navLink('Blog', onTap: () => _scrollToKey(_blogKey)),
                 const SizedBox(width: 8),
                 _signInButton(),
@@ -753,7 +778,8 @@ class _LandingPageState extends State<LandingPage>
               )
             ],
           ),
-          child: const Icon(Icons.person_rounded, color: Colors.white, size: 18),
+          child:
+              const Icon(Icons.person_rounded, color: Colors.white, size: 18),
         ),
       );
     }
@@ -830,7 +856,7 @@ class _LandingPageState extends State<LandingPage>
     String? section;
     String? cityPayload;
     try {
-      section     = html.window.localStorage[_kLastSectionKey];
+      section = html.window.localStorage[_kLastSectionKey];
       cityPayload = html.window.localStorage[_kLastCityPayload];
     } catch (_) {
       return;
@@ -848,7 +874,7 @@ class _LandingPageState extends State<LandingPage>
       _goToAccount();
     } else if (section == 'city' && cityPayload != null) {
       try {
-        final raw    = jsonDecode(cityPayload) as Map<String, dynamic>;
+        final raw = jsonDecode(cityPayload) as Map<String, dynamic>;
         final cityId = raw['id'] as String?;
         if (cityId == null) return;
 
@@ -887,7 +913,8 @@ class _LandingPageState extends State<LandingPage>
                 Navigator.pop(context);
                 _scrollToKey(_citiesKey);
               }),
-              _mobileMenuItem(Icons.category_outlined, 'Categories', () {
+              _mobileMenuItem(
+                  Icons.category_outlined, TourismLabels.categoryPlural, () {
                 Navigator.pop(context);
                 _openCategoriesOverlay();
               }),
@@ -929,16 +956,18 @@ class _LandingPageState extends State<LandingPage>
   // ── Auth-gated admin navigation ──────────────────────────────────────────
   Future<void> _goToAdminWithAuthCheck() async {
     if (!_isAdmin) {
-      _log.d('LandingPage._goToAdminWithAuthCheck: blocked non-admin access attempt. role=$_userRole');
+      _log.d(
+          'LandingPage._goToAdminWithAuthCheck: blocked non-admin access attempt. role=$_userRole');
       return;
     }
 
     final accessToken = await ApiClient.getAccessToken();
-    final isLoggedIn  = accessToken != null && accessToken.isNotEmpty;
+    final isLoggedIn = accessToken != null && accessToken.isNotEmpty;
 
     if (isLoggedIn) {
       if (!mounted) return;
-      _log.i('LandingPage._goToAdminWithAuthCheck: admin access granted — navigating to AdminDashboard');
+      _log.i(
+          'LandingPage._goToAdminWithAuthCheck: admin access granted — navigating to AdminDashboard');
       await Navigator.push(
         context,
         PageRouteBuilder(
@@ -983,7 +1012,8 @@ class _LandingPageState extends State<LandingPage>
             ),
           );
         } else {
-          _log.w('LandingPage._goToAdminWithAuthCheck: user logged in but is not admin — blocking admin navigation');
+          _log.w(
+              'LandingPage._goToAdminWithAuthCheck: user logged in but is not admin — blocking admin navigation');
         }
       }
     }
@@ -1238,7 +1268,7 @@ class _LandingPageState extends State<LandingPage>
   Widget _heroQuickChips() {
     final chips = [
       (Icons.location_city_outlined, 'Destinations'),
-      (Icons.category_outlined, 'Categories'),
+      (Icons.category_outlined, TourismLabels.categoryPlural),
       (Icons.hotel_outlined, 'Stays'),
       (Icons.restaurant_outlined, 'Dining'),
     ];
@@ -1250,7 +1280,7 @@ class _LandingPageState extends State<LandingPage>
                 onTap: () {
                   if (c.$2 == 'Destinations') {
                     _scrollToKey(_citiesKey);
-                  } else if (c.$2 == 'Categories') {
+                  } else if (c.$2 == TourismLabels.categoryPlural) {
                     _openCategoriesOverlay();
                   }
                 },
@@ -1519,8 +1549,8 @@ class _LandingPageState extends State<LandingPage>
                             )
                       : Text(
                           'All ${_blogTotal > 0 ? '$_blogTotal ' : ''}articles loaded',
-                          style: const TextStyle(
-                              color: RC.textMute, fontSize: 12),
+                          style:
+                              const TextStyle(color: RC.textMute, fontSize: 12),
                         ),
                 ),
               ],
@@ -1585,7 +1615,12 @@ class _LandingPageState extends State<LandingPage>
 
     final items = [
       (Icons.location_city_rounded, '$count+', 'Resort Cities', RC.teal),
-      (Icons.place_rounded, '500+', 'Curated Places', RC.gold),
+      (
+        Icons.place_rounded,
+        '500+',
+        'Curated ${TourismLabels.placePlural}',
+        RC.gold
+      ),
       (Icons.star_rounded, '4.9★', 'Avg. Rating', RC.coral),
       (Icons.people_alt_rounded, '20K+', 'Happy Travellers', RC.emerald),
     ];
@@ -1650,8 +1685,8 @@ class _LandingPageState extends State<LandingPage>
                           const SizedBox(height: 32),
                           _footerLinks('Explore', [
                             'Resort Cities',
-                            'Categories',
-                            'All Places',
+                            TourismLabels.categoryPlural,
+                            'All ${TourismLabels.placePlural}',
                             'Blog'
                           ]),
                           const SizedBox(height: 28),
@@ -1669,8 +1704,8 @@ class _LandingPageState extends State<LandingPage>
                           Expanded(
                               child: _footerLinks('Explore', [
                             'Resort Cities',
-                            'Categories',
-                            'All Places',
+                            TourismLabels.categoryPlural,
+                            'All ${TourismLabels.placePlural}',
                             'Blog'
                           ])),
                           const SizedBox(width: 24),
@@ -1796,8 +1831,7 @@ class _StatCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: color.withValues(alpha: 0.18)),
         boxShadow: [
-          BoxShadow(
-              color: Colors.black.withValues(alpha: 0.15), blurRadius: 12)
+          BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 12)
         ],
       ),
       child: Column(
@@ -1842,7 +1876,9 @@ class _StatCard extends StatelessWidget {
 // _SearchDialog
 // ─────────────────────────────────────────────────────────────────────────────
 class _SearchDialog extends StatefulWidget {
-  const _SearchDialog();
+  final VoidCallback onOpenCategories;
+
+  const _SearchDialog({required this.onOpenCategories});
 
   @override
   State<_SearchDialog> createState() => _SearchDialogState();
@@ -1850,61 +1886,86 @@ class _SearchDialog extends StatefulWidget {
 
 class _SearchDialogState extends State<_SearchDialog> {
   final _ctrl = TextEditingController();
-  _SearchType _type = _SearchType.city;
+  Timer? _debounce;
+  int _requestId = 0;
+
+  // null = show results across every type (the default, live-search mode).
+  // Non-null = the tourist tapped a filter chip to narrow an already-fetched
+  // result set — this never triggers a new network call.
+  _SearchType? _filter;
+
   bool _loading = false;
   bool _searched = false;
-  List<_SearchResult> _results = [];
+  List<_SearchResult> _allResults = [];
   String? _error;
 
   static const _labels = {
-    _SearchType.city: (
-      'City',
-      'Search by city name…',
-      Icons.location_city_outlined
-    ),
-    _SearchType.place: ('Place', 'Search by place name…', Icons.place_outlined),
+    _SearchType.city: ('City', Icons.location_city_outlined),
+    _SearchType.place: (TourismLabels.placeSingular, Icons.place_outlined),
     _SearchType.category: (
-      'Category',
-      'Search by category name…',
+      TourismLabels.categorySingular,
       Icons.category_outlined
     ),
-    _SearchType.blog: (
-      'Blog',
-      'Search articles & guides…',
-      Icons.article_outlined
-    ),
+    _SearchType.blog: ('Blog', Icons.article_outlined),
   };
 
-  Future<void> _doSearch() async {
-    final q = _ctrl.text.trim();
-    if (q.isEmpty) return;
+  List<_SearchResult> get _visibleResults => _filter == null
+      ? _allResults
+      : _allResults.where((r) => r.type == _filter).toList();
+
+  void _onQueryChanged(String raw) {
+    _debounce?.cancel();
+    final q = raw.trim();
+    if (q.isEmpty) {
+      setState(() {
+        _allResults = [];
+        _searched = false;
+        _loading = false;
+        _error = null;
+      });
+      return;
+    }
+    setState(() => _loading = true);
+    _debounce = Timer(const Duration(milliseconds: 400), () => _doSearch(q));
+  }
+
+  Future<void> _doSearch(String q) async {
+    final myRequestId = ++_requestId;
     setState(() {
       _loading = true;
       _error = null;
-      _searched = false;
     });
     try {
-      final results = await _LandingApi.search(q, _type);
-      if (mounted) {
-        setState(() {
-          _results = results;
-          _loading = false;
-          _searched = true;
-        });
-      }
+      // Every type is searched concurrently so the dialog shows a single,
+      // unified live result list — the filter chips below just narrow what's
+      // already been fetched, they don't trigger another round-trip.
+      final results = await Future.wait([
+        _LandingApi.search(q, _SearchType.city),
+        _LandingApi.search(q, _SearchType.place),
+        _LandingApi.search(q, _SearchType.category),
+        _LandingApi.search(q, _SearchType.blog),
+      ]);
+      // A newer keystroke's request may have already landed — ignore a
+      // stale, slower response so it can't clobber fresher results.
+      if (myRequestId != _requestId || !mounted) return;
+      setState(() {
+        _allResults = results.expand((r) => r).toList();
+        _loading = false;
+        _searched = true;
+      });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = 'Search failed. Please try again.';
-          _loading = false;
-          _searched = true;
-        });
-      }
+      if (myRequestId != _requestId || !mounted) return;
+      setState(() {
+        _error = 'Search failed. Please try again.';
+        _loading = false;
+        _searched = true;
+      });
     }
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _ctrl.dispose();
     super.dispose();
   }
@@ -1914,7 +1975,6 @@ class _SearchDialogState extends State<_SearchDialog> {
     final w = MediaQuery.of(context).size.width;
     final isMobile = w < 600;
     final dlgW = isMobile ? w * 0.95 : 560.0;
-    final info = _labels[_type]!;
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -1963,116 +2023,110 @@ class _SearchDialogState extends State<_SearchDialog> {
             ),
             const SizedBox(height: 16),
 
-            // ── Type selector ─────────────────────────────────────────────
+            // ── Search input — live, debounced as-you-type ─────────────────
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _SearchType.values.map((t) {
-                  final selected = t == _type;
-                  final l = _labels[t]!;
-                  return GestureDetector(
-                    onTap: () => setState(() {
-                      _type = t;
-                      _searched = false;
-                      _results = [];
-                    }),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 9),
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? RC.teal.withValues(alpha: 0.15)
-                            : RC.surface,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: selected
-                              ? RC.teal.withValues(alpha: 0.50)
-                              : Colors.white.withValues(alpha: 0.06),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(l.$3,
-                              size: 14,
-                              color: selected ? RC.teal : RC.textMute),
-                          const SizedBox(width: 5),
-                          Text(l.$1,
-                              style: TextStyle(
-                                color: selected ? RC.teal : RC.textMute,
-                                fontSize: 12,
-                                fontWeight: selected
-                                    ? FontWeight.w700
-                                    : FontWeight.normal,
-                              )),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: RC.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: RC.teal.withValues(alpha: 0.20)),
+                ),
+                child: TextField(
+                  controller: _ctrl,
+                  autofocus: true,
+                  onChanged: _onQueryChanged,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText:
+                        'Search cities, ${TourismLabels.placePlural.toLowerCase()}, ${TourismLabels.categoryPlural.toLowerCase()}…',
+                    hintStyle:
+                        const TextStyle(color: RC.textMute, fontSize: 13),
+                    prefixIcon: const Icon(Icons.search_rounded,
+                        color: RC.teal, size: 18),
+                    suffixIcon: _loading
+                        ? const Padding(
+                            padding: EdgeInsets.all(14),
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                  color: RC.teal, strokeWidth: 2),
+                            ),
+                          )
+                        : (_ctrl.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.close_rounded,
+                                    color: RC.textMute, size: 18),
+                                onPressed: () {
+                                  _ctrl.clear();
+                                  _onQueryChanged('');
+                                },
+                              )
+                            : null),
+                    border: InputBorder.none,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 14),
 
-            // ── Search input ──────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(children: [
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: RC.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      border:
-                          Border.all(color: RC.teal.withValues(alpha: 0.20)),
-                    ),
-                    child: TextField(
-                      controller: _ctrl,
-                      autofocus: true,
-                      onSubmitted: (_) => _doSearch(),
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
-                      decoration: InputDecoration(
-                        hintText: info.$2,
-                        hintStyle:
-                            const TextStyle(color: RC.textMute, fontSize: 13),
-                        prefixIcon: Icon(info.$3, color: RC.teal, size: 18),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 14),
+            // ── Filter chips — narrow the already-fetched results ──────────
+            if (_allResults.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [null, ..._SearchType.values].map((t) {
+                    final selected = t == _filter;
+                    final count = t == null
+                        ? _allResults.length
+                        : _allResults.where((r) => r.type == t).length;
+                    if (t != null && count == 0) return const SizedBox.shrink();
+                    final label = t == null ? 'All' : _labels[t]!.$1;
+                    final icon =
+                        t == null ? Icons.apps_rounded : _labels[t]!.$2;
+                    return GestureDetector(
+                      onTap: () => setState(() => _filter = t),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 9),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? RC.teal.withValues(alpha: 0.15)
+                              : RC.surface,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: selected
+                                ? RC.teal.withValues(alpha: 0.50)
+                                : Colors.white.withValues(alpha: 0.06),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(icon,
+                                size: 14,
+                                color: selected ? RC.teal : RC.textMute),
+                            const SizedBox(width: 5),
+                            Text('$label ($count)',
+                                style: TextStyle(
+                                  color: selected ? RC.teal : RC.textMute,
+                                  fontSize: 12,
+                                  fontWeight: selected
+                                      ? FontWeight.w700
+                                      : FontWeight.normal,
+                                )),
+                          ],
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  }).toList(),
                 ),
-                const SizedBox(width: 10),
-                GestureDetector(
-                  onTap: _loading ? null : _doSearch,
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      gradient:
-                          const LinearGradient(colors: [RC.teal, RC.tealMid]),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                            color: RC.teal.withValues(alpha: 0.30),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3))
-                      ],
-                    ),
-                    child: _loading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                                color: Colors.white, strokeWidth: 2))
-                        : const Icon(Icons.search_rounded,
-                            color: Colors.white, size: 20),
-                  ),
-                ),
-              ]),
-            ),
+              ),
             const SizedBox(height: 16),
 
             // ── Results ───────────────────────────────────────────────────
@@ -2095,9 +2149,10 @@ class _SearchDialogState extends State<_SearchDialog> {
             Icon(Icons.travel_explore_rounded,
                 color: RC.textMute.withValues(alpha: 0.5), size: 48),
             const SizedBox(height: 10),
-            const Text('Type to search across cities, places and categories',
+            Text(
+                'Type to search across cities, ${TourismLabels.placePlural.toLowerCase()} and ${TourismLabels.categoryPlural.toLowerCase()}',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: RC.textMute, fontSize: 13)),
+                style: const TextStyle(color: RC.textMute, fontSize: 13)),
             const SizedBox(height: 16),
           ],
         ),
@@ -2122,7 +2177,8 @@ class _SearchDialogState extends State<_SearchDialog> {
         ]),
       );
     }
-    if (_results.isEmpty) {
+    final visible = _visibleResults;
+    if (visible.isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(24),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -2130,7 +2186,7 @@ class _SearchDialogState extends State<_SearchDialog> {
               color: RC.textMute.withValues(alpha: 0.6), size: 44),
           const SizedBox(height: 12),
           Text(
-            'No ${_labels[_type]!.$1.toLowerCase()}s found for "${_ctrl.text.trim()}"',
+            'No results found for "${_ctrl.text.trim()}"',
             textAlign: TextAlign.center,
             style: const TextStyle(
                 color: RC.textSec, fontSize: 14, fontWeight: FontWeight.w500),
@@ -2147,11 +2203,11 @@ class _SearchDialogState extends State<_SearchDialog> {
     return ListView.separated(
       shrinkWrap: true,
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-      itemCount: _results.length,
+      itemCount: visible.length,
       separatorBuilder: (_, __) =>
           Divider(color: Colors.white.withValues(alpha: 0.05), height: 1),
       itemBuilder: (_, i) {
-        final r = _results[i];
+        final r = visible[i];
         return ListTile(
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2227,9 +2283,33 @@ class _SearchDialogState extends State<_SearchDialog> {
           );
         }
       case _SearchType.place:
-        break;
+        // The place search result only carries a lean map (id/name/embedded
+        // city), not the full PlaceModel + CategoryModel that
+        // PlaceDetailsScreen needs — so the honest landing spot is that
+        // attraction's city page, where the tourist can drill in themselves.
+        final cityJson = (r.raw is Map<String, dynamic>)
+            ? (r.raw as Map<String, dynamic>)['city']
+            : null;
+        if (cityJson is Map<String, dynamic>) {
+          try {
+            final city = CityModel.fromJson(cityJson);
+            Navigator.push(
+              context,
+              PageRouteBuilder(
+                pageBuilder: (_, anim, __) => ResortCityScreen(city: city),
+                transitionsBuilder: (_, anim, __, child) =>
+                    FadeTransition(opacity: anim, child: child),
+                transitionDuration: const Duration(milliseconds: 350),
+              ),
+            );
+            return;
+          } catch (_) {
+            // Fall through to the categories overlay below.
+          }
+        }
+        widget.onOpenCategories();
       case _SearchType.category:
-        break;
+        widget.onOpenCategories();
       case _SearchType.blog:
         break;
     }
@@ -2325,16 +2405,16 @@ class _PublicCategoriesOverlayState extends State<_PublicCategoriesOverlay> {
           icon: const Icon(Icons.close_rounded, color: RC.textSec),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Column(
+        title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Categories',
-                style: TextStyle(
+            Text(TourismLabels.categoryPlural,
+                style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.w700)),
-            Text('Browse all system categories',
-                style: TextStyle(color: RC.textMute, fontSize: 11)),
+            Text('Browse all ${TourismLabels.categoryPlural}',
+                style: const TextStyle(color: RC.textMute, fontSize: 11)),
           ],
         ),
         bottom: PreferredSize(

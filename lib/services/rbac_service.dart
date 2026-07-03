@@ -8,7 +8,7 @@ import 'package:palmnazi/models/admin_request_model.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 class RbacResult {
-  final bool   isSuccess;
+  final bool isSuccess;
   final String message;
   const RbacResult.success([this.message = 'Success']) : isSuccess = true;
   const RbacResult.failure(this.message) : isSuccess = false;
@@ -17,14 +17,14 @@ class RbacResult {
 class RbacService {
   RbacService._();
 
-  static final _db  = FirebaseFirestore.instance;
+  static final _db = FirebaseFirestore.instance;
   static final _log = Logger(
     printer: PrettyPrinter(
-      methodCount:      0,
+      methodCount: 0,
       errorMethodCount: 8,
-      lineLength:       100,
-      colors:           true,
-      printEmojis:      true,
+      lineLength: 100,
+      colors: true,
+      printEmojis: true,
     ),
   );
 
@@ -37,16 +37,20 @@ class RbacService {
       _db.collection('Users').doc(firebaseUid);
 
   // ── Firebase Auth uid helper ──────────────────────────────────────────────
-  
+
   static String? get _firebaseUid => FirebaseAuth.instance.currentUser?.uid;
 
   // ─────────────────────────────────────────────────────────────────────────
   // TOURIST: Submit a new admin role request
   // ─────────────────────────────────────────────────────────────────────────
   static Future<RbacResult> submitAdminRequest({
-    required String       userId,        // custom API id (stored for reference)
-    required String       userEmail,
-    required String       facilityName,
+    required String userId, // custom API id (stored for reference)
+    required String userEmail,
+    required String facilityName,
+    required String placeId,
+    required String placeName,
+    required String cityId,
+    required String cityName,
     required List<String> servicesOffered,
   }) async {
     try {
@@ -72,14 +76,19 @@ class RbacService {
       }
 
       final request = AdminRequest(
-        id:              '',
-        userId:          userId,
-        userEmail:       userEmail,
-        facilityName:    facilityName,
+        id: '',
+        userId: userId,
+        userEmail: userEmail,
+        facilityName: facilityName,
+        placeId: placeId,
+        placeName: placeName,
+        cityId: cityId,
+        cityName: cityName,
         servicesOffered: servicesOffered,
-        agreedToTerms:   true,
-        status:          AdminRequestStatus.pending,
-        createdAt:       DateTime.now(), firebaseUid: '',
+        agreedToTerms: true,
+        status: AdminRequestStatus.pending,
+        createdAt: DateTime.now(),
+        firebaseUid: '',
       );
 
       // toMap() fields + firebaseUid anchor for security rules
@@ -102,7 +111,8 @@ class RbacService {
     final firebaseUid = _firebaseUid;
     if (firebaseUid == null) {
       // Not signed in — return an empty stream rather than a denied one
-      _log.w('⚠️ RbacService.userRequestStream: No Firebase user — returning empty stream');
+      _log.w(
+          '⚠️ RbacService.userRequestStream: No Firebase user — returning empty stream');
       return const Stream.empty();
     }
 
@@ -112,9 +122,9 @@ class RbacService {
         .limit(1)
         .snapshots()
         .map((snap) {
-          if (snap.docs.isEmpty) return null;
-          return AdminRequest.fromFirestore(snap.docs.first);
-        });
+      if (snap.docs.isEmpty) return null;
+      return AdminRequest.fromFirestore(snap.docs.first);
+    });
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -144,11 +154,20 @@ class RbacService {
   // ─────────────────────────────────────────────────────────────────────────
   static Future<RbacResult> acceptRequest({
     required String requestId,
-    required String targetUserId,       // custom API id (kept for reference)
-    required String targetFirebaseUid,  // Firebase uid — used as document key
+    required String targetUserId, // custom API id (kept for reference)
+    required String targetFirebaseUid, // Firebase uid — used as document key
     required String grantedRole,
     required String respondedBy,
     required String respondedByEmail,
+    // The place this request was submitted against — copied onto the user's
+    // Users doc as managedPlaceId so a plain 'Admin' is scoped to exactly one
+    // place everywhere else in the app (Bookings, Place_details, the new
+    // Place Admin Panel). Pass empty strings for a MainAdmin grant, since
+    // MainAdmin isn't scoped to any single place.
+    String placeId = '',
+    String placeName = '',
+    String cityId = '',
+    String cityName = '',
   }) async {
     try {
       // Sanitise the role before writing — trim() prevents trailing newlines
@@ -156,30 +175,63 @@ class RbacService {
       final cleanedRole = grantedRole.trim();
 
       _log.i('🔐 RbacService.acceptRequest: '
-          'requestId=$requestId targetFirebaseUid=$targetFirebaseUid role=$cleanedRole');
+          'requestId=$requestId targetFirebaseUid=$targetFirebaseUid role=$cleanedRole '
+          'placeId=$placeId');
 
       final batch = _db.batch();
 
       // 1. Update the AdminRequests document
       batch.update(_requests.doc(requestId), {
-        'status':           'accepted',
-        'grantedRole':      cleanedRole,
-        'respondedAt':      Timestamp.now(),
-        'respondedBy':      respondedBy,
+        'status': 'accepted',
+        'grantedRole': cleanedRole,
+        'respondedAt': Timestamp.now(),
+        'respondedBy': respondedBy,
         'respondedByEmail': respondedByEmail,
       });
 
       // 2. Update the user's role — key is Firebase uid, NOT custom API userId
       batch.update(_userDoc(targetFirebaseUid), {
         'role': cleanedRole,
+        'managedPlaceId': placeId,
+        'managedPlaceName': placeName,
+        'managedCityId': cityId,
+        'managedCityName': cityName,
       });
 
       await batch.commit();
-      _log.i('✅ RbacService.acceptRequest: Role $cleanedRole granted to $targetFirebaseUid');
+      _log.i(
+          '✅ RbacService.acceptRequest: Role $cleanedRole granted to $targetFirebaseUid');
       return RbacResult.success('Role $cleanedRole has been granted.');
     } catch (e, st) {
       _log.e('❌ RbacService.acceptRequest', error: e, stackTrace: st);
       return RbacResult.failure('Could not grant role: $e');
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MAIN ADMIN: Reassign an already-accepted Admin's managed place — for
+  // fixing/changing an assignment without forcing a brand-new request.
+  // ─────────────────────────────────────────────────────────────────────────
+  static Future<RbacResult> reassignManagedPlace({
+    required String targetFirebaseUid,
+    required String placeId,
+    required String placeName,
+    required String cityId,
+    required String cityName,
+  }) async {
+    try {
+      await _userDoc(targetFirebaseUid).update({
+        'managedPlaceId': placeId,
+        'managedPlaceName': placeName,
+        'managedCityId': cityId,
+        'managedCityName': cityName,
+      });
+      _log.i(
+          '✅ RbacService.reassignManagedPlace: $targetFirebaseUid → $placeId');
+      return const RbacResult.success('Managed place updated.');
+    } catch (e, st) {
+      _log.e('❌ RbacService.reassignManagedPlace', error: e, stackTrace: st);
+      return RbacResult.failure('Could not update managed place: $e');
     }
   }
 
@@ -196,10 +248,10 @@ class RbacService {
       _log.i('🔐 RbacService.denyRequest: requestId=$requestId');
 
       await _requests.doc(requestId).update({
-        'status':           'denied',
-        'denialReason':     reason,
-        'respondedAt':      Timestamp.now(),
-        'respondedBy':      respondedBy,
+        'status': 'denied',
+        'denialReason': reason,
+        'respondedAt': Timestamp.now(),
+        'respondedBy': respondedBy,
         'respondedByEmail': respondedByEmail,
       });
 
@@ -218,8 +270,8 @@ class RbacService {
     return _userDoc(firebaseUid).snapshots().map((snap) {
       if (!snap.exists) return 'Tourist';
 
-      // .trim() strips any accidental whitespace / newline 
-      final raw     = (snap.data()?['role'] as String?) ?? 'Tourist';
+      // .trim() strips any accidental whitespace / newline
+      final raw = (snap.data()?['role'] as String?) ?? 'Tourist';
       final cleaned = raw.trim();
 
       // Log a warning if the stored value is not already clean so the
@@ -249,6 +301,31 @@ class RbacService {
     } catch (e) {
       _log.w('⚠️ RbacService.getUserRole: $e');
       return 'Tourist';
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SHARED: One-shot fetch of the place a plain 'Admin' is scoped to. Returns
+  // null when unset (e.g. a MainAdmin, or an Admin predating this feature who
+  // hasn't been reassigned yet — admin_dashboard.dart shows an empty state
+  // in that case rather than crashing).
+  // ─────────────────────────────────────────────────────────────────────────
+  static Future<
+          ({String placeId, String placeName, String cityId, String cityName})?>
+      getManagedPlace(String firebaseUid) async {
+    try {
+      final snap = await _userDoc(firebaseUid).get();
+      final placeId = snap.data()?['managedPlaceId'] as String?;
+      if (placeId == null || placeId.isEmpty) return null;
+      return (
+        placeId: placeId,
+        placeName: snap.data()?['managedPlaceName'] as String? ?? '',
+        cityId: snap.data()?['managedCityId'] as String? ?? '',
+        cityName: snap.data()?['managedCityName'] as String? ?? '',
+      );
+    } catch (e) {
+      _log.w('⚠️ RbacService.getManagedPlace: $e');
+      return null;
     }
   }
 

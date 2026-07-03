@@ -4,14 +4,19 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
 import 'package:palmnazi/models/admin_request_model.dart';
+import 'package:palmnazi/services/rbac_service.dart';
+import 'package:palmnazi/widgets/place_search_picker.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Logger
 // ─────────────────────────────────────────────────────────────────────────────
 final Logger _log = Logger(
   printer: PrettyPrinter(
-    methodCount: 0, errorMethodCount: 8, lineLength: 100,
-    colors: true, printEmojis: true,
+    methodCount: 0,
+    errorMethodCount: 8,
+    lineLength: 100,
+    colors: true,
+    printEmojis: true,
   ),
 );
 
@@ -19,10 +24,10 @@ final Logger _log = Logger(
 // Palette — matches admin_dashboard.dart
 // ─────────────────────────────────────────────────────────────────────────────
 const _kSurface = Color(0xFF111827);
-const _kTeal    = Color(0xFF14FFEC);
-const _kOrange  = Color(0xFFFF9800);
-const _kGreen   = Color(0xFF00C853);
-const _kRed     = Color(0xFFCF6679);
+const _kTeal = Color(0xFF14FFEC);
+const _kOrange = Color(0xFFFF9800);
+const _kGreen = Color(0xFF00C853);
+const _kRed = Color(0xFFCF6679);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AdminRoleRequestsScreen
@@ -41,25 +46,27 @@ class AdminRoleRequestsScreen extends StatefulWidget {
   const AdminRoleRequestsScreen({super.key});
 
   @override
-  State<AdminRoleRequestsScreen> createState() => _AdminRoleRequestsScreenState();
+  State<AdminRoleRequestsScreen> createState() =>
+      _AdminRoleRequestsScreenState();
 }
 
 class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
     with SingleTickerProviderStateMixin {
-
-  late TabController       _tabs;
-  List<AdminRequest>       _requests  = [];
-  bool                     _loading   = true;
-  String?                  _error;
-  StreamSubscription?      _sub;
-  final Set<String>        _actioning = {};   // request IDs currently awaiting a write
+  late TabController _tabs;
+  List<AdminRequest> _requests = [];
+  bool _loading = true;
+  String? _error;
+  StreamSubscription? _sub;
+  final Set<String> _actioning = {}; // request IDs currently awaiting a write
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 4, vsync: this)
-      ..addListener(() { if (mounted) setState(() {}); });
+      ..addListener(() {
+        if (mounted) setState(() {});
+      });
     _subscribe();
   }
 
@@ -81,16 +88,20 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
       (snap) {
         if (!mounted) return;
         setState(() {
-          _requests = snap.docs
-              .map((d) => AdminRequest.fromFirestore(d))
-              .toList();
+          _requests =
+              snap.docs.map((d) => AdminRequest.fromFirestore(d)).toList();
           _loading = false;
-          _error   = null;
+          _error = null;
         });
       },
       onError: (Object e) {
         _log.e('❌ [AdminRoleRequestsScreen] stream error', error: e);
-        if (mounted) setState(() { _loading = false; _error = e.toString(); });
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _error = e.toString();
+          });
+        }
       },
     );
   }
@@ -98,21 +109,26 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
   // ── Filtered list for the active tab ──────────────────────────────────────
   List<AdminRequest> get _visible {
     switch (_tabs.index) {
-      case 1:  return _requests.where((r) => r.isPending).toList();
-      case 2:  return _requests.where((r) => r.isAccepted).toList();
-      case 3:  return _requests.where((r) => r.isDenied).toList();
-      default: return _requests;
+      case 1:
+        return _requests.where((r) => r.isPending).toList();
+      case 2:
+        return _requests.where((r) => r.isAccepted).toList();
+      case 3:
+        return _requests.where((r) => r.isDenied).toList();
+      default:
+        return _requests;
     }
   }
 
-  int get _pendingCount  => _requests.where((r) => r.isPending).length;
+  int get _pendingCount => _requests.where((r) => r.isPending).length;
   int get _acceptedCount => _requests.where((r) => r.isAccepted).length;
-  int get _deniedCount   => _requests.where((r) => r.isDenied).length;
+  int get _deniedCount => _requests.where((r) => r.isDenied).length;
 
   // ── Approve ────────────────────────────────────────────────────────────────
   Future<void> _onApprove(AdminRequest req) async {
     if (req.firebaseUid.isEmpty) {
-      _snack('Cannot approve: user Firebase UID is missing from this request.', ok: false);
+      _snack('Cannot approve: user Firebase UID is missing from this request.',
+          ok: false);
       return;
     }
 
@@ -121,7 +137,7 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
 
     setState(() => _actioning.add(req.id));
     try {
-      final me  = FirebaseAuth.instance.currentUser;
+      final me = FirebaseAuth.instance.currentUser;
       final now = Timestamp.now();
       final batch = FirebaseFirestore.instance.batch();
 
@@ -129,20 +145,28 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
       batch.update(
         FirebaseFirestore.instance.collection('AdminRequests').doc(req.id),
         {
-          'status':           'accepted',
-          'grantedRole':      role,
-          'respondedAt':      now,
-          'respondedBy':      me?.uid  ?? '',
+          'status': 'accepted',
+          'grantedRole': role,
+          'respondedAt': now,
+          'respondedBy': me?.uid ?? '',
           'respondedByEmail': me?.email ?? '',
           // Clear any previous denial reason
-          'denialReason':     FieldValue.delete(),
+          'denialReason': FieldValue.delete(),
         },
       );
 
-      // 2. Elevate the user's role in the Users collection
+      // 2. Elevate the user's role in the Users collection. A plain 'Admin'
+      // is scoped to the place they requested; MainAdmin isn't scoped to any
+      // single place, so its managedPlaceId is cleared.
       batch.update(
         FirebaseFirestore.instance.collection('Users').doc(req.firebaseUid),
-        {'role': role},
+        {
+          'role': role,
+          'managedPlaceId': role == 'Admin' ? req.placeId : '',
+          'managedPlaceName': role == 'Admin' ? req.placeName : '',
+          'managedCityId': role == 'Admin' ? req.cityId : '',
+          'managedCityName': role == 'Admin' ? req.cityName : '',
+        },
       );
 
       await batch.commit();
@@ -159,7 +183,7 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
   // ── Deny ───────────────────────────────────────────────────────────────────
   Future<void> _onDeny(AdminRequest req) async {
     final reason = await _showDenySheet(req);
-    if (reason == null || !mounted) return;   // null = sheet dismissed
+    if (reason == null || !mounted) return; // null = sheet dismissed
 
     setState(() => _actioning.add(req.id));
     try {
@@ -168,13 +192,13 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
           .collection('AdminRequests')
           .doc(req.id)
           .update({
-        'status':           'denied',
+        'status': 'denied',
         if (reason.trim().isNotEmpty) 'denialReason': reason.trim(),
-        'respondedAt':      Timestamp.now(),
-        'respondedBy':      me?.uid  ?? '',
+        'respondedAt': Timestamp.now(),
+        'respondedBy': me?.uid ?? '',
         'respondedByEmail': me?.email ?? '',
         // Clear any previous granted role
-        'grantedRole':      FieldValue.delete(),
+        'grantedRole': FieldValue.delete(),
       });
       _log.i('✅ [AdminRoleRequestsScreen] Denied ${req.userEmail}');
       if (mounted) _snack('Request from ${req.userEmail} declined.', ok: false);
@@ -194,12 +218,12 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
     }
 
     final confirm = await _confirmDialog(
-      icon:         Icons.remove_moderator_rounded,
-      iconColor:    _kOrange,
-      title:        'Revoke Admin Role?',
-      body:         'This will remove the ${req.grantedRole ?? "Admin"} role from '
-                    '${req.userEmail} and reset their account to Tourist level. '
-                    'They can re-apply at any time.',
+      icon: Icons.remove_moderator_rounded,
+      iconColor: _kOrange,
+      title: 'Revoke Admin Role?',
+      body: 'This will remove the ${req.grantedRole ?? "Admin"} role from '
+          '${req.userEmail} and reset their account to Tourist level. '
+          'They can re-apply at any time.',
       confirmLabel: 'Revoke',
       confirmColor: _kOrange,
     );
@@ -207,26 +231,32 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
 
     setState(() => _actioning.add(req.id));
     try {
-      final me  = FirebaseAuth.instance.currentUser;
+      final me = FirebaseAuth.instance.currentUser;
       final batch = FirebaseFirestore.instance.batch();
 
       // Mark the request as denied / revoked
       batch.update(
         FirebaseFirestore.instance.collection('AdminRequests').doc(req.id),
         {
-          'status':           'denied',
-          'denialReason':     'Role revoked by administrator.',
-          'grantedRole':      FieldValue.delete(),
-          'respondedAt':      Timestamp.now(),
-          'respondedBy':      me?.uid  ?? '',
+          'status': 'denied',
+          'denialReason': 'Role revoked by administrator.',
+          'grantedRole': FieldValue.delete(),
+          'respondedAt': Timestamp.now(),
+          'respondedBy': me?.uid ?? '',
           'respondedByEmail': me?.email ?? '',
         },
       );
 
-      // Reset the user's role to Tourist
+      // Reset the user's role to Tourist and clear their place assignment
       batch.update(
         FirebaseFirestore.instance.collection('Users').doc(req.firebaseUid),
-        {'role': 'Tourist'},
+        {
+          'role': 'Tourist',
+          'managedPlaceId': '',
+          'managedPlaceName': '',
+          'managedCityId': '',
+          'managedCityName': '',
+        },
       );
 
       await batch.commit();
@@ -240,6 +270,30 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
     }
   }
 
+  // ── Reassign place (accepted Admin requests only) ──────────────────────────
+  Future<void> _onReassignPlace(AdminRequest req) async {
+    if (req.firebaseUid.isEmpty) {
+      _snack('Cannot reassign: user Firebase UID is missing.', ok: false);
+      return;
+    }
+    final picked = await showPlaceSearchPicker(context);
+    if (picked == null || !mounted) return;
+
+    setState(() => _actioning.add(req.id));
+    try {
+      final result = await RbacService.reassignManagedPlace(
+        targetFirebaseUid: req.firebaseUid,
+        placeId: picked.id,
+        placeName: picked.name,
+        cityId: picked.cityId,
+        cityName: picked.cityName,
+      );
+      if (mounted) _snack(result.message, ok: result.isSuccess);
+    } finally {
+      if (mounted) setState(() => _actioning.remove(req.id));
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // BUILD
   // ─────────────────────────────────────────────────────────────────────────
@@ -248,10 +302,10 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
     return Column(
       children: [
         _SummaryBar(
-          total:    _requests.length,
-          pending:  _pendingCount,
+          total: _requests.length,
+          pending: _pendingCount,
           accepted: _acceptedCount,
-          denied:   _deniedCount,
+          denied: _deniedCount,
         ),
         _buildTabBar(),
         Expanded(
@@ -269,16 +323,22 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
         color: _kSurface,
         child: TabBar(
           controller: _tabs,
-          indicatorColor:        _kTeal,
-          labelColor:            _kTeal,
-          unselectedLabelColor:  Colors.white38,
-          labelStyle:            const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-          unselectedLabelStyle:  const TextStyle(fontSize: 12),
+          indicatorColor: _kTeal,
+          labelColor: _kTeal,
+          unselectedLabelColor: Colors.white38,
+          labelStyle:
+              const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          unselectedLabelStyle: const TextStyle(fontSize: 12),
           tabs: [
             const Tab(text: 'All'),
-            Tab(text: _pendingCount  > 0 ? 'Pending ($_pendingCount)'   : 'Pending'),
-            Tab(text: _acceptedCount > 0 ? 'Approved ($_acceptedCount)' : 'Approved'),
-            Tab(text: _deniedCount   > 0 ? 'Denied ($_deniedCount)'     : 'Denied'),
+            Tab(
+                text:
+                    _pendingCount > 0 ? 'Pending ($_pendingCount)' : 'Pending'),
+            Tab(
+                text: _acceptedCount > 0
+                    ? 'Approved ($_acceptedCount)'
+                    : 'Approved'),
+            Tab(text: _deniedCount > 0 ? 'Denied ($_deniedCount)' : 'Denied'),
           ],
         ),
       );
@@ -291,11 +351,12 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
       itemCount: items.length,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (ctx, i) => _RequestCard(
-        request:    items[i],
+        request: items[i],
         isActioning: _actioning.contains(items[i].id),
-        onApprove:  () => _onApprove(items[i]),
-        onDeny:     () => _onDeny(items[i]),
-        onRevoke:   () => _onRevoke(items[i]),
+        onApprove: () => _onApprove(items[i]),
+        onDeny: () => _onDeny(items[i]),
+        onRevoke: () => _onRevoke(items[i]),
+        onReassignPlace: () => _onReassignPlace(items[i]),
       ),
     );
   }
@@ -327,16 +388,22 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
                     color: _kGreen.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.verified_user_rounded, color: _kGreen, size: 24),
+                  child: const Icon(Icons.verified_user_rounded,
+                      color: _kGreen, size: 24),
                 ),
                 const SizedBox(width: 14),
-                Expanded(child: Column(
+                Expanded(
+                    child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('Approve Request',
-                        style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold)),
                     Text(req.userEmail,
-                        style: const TextStyle(color: Colors.white38, fontSize: 12),
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 12),
                         overflow: TextOverflow.ellipsis),
                   ],
                 )),
@@ -355,51 +422,63 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
                 child: Text(
                   'Approving will grant the selected role and immediately update '
                   '${req.userEmail}\'s access across the platform.',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12, height: 1.5),
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.75),
+                      fontSize: 12,
+                      height: 1.5),
                 ),
               ),
               const SizedBox(height: 24),
 
               Text('Select Role to Grant',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7),
-                      fontSize: 12, fontWeight: FontWeight.w600)),
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
               const SizedBox(height: 12),
 
               _RoleOption(
-                role:        'Admin',
+                role: 'Admin',
                 description: 'Can manage places, listings, blog, and content.',
-                isSelected:  selected == 'Admin',
-                onTap:       () => setS(() => selected = 'Admin'),
+                isSelected: selected == 'Admin',
+                onTap: () => setS(() => selected = 'Admin'),
               ),
               const SizedBox(height: 10),
               _RoleOption(
-                role:        'MainAdmin',
-                description: 'Full system access including user role management.',
-                isSelected:  selected == 'MainAdmin',
-                onTap:       () => setS(() => selected = 'MainAdmin'),
+                role: 'MainAdmin',
+                description:
+                    'Full system access including user role management.',
+                isSelected: selected == 'MainAdmin',
+                onTap: () => setS(() => selected = 'MainAdmin'),
               ),
 
               const SizedBox(height: 28),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  icon:  const Icon(Icons.check_circle_rounded, size: 18),
+                  icon: const Icon(Icons.check_circle_rounded, size: 18),
                   label: Text('Approve as $selected'),
                   onPressed: () => Navigator.pop(ctx, selected),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _kGreen,
                     foregroundColor: const Color(0xFF0A1128),
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    textStyle: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
                   ),
                 ),
               ),
               const SizedBox(height: 10),
-              SizedBox(width: double.infinity, child: TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text('Cancel', style: TextStyle(color: Colors.white.withValues(alpha: 0.4))),
-              )),
+              SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: Text('Cancel',
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.4))),
+                  )),
             ],
           ),
         ),
@@ -435,16 +514,22 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
                     color: _kRed.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.cancel_rounded, color: _kRed, size: 24),
+                  child:
+                      const Icon(Icons.cancel_rounded, color: _kRed, size: 24),
                 ),
                 const SizedBox(width: 14),
-                Expanded(child: Column(
+                Expanded(
+                    child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('Decline Request',
-                        style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold)),
                     Text(req.userEmail,
-                        style: const TextStyle(color: Colors.white38, fontSize: 12),
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 12),
                         overflow: TextOverflow.ellipsis),
                   ],
                 )),
@@ -463,15 +548,20 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
                 child: Text(
                   'The user will be notified that their admin request for '
                   '"${req.facilityName}" has been declined.',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12, height: 1.5),
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.75),
+                      fontSize: 12,
+                      height: 1.5),
                 ),
               ),
               const SizedBox(height: 24),
 
               // Reason field
               Text('Reason for Denial (optional)',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7),
-                      fontSize: 12, fontWeight: FontWeight.w600)),
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
               TextField(
                 controller: ctrl,
@@ -479,13 +569,16 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
                 style: const TextStyle(color: Colors.white, fontSize: 13),
                 decoration: InputDecoration(
                   hintText: 'e.g. Insufficient supporting documentation.',
-                  hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 13),
+                  hintStyle: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.3), fontSize: 13),
                   filled: true,
                   fillColor: Colors.white.withValues(alpha: 0.06),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
                   enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15))),
+                      borderSide: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.15))),
                   focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: const BorderSide(color: _kRed, width: 1.5)),
@@ -497,7 +590,7 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  icon:  const Icon(Icons.do_not_disturb_rounded, size: 18),
+                  icon: const Icon(Icons.do_not_disturb_rounded, size: 18),
                   label: const Text('Decline Request'),
                   // Return the reason text (may be empty); null = cancel
                   onPressed: () => Navigator.pop(ctx, ctrl.text),
@@ -505,16 +598,23 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
                     backgroundColor: _kRed,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    textStyle: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
                   ),
                 ),
               ),
               const SizedBox(height: 10),
-              SizedBox(width: double.infinity, child: TextButton(
-                onPressed: () => Navigator.pop(ctx),    // null → caller treats as cancel
-                child: Text('Cancel', style: TextStyle(color: Colors.white.withValues(alpha: 0.4))),
-              )),
+              SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () =>
+                        Navigator.pop(ctx), // null → caller treats as cancel
+                    child: Text('Cancel',
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.4))),
+                  )),
             ],
           ),
         ),
@@ -525,37 +625,49 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
   // ── Confirm dialog ─────────────────────────────────────────────────────────
   Future<bool?> _confirmDialog({
     required IconData icon,
-    required Color    iconColor,
-    required String   title,
-    required String   body,
-    required String   confirmLabel,
-    required Color    confirmColor,
-  }) => showDialog<bool>(
+    required Color iconColor,
+    required String title,
+    required String body,
+    required String confirmLabel,
+    required Color confirmColor,
+  }) =>
+      showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: const Color(0xFF1E3A5F),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Row(children: [
             Icon(icon, color: iconColor),
             const SizedBox(width: 10),
-            Flexible(child: Text(title,
-                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))),
+            Flexible(
+                child: Text(title,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold))),
           ]),
           content: Text(body,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13, height: 1.5)),
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.75),
+                  fontSize: 13,
+                  height: 1.5)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Cancel', style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+              child: Text('Cancel',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
               style: ElevatedButton.styleFrom(
                 backgroundColor: confirmColor,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
-              child: Text(confirmLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
+              child: Text(confirmLabel,
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
             ),
           ],
         ),
@@ -568,9 +680,12 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
       ..clearSnackBars()
       ..showSnackBar(SnackBar(
         content: Row(children: [
-          Icon(ok ? Icons.check_circle_outline : Icons.error_outline, color: Colors.white, size: 18),
+          Icon(ok ? Icons.check_circle_outline : Icons.error_outline,
+              color: Colors.white, size: 18),
           const SizedBox(width: 10),
-          Expanded(child: Text(msg, style: const TextStyle(color: Colors.white, fontSize: 13))),
+          Expanded(
+              child: Text(msg,
+                  style: const TextStyle(color: Colors.white, fontSize: 13))),
         ]),
         backgroundColor: ok ? const Color(0xFF0D7377) : const Color(0xFFB00020),
         behavior: SnackBarBehavior.floating,
@@ -584,7 +699,8 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
   Widget _sheetContainer({required Widget child}) => Container(
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            begin: Alignment.topLeft, end: Alignment.bottomRight,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
             colors: [Color(0xFF1E3A5F), Color(0xFF0A1128)],
           ),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
@@ -594,9 +710,12 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
         child: child,
       );
 
-  Widget _sheetHandle() => Center(child: Container(
-        width: 44, height: 4,
-        decoration: BoxDecoration(color: Colors.white30, borderRadius: BorderRadius.circular(2)),
+  Widget _sheetHandle() => Center(
+          child: Container(
+        width: 44,
+        height: 4,
+        decoration: BoxDecoration(
+            color: Colors.white30, borderRadius: BorderRadius.circular(2)),
       ));
 }
 
@@ -622,12 +741,13 @@ class _SummaryBar extends StatelessWidget {
           border: const Border(bottom: BorderSide(color: Color(0xFF1F2937))),
         ),
         child: Wrap(
-          spacing: 8, runSpacing: 6,
+          spacing: 8,
+          runSpacing: 6,
           children: [
-            _StatPill(label: 'Total',    count: total,    color: Colors.white54),
-            _StatPill(label: 'Pending',  count: pending,  color: _kOrange),
+            _StatPill(label: 'Total', count: total, color: Colors.white54),
+            _StatPill(label: 'Pending', count: pending, color: _kOrange),
             _StatPill(label: 'Approved', count: accepted, color: _kGreen),
-            _StatPill(label: 'Denied',   count: denied,   color: _kRed),
+            _StatPill(label: 'Denied', count: denied, color: _kRed),
           ],
         ),
       );
@@ -635,10 +755,11 @@ class _SummaryBar extends StatelessWidget {
 
 class _StatPill extends StatelessWidget {
   final String label;
-  final int    count;
-  final Color  color;
+  final int count;
+  final Color color;
 
-  const _StatPill({required this.label, required this.count, required this.color});
+  const _StatPill(
+      {required this.label, required this.count, required this.color});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -650,12 +771,14 @@ class _StatPill extends StatelessWidget {
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Container(
-            width: 6, height: 6,
+            width: 6,
+            height: 6,
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 5),
           Text('$label: $count',
-              style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+              style: TextStyle(
+                  color: color, fontSize: 11, fontWeight: FontWeight.w600)),
         ]),
       );
 }
@@ -665,10 +788,11 @@ class _StatPill extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 class _RequestCard extends StatelessWidget {
   final AdminRequest request;
-  final bool         isActioning;
+  final bool isActioning;
   final VoidCallback onApprove;
   final VoidCallback onDeny;
   final VoidCallback onRevoke;
+  final VoidCallback onReassignPlace;
 
   const _RequestCard({
     required this.request,
@@ -676,23 +800,24 @@ class _RequestCard extends StatelessWidget {
     required this.onApprove,
     required this.onDeny,
     required this.onRevoke,
+    required this.onReassignPlace,
   });
 
   // Status-driven theming
   Color get _statusColor {
-    if (request.isPending)  return _kOrange;
+    if (request.isPending) return _kOrange;
     if (request.isAccepted) return _kGreen;
     return _kRed;
   }
 
   String get _statusLabel {
-    if (request.isPending)  return 'PENDING';
+    if (request.isPending) return 'PENDING';
     if (request.isAccepted) return 'APPROVED';
     return 'DECLINED';
   }
 
   IconData get _statusIcon {
-    if (request.isPending)  return Icons.hourglass_top_rounded;
+    if (request.isPending) return Icons.hourglass_top_rounded;
     if (request.isAccepted) return Icons.verified_rounded;
     return Icons.cancel_rounded;
   }
@@ -715,11 +840,11 @@ class _RequestCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-
             // ── Header ────────────────────────────────────────────────────
             Row(children: [
               Container(
-                width: 40, height: 40,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
                   color: _statusColor.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
@@ -727,16 +852,23 @@ class _RequestCard extends StatelessWidget {
                 child: Icon(_statusIcon, color: _statusColor, size: 18),
               ),
               const SizedBox(width: 12),
-              Expanded(child: Column(
+              Expanded(
+                  child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(request.userEmail,
                       style: const TextStyle(
-                          color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600),
                       overflow: TextOverflow.ellipsis),
-                  Text(request.facilityName,
-                      style: const TextStyle(color: Colors.white54, fontSize: 12),
-                      overflow: TextOverflow.ellipsis),
+                  Text(
+                    request.placeName.isNotEmpty
+                        ? '${request.placeName} · ${request.cityName}'
+                        : request.facilityName,
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ],
               )),
               const SizedBox(width: 8),
@@ -746,7 +878,8 @@ class _RequestCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: _statusColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: _statusColor.withValues(alpha: 0.35)),
+                  border:
+                      Border.all(color: _statusColor.withValues(alpha: 0.35)),
                 ),
                 child: Text(_statusLabel,
                     style: TextStyle(
@@ -765,11 +898,14 @@ class _RequestCard extends StatelessWidget {
             if (request.servicesOffered.isNotEmpty) ...[
               const Text('SERVICES OFFERED',
                   style: TextStyle(
-                      color: Colors.white38, fontSize: 10,
-                      fontWeight: FontWeight.w700, letterSpacing: 1.2)),
+                      color: Colors.white38,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2)),
               const SizedBox(height: 8),
               Wrap(
-                spacing: 6, runSpacing: 4,
+                spacing: 6,
+                runSpacing: 4,
                 children: request.servicesOffered
                     .map((s) => _ServiceTag(label: s))
                     .toList(),
@@ -779,7 +915,8 @@ class _RequestCard extends StatelessWidget {
 
             // ── Meta row ──────────────────────────────────────────────────
             Wrap(spacing: 14, runSpacing: 4, children: [
-              _Meta(Icons.schedule_rounded, 'Submitted: ${_fmt(request.createdAt)}'),
+              _Meta(Icons.schedule_rounded,
+                  'Submitted: ${_fmt(request.createdAt)}'),
               if (request.respondedAt != null)
                 _Meta(
                   request.isAccepted
@@ -798,20 +935,26 @@ class _RequestCard extends StatelessWidget {
             if (request.isDenied && request.denialReason != null) ...[
               const SizedBox(height: 10),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
                   color: _kRed.withValues(alpha: 0.07),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: _kRed.withValues(alpha: 0.22)),
                 ),
-                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Icon(Icons.info_outline_rounded, size: 13, color: _kRed),
-                  const SizedBox(width: 6),
-                  Expanded(child: Text(
-                    'Reason: ${request.denialReason}',
-                    style: const TextStyle(color: _kRed, fontSize: 11, height: 1.4),
-                  )),
-                ]),
+                child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.info_outline_rounded,
+                          size: 13, color: _kRed),
+                      const SizedBox(width: 6),
+                      Expanded(
+                          child: Text(
+                        'Reason: ${request.denialReason}',
+                        style: const TextStyle(
+                            color: _kRed, fontSize: 11, height: 1.4),
+                      )),
+                    ]),
               ),
             ],
 
@@ -821,57 +964,91 @@ class _RequestCard extends StatelessWidget {
               const Divider(color: Color(0xFF1F2937), height: 1),
               const SizedBox(height: 12),
               if (isActioning)
-                const Center(child: SizedBox(
-                  width: 22, height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: _kTeal),
+                const Center(
+                    child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child:
+                      CircularProgressIndicator(strokeWidth: 2, color: _kTeal),
                 ))
               else if (request.isPending)
                 Row(children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      icon:  const Icon(Icons.close_rounded, size: 14),
+                      icon: const Icon(Icons.close_rounded, size: 14),
                       label: const Text('Decline'),
                       onPressed: onDeny,
                       style: OutlinedButton.styleFrom(
                         foregroundColor: _kRed,
                         side: BorderSide(color: _kRed.withValues(alpha: 0.5)),
                         padding: const EdgeInsets.symmetric(vertical: 10),
-                        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        textStyle: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w600),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
                       ),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: ElevatedButton.icon(
-                      icon:  const Icon(Icons.check_rounded, size: 14),
+                      icon: const Icon(Icons.check_rounded, size: 14),
                       label: const Text('Approve'),
                       onPressed: onApprove,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _kGreen,
                         foregroundColor: const Color(0xFF0A1128),
                         padding: const EdgeInsets.symmetric(vertical: 10),
-                        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        textStyle: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.bold),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
                       ),
                     ),
                   ),
                 ])
               else if (request.isAccepted)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: OutlinedButton.icon(
-                    icon:  const Icon(Icons.remove_moderator_rounded, size: 14),
-                    label: const Text('Revoke Role'),
-                    onPressed: onRevoke,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _kOrange,
-                      side: BorderSide(color: _kOrange.withValues(alpha: 0.5)),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: [
+                    if (request.grantedRole == 'Admin')
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.edit_location_alt_rounded,
+                            size: 14),
+                        label: const Text('Reassign Place'),
+                        onPressed: onReassignPlace,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _kTeal,
+                          side:
+                              BorderSide(color: _kTeal.withValues(alpha: 0.5)),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          textStyle: const TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.w600),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    OutlinedButton.icon(
+                      icon:
+                          const Icon(Icons.remove_moderator_rounded, size: 14),
+                      label: const Text('Revoke Role'),
+                      onPressed: onRevoke,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _kOrange,
+                        side:
+                            BorderSide(color: _kOrange.withValues(alpha: 0.5)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        textStyle: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w600),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
             ],
           ],
@@ -894,18 +1071,18 @@ class _ServiceTag extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: _kTeal.withValues(alpha: 0.22)),
         ),
-        child: Text(label,
-            style: const TextStyle(color: _kTeal, fontSize: 11)),
+        child: Text(label, style: const TextStyle(color: _kTeal, fontSize: 11)),
       );
 }
 
 class _Meta extends StatelessWidget {
   final IconData icon;
-  final String   text;
+  final String text;
   const _Meta(this.icon, this.text);
 
   @override
-  Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
+  Widget build(BuildContext context) =>
+      Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(icon, size: 11, color: Colors.white38),
         const SizedBox(width: 4),
         Text(text, style: const TextStyle(color: Colors.white38, fontSize: 11)),
@@ -916,9 +1093,9 @@ class _Meta extends StatelessWidget {
 // Role Option — radio-style selector inside the approve sheet
 // ─────────────────────────────────────────────────────────────────────────────
 class _RoleOption extends StatelessWidget {
-  final String       role;
-  final String       description;
-  final bool         isSelected;
+  final String role;
+  final String description;
+  final bool isSelected;
   final VoidCallback onTap;
 
   const _RoleOption({
@@ -949,7 +1126,8 @@ class _RoleOption extends StatelessWidget {
             // Radio dot
             AnimatedContainer(
               duration: const Duration(milliseconds: 150),
-              width: 18, height: 18,
+              width: 18,
+              height: 18,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: isSelected
@@ -963,7 +1141,8 @@ class _RoleOption extends StatelessWidget {
                   : null,
             ),
             const SizedBox(width: 12),
-            Expanded(child: Column(
+            Expanded(
+                child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(role,
@@ -991,8 +1170,13 @@ class _EmptyState extends StatelessWidget {
   final int tabIndex;
   const _EmptyState({required this.tabIndex});
 
-  static const _labels = ['requests', 'pending requests', 'approved requests', 'declined requests'];
-  static const _icons  = [
+  static const _labels = [
+    'requests',
+    'pending requests',
+    'approved requests',
+    'declined requests'
+  ];
+  static const _icons = [
     Icons.inbox_rounded,
     Icons.hourglass_empty_rounded,
     Icons.verified_rounded,
@@ -1002,13 +1186,17 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = tabIndex < _labels.length ? _labels[tabIndex] : 'requests';
-    final icon  = tabIndex < _icons.length  ? _icons[tabIndex]  : Icons.inbox_rounded;
+    final icon =
+        tabIndex < _icons.length ? _icons[tabIndex] : Icons.inbox_rounded;
     return Center(
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(icon, size: 52, color: Colors.white12),
         const SizedBox(height: 16),
         Text('No $label',
-            style: const TextStyle(color: Colors.white38, fontSize: 15, fontWeight: FontWeight.w500)),
+            style: const TextStyle(
+                color: Colors.white38,
+                fontSize: 15,
+                fontWeight: FontWeight.w500)),
         const SizedBox(height: 6),
         const Text('They will appear here when submitted.',
             style: TextStyle(color: Colors.white24, fontSize: 12)),
@@ -1021,7 +1209,7 @@ class _EmptyState extends StatelessWidget {
 // Error View
 // ─────────────────────────────────────────────────────────────────────────────
 class _ErrorView extends StatelessWidget {
-  final String       message;
+  final String message;
   final VoidCallback onRetry;
   const _ErrorView({required this.message, required this.onRetry});
 
@@ -1033,20 +1221,24 @@ class _ErrorView extends StatelessWidget {
             const Icon(Icons.cloud_off_rounded, size: 52, color: _kRed),
             const SizedBox(height: 16),
             const Text('Failed to load requests',
-                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500)),
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
             Text(message,
                 style: const TextStyle(color: Colors.white38, fontSize: 11),
                 textAlign: TextAlign.center),
             const SizedBox(height: 20),
             ElevatedButton.icon(
-              icon:  const Icon(Icons.refresh_rounded, size: 16),
+              icon: const Icon(Icons.refresh_rounded, size: 16),
               label: const Text('Retry'),
               onPressed: onRetry,
               style: ElevatedButton.styleFrom(
                 backgroundColor: _kTeal,
                 foregroundColor: const Color(0xFF0A1128),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
             ),
           ]),

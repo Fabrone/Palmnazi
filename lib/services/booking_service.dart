@@ -30,11 +30,25 @@ class BookingService {
             snap.docs.map((d) => BookingModel.fromFirestore(d)).toList());
   }
 
-  /// Live stream of all bookings, most recent first — admin dashboard only
+  /// Live stream of all bookings, most recent first — MainAdmin only
   /// (enforced by Firestore rules, not by this client-side call).
   static Stream<List<BookingModel>> streamAll() {
     return _collection.orderBy('createdAt', descending: true).snapshots().map(
         (snap) => snap.docs.map((d) => BookingModel.fromFirestore(d)).toList());
+  }
+
+  /// Live stream of bookings for a single place, most recent first — used by
+  /// the Place Admin Panel. A place-scoped Admin's Firestore rules only allow
+  /// reads that filter by their own placeId (see isPlaceAdminFor in
+  /// firestore.rules), so this — not streamAll() — is what makes their query
+  /// actually satisfy those rules rather than being rejected outright.
+  static Stream<List<BookingModel>> streamForPlace(String placeId) {
+    return _collection
+        .where('placeId', isEqualTo: placeId)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snap) =>
+            snap.docs.map((d) => BookingModel.fromFirestore(d)).toList());
   }
 
   static Future<void> updateStatus(String bookingId, BookingStatus status) {
@@ -68,8 +82,7 @@ class BookingService {
     final snap = await _collection
         .where('placeId', isEqualTo: placeId)
         .where('serviceName', isEqualTo: serviceName)
-        .where('status', whereIn: ['pending', 'confirmed'])
-        .get();
+        .where('status', whereIn: ['pending', 'confirmed']).get();
 
     final newStart = _dateOnly(requestedDate);
     final newEnd = _dateOnly(checkOutDate ?? requestedDate);
