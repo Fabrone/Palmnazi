@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:logger/logger.dart';
 import 'package:palmnazi/admin/admin_api_service.dart';
+import 'package:palmnazi/models/city_details_model.dart';
 import 'package:palmnazi/models/city_model.dart';
+import 'package:palmnazi/services/city_details_service.dart';
 
 // File-scoped logger — same PrettyPrinter config as api_client.dart
 final Logger _screenLog = Logger(
@@ -72,6 +74,11 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
   String? _error;
   String _search = '';
 
+  // Presentation config (featured / manual sort order) — Firestore, keyed by
+  // cityId. Drives both this admin list's ordering and the tourist landing
+  // page's city grid ordering (see CityDetailsService.sortByDetails).
+  Map<String, CityDetailsModel> _cityDetails = {};
+
   // Filter state
   bool? _filterActive; // null = all, true = active, false = inactive
 
@@ -111,12 +118,18 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
         filters['isActive'] = _filterActive.toString();
       }
 
-      final cities = await widget.apiService.getCities(filters: filters);
+      final results = await Future.wait([
+        widget.apiService.getCities(filters: filters),
+        CityDetailsService.getAll(),
+      ]);
+      final cities = results[0] as List<CityModel>;
+      final details = results[1] as Map<String, CityDetailsModel>;
       _screenLog.i('Loaded ${cities.length} cities successfully');
 
       if (mounted) {
         setState(() {
           _cities = cities;
+          _cityDetails = details;
           _loading = false;
         });
         _applySearch(_search);
@@ -143,11 +156,12 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
 
   void _applySearch(String query) {
     _search = query;
+    List<CityModel> base;
     if (query.trim().isEmpty) {
-      _filtered = List.from(_cities);
+      base = List.from(_cities);
     } else {
       final q = query.toLowerCase();
-      _filtered = _cities
+      base = _cities
           .where((c) =>
               c.name.toLowerCase().contains(q) ||
               c.country.toLowerCase().contains(q) ||
@@ -155,9 +169,61 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
               c.slug.toLowerCase().contains(q))
           .toList();
     }
+    _filtered = CityDetailsService.sortByDetails(
+        base, _cityDetails, (c) => c.id, (c) => c.name);
     _screenLog
         .d('Search "$query" → ${_filtered.length}/${_cities.length} cities');
     if (mounted) setState(() {});
+  }
+
+  Future<void> _toggleFeatured(CityModel city) async {
+    final current = _cityDetails[city.id] ?? CityDetailsModel.empty;
+    await CityDetailsService.setFeatured(city.id, !current.featured);
+    final updated = await CityDetailsService.getAll();
+    if (mounted) {
+      setState(() => _cityDetails = updated);
+      _applySearch(_search);
+    }
+  }
+
+  Future<void> _editSortOrder(CityModel city) async {
+    final current = _cityDetails[city.id] ?? CityDetailsModel.empty;
+    final ctrl = TextEditingController(text: '${current.sortOrder}');
+    final result = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF161B22),
+        title: const Text('Set Sort Order', style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: 'Lower numbers show first',
+            hintStyle: TextStyle(color: Colors.white24),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white38)),
+          ),
+          ElevatedButton(
+            onPressed: () =>
+                Navigator.pop(ctx, int.tryParse(ctrl.text.trim()) ?? 0),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (result == null) return;
+    await CityDetailsService.setSortOrder(city.id, result);
+    final updated = await CityDetailsService.getAll();
+    if (mounted) {
+      setState(() => _cityDetails = updated);
+      _applySearch(_search);
+    }
   }
 
   void _applyFilter(bool? isActive) {
@@ -513,9 +579,13 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
               separatorBuilder: (_, __) => const SizedBox(height: 12),
               itemBuilder: (_, i) => _CityCard(
                 city: _filtered[i],
+                featured: (_cityDetails[_filtered[i].id] ?? CityDetailsModel.empty).featured,
+                sortOrder: (_cityDetails[_filtered[i].id] ?? CityDetailsModel.empty).sortOrder,
                 onEdit: () => _openForm(city: _filtered[i]),
                 onDelete: () => _delete(_filtered[i]),
                 onToggleActive: () => _toggleActive(_filtered[i]),
+                onToggleFeatured: () => _toggleFeatured(_filtered[i]),
+                onEditSortOrder: () => _editSortOrder(_filtered[i]),
                 onViewPlaces: () => widget.onCitySelected(_filtered[i]),
                 onViewCategories: () =>
                     widget.onCityForCategoriesSelected(_filtered[i]),
@@ -540,9 +610,13 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
             itemCount: _filtered.length,
             itemBuilder: (_, i) => _CityCard(
               city: _filtered[i],
+              featured: (_cityDetails[_filtered[i].id] ?? CityDetailsModel.empty).featured,
+              sortOrder: (_cityDetails[_filtered[i].id] ?? CityDetailsModel.empty).sortOrder,
               onEdit: () => _openForm(city: _filtered[i]),
               onDelete: () => _delete(_filtered[i]),
               onToggleActive: () => _toggleActive(_filtered[i]),
+              onToggleFeatured: () => _toggleFeatured(_filtered[i]),
+              onEditSortOrder: () => _editSortOrder(_filtered[i]),
               onViewPlaces: () => widget.onCitySelected(_filtered[i]),
               onViewCategories: () =>
                   widget.onCityForCategoriesSelected(_filtered[i]),
@@ -653,17 +727,25 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
 
 class _CityCard extends StatefulWidget {
   final CityModel city;
+  final bool featured;
+  final int sortOrder;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onToggleActive;
+  final VoidCallback onToggleFeatured;
+  final VoidCallback onEditSortOrder;
   final VoidCallback onViewPlaces;
   final VoidCallback onViewCategories; // kept for ⋮ menu
 
   const _CityCard({
     required this.city,
+    this.featured = false,
+    this.sortOrder = 0,
     required this.onEdit,
     required this.onDelete,
     required this.onToggleActive,
+    required this.onToggleFeatured,
+    required this.onEditSortOrder,
     required this.onViewPlaces,
     required this.onViewCategories,
   });
@@ -791,6 +873,12 @@ class _CityCardState extends State<_CityCard> {
                             ],
                           ),
                         ),
+                        // Featured badge
+                        if (widget.featured) ...[
+                          Icon(Icons.star_rounded,
+                              color: Colors.amber, size: 16 * scale),
+                          const SizedBox(width: 2),
+                        ],
                         // Active badge
                         _ActiveBadge(isActive: c.isActive, scale: scale),
                         const SizedBox(width: 2),
@@ -813,6 +901,8 @@ class _CityCardState extends State<_CityCard> {
                               }
                               if (v == 'edit') widget.onEdit();
                               if (v == 'toggle') widget.onToggleActive();
+                              if (v == 'feature') widget.onToggleFeatured();
+                              if (v == 'sortOrder') widget.onEditSortOrder();
                               if (v == 'delete') widget.onDelete();
                             },
                             itemBuilder: (_) => [
@@ -836,6 +926,18 @@ class _CityCardState extends State<_CityCard> {
                                         : Icons.visibility_rounded,
                                     c.isActive ? 'Set Inactive' : 'Set Active',
                                   )),
+                              PopupMenuItem(
+                                  value: 'feature',
+                                  child: _PopItem(
+                                    widget.featured
+                                        ? Icons.star_rounded
+                                        : Icons.star_outline_rounded,
+                                    widget.featured ? 'Unfeature City' : 'Feature City',
+                                  )),
+                              const PopupMenuItem(
+                                  value: 'sortOrder',
+                                  child: _PopItem(
+                                      Icons.swap_vert_rounded, 'Set Sort Order')),
                               const PopupMenuItem(
                                   value: 'delete',
                                   child: _PopItem(

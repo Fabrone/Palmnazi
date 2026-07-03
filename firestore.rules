@@ -120,5 +120,129 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+
+    // ── Place supplementary details ───────────────────────────────────────────
+    //
+    // Collection: Place_details
+    // Document key = the place's /api/places id (one doc per place).
+    // Written by PlaceDetailsService: images attached to nested items (rooms,
+    // menu items, shows) and, per-place, the accepted PaymentMethods ids.
+    // Not part of the /api/places contract — stored here until the backend
+    // is redesigned to accept it directly.
+    //
+    // PUBLIC read: the tourist app browses places (landing_page.dart →
+    // resort_city_screen.dart → category_screen.dart → place_details_screen.dart)
+    // entirely without signing in — this app has no anonymous Firebase Auth
+    // session, so gating reads behind isAuth() would silently hide nested-item
+    // photos and payment methods from every logged-out visitor. Only
+    // Admin / MainAdmin may write.
+    match /Place_details/{placeId} {
+      allow read:  if true;
+      allow write: if isAdmin();
+    }
+
+
+    // ── Payment methods catalogue ─────────────────────────────────────────────
+    //
+    // Collection: PaymentMethods
+    // Document id = auto-generated.
+    // Admin-managed list of payment options places can be configured to
+    // accept (M-Pesa, Card, Bank Transfer, Cash, …). Configuration only —
+    // no payment processing happens through this collection.
+    //
+    // PUBLIC read for the same reason as Place_details above. Only
+    // Admin / MainAdmin may write.
+    match /PaymentMethods/{methodId} {
+      allow read:  if true;
+      allow write: if isAdmin();
+    }
+
+
+    // ── Resort city presentation config ───────────────────────────────────────
+    //
+    // Collection: City_details
+    // Document key = the city's /api/cities id.
+    // Featured flag + manual sort order used to order the tourist landing
+    // page's city grid and the admin Resort Cities list. Not part of the
+    // /api/cities contract.
+    //
+    // PUBLIC read for the same reason as Place_details above. Only
+    // Admin / MainAdmin may write.
+    match /City_details/{cityId} {
+      allow read:  if true;
+      allow write: if isAdmin();
+    }
+
+
+    // ── Bookings ───────────────────────────────────────────────────────────────
+    //
+    // Collection: Bookings
+    // Document id = auto-generated.
+    // Created by a signed-in tourist from PlaceDetailsScreen's "Book Now" flow
+    // (see BookingService / booking_screen.dart). Fields:
+    //   placeId, placeName, cityId, cityName   — snapshot of what was booked
+    //   firebaseUid, userEmail                 — identity anchor (must match caller)
+    //   serviceType, serviceName               — optional nested item (room/menu/show)
+    //   requestedDate, checkOutDate            — Timestamps
+    //   numberOfGuests, notes
+    //   paymentMethodId, paymentMethodName      — snapshot of chosen PaymentMethods doc
+    //   status                                 — 'pending' | 'confirmed' | 'cancelled' | 'completed'
+    //   createdAt, updatedAt
+    //
+    // Access matrix:
+    //   READ   — the requester (firebaseUid == caller uid), OR Admin/MainAdmin.
+    //   CREATE — authenticated user; firebaseUid must equal caller uid;
+    //            status must start as 'pending'.
+    //   UPDATE — Admin/MainAdmin (confirm/cancel/complete), OR the requester
+    //            cancelling their own still-pending booking.
+    //   DELETE — never from the client.
+    match /Bookings/{bookingId} {
+
+      allow read:
+        if isAuth()
+        && (resource.data.firebaseUid == request.auth.uid || isAdmin());
+
+      allow create:
+        if isAuth()
+        && request.resource.data.firebaseUid == request.auth.uid
+        && request.resource.data.status == 'pending';
+
+      // Cutoff before requestedDate under which a tourist may still cancel —
+      // must mirror BookingModel.checkCancellationEligibility on the client.
+      allow update:
+        if isAdmin()
+        || (isAuth()
+            && resource.data.firebaseUid == request.auth.uid
+            && resource.data.status == 'pending'
+            && request.resource.data.status == 'cancelled'
+            && request.time < resource.data.requestedDate - (
+                 resource.data.cancellationPolicy == 'strict'   ? duration.value(7, 'd') :
+                 resource.data.cancellationPolicy == 'moderate' ? duration.value(48, 'h') :
+                 duration.value(0, 'h')
+               ));
+
+      allow delete: if false;
+    }
+
+
+    // ── Payment gateway transactions ──────────────────────────────────────────
+    //
+    // Collection: Transactions
+    // Document id = client-generated (see MpesaService.newTransactionRef).
+    // Written exclusively by the initiateMpesaPayment / mpesaCallback /
+    // queryMpesaStatus Cloud Functions via the Admin SDK, which bypasses these
+    // rules entirely — "write: if false" here just documents that no client
+    // write path exists, it isn't what actually blocks the Cloud Functions.
+    //
+    // READ — the tourist who initiated the payment (firebaseUid match), or
+    // Admin/MainAdmin (support/reconciliation).
+    match /Transactions/{transactionId} {
+      allow read:
+        if isAuth()
+        && (resource.data.firebaseUid == request.auth.uid || isAdmin());
+
+      allow write: if false;
+    }
+
   }
 }

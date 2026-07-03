@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:palmnazi/admin/admin_api_service.dart';
 import 'package:palmnazi/admin/admin_place_wizard_screen.dart';
@@ -82,6 +84,13 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
   CityModel? _cityFilter;
   CategoryModel? _categoryFilter;
 
+  // Debounces the search box so each keystroke doesn't fire a request —
+  // the list endpoint is capped at limit:50, so without a server re-fetch,
+  // typing a query that matches a place outside the current page would
+  // silently show no results even though the place exists.
+  Timer? _searchDebounce;
+  final _searchCtrl = TextEditingController();
+
   static const _statusTabs = [
     null,
     'ACTIVE',
@@ -103,6 +112,19 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
     _cityFilter = widget.filterCity;
     _categoryFilter = widget.filterCategory;
     _loadAll();
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    setState(() => _search = value);
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 400), _fetchPlaces);
   }
 
   @override
@@ -281,6 +303,7 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
           cities: _cities,
           categories: _categories,
           existingPlace: fullPlace,
+          initialCityId: existing == null ? _cityFilter?.id : null,
         ),
       ),
     );
@@ -387,7 +410,8 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
 
           // ── Search ───────────────────────────────────────────────────
           TextField(
-            onChanged: (v) => setState(() => _search = v),
+            controller: _searchCtrl,
+            onChanged: _onSearchChanged,
             style: const TextStyle(color: Colors.white, fontSize: 14),
             decoration: InputDecoration(
               hintText: isNarrow
@@ -401,7 +425,12 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
                   ? IconButton(
                       icon: const Icon(Icons.clear_rounded,
                           color: Colors.white38, size: 16),
-                      onPressed: () => setState(() => _search = ''),
+                      onPressed: () {
+                        _searchDebounce?.cancel();
+                        _searchCtrl.clear();
+                        setState(() => _search = '');
+                        _fetchPlaces();
+                      },
                     )
                   : null,
               filled: true,

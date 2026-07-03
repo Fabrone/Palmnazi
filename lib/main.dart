@@ -11,6 +11,7 @@ import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/services/firebase_email_link_service.dart';
 import 'package:palmnazi/services/firebase_session_service.dart';
 import 'package:palmnazi/services/notification_service.dart';
+import 'package:palmnazi/services/push_notification_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -40,6 +41,7 @@ void main() async {
   };
 
   await NotificationService.initialize();
+  await PushNotificationService.initialize();
 
   // ── Email-link deep-link handler (app_links) ──────────────────────────────
   // Handles both cold-start links (app launched via email link) and warm

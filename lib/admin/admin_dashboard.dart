@@ -7,6 +7,8 @@ import 'package:palmnazi/admin/admin_categories_screen.dart';
 import 'package:palmnazi/admin/admin_places_screen.dart';
 import 'package:palmnazi/admin/admin_blog_list_screen.dart';
 import 'package:palmnazi/admin/admin_role_requests_screen.dart';
+import 'package:palmnazi/admin/admin_payment_methods_screen.dart';
+import 'package:palmnazi/admin/admin_bookings_screen.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/services/notification_service.dart';
@@ -37,6 +39,8 @@ final Logger _log = Logger(
 //   3 — Places CRUD
 //   4 — Blog
 //   5 — Role Requests (Admin & MainAdmin — live badge dot on pending count)
+//   6 — Payment Methods CRUD (Firestore-backed configuration catalogue)
+//   7 — Bookings (Firestore-backed; tourist-submitted booking requests)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AdminDashboard extends StatefulWidget {
@@ -72,6 +76,8 @@ class _AdminDashboardState extends State<AdminDashboard>
     _NavItem(Icons.place_rounded,           'Places'),
     _NavItem(Icons.article_rounded,         'Blog'),
     _NavItem(Icons.manage_accounts_rounded, 'Role Requests'),
+    _NavItem(Icons.payments_rounded,        'Payment Methods'),
+    _NavItem(Icons.calendar_month_rounded,  'Bookings'),
   ];
 
   @override
@@ -126,8 +132,8 @@ class _AdminDashboardState extends State<AdminDashboard>
           _log.i('🔐 [AdminDashboard._initRbac] Role confirmed as "$cleanRole" — starting Role Requests listeners');
           _pendingCountSub?.cancel();
           _pendingCountSub = RbacService.pendingRequestsCountStream().listen(
-            (count) {
-              if (mounted) setState(() => _pendingRequestsCount = count);
+            (pendingCount) {
+              if (mounted) setState(() => _pendingRequestsCount = pendingCount);
             },
             onError: (e) => _log.w('⚠️ [AdminDashboard] pendingCountStream error: $e'),
           );
@@ -267,7 +273,7 @@ class _AdminDashboardState extends State<AdminDashboard>
       ));
     }
 
-    final logicalIndices = [0, 1, 2, 3, 4, if (_canManageRoleRequests) 5];
+    final logicalIndices = [0, 1, 2, 3, 4, if (_canManageRoleRequests) 5, 6, 7];
     final visualIndex = logicalIndices.contains(_selectedIndex)
         ? logicalIndices.indexOf(_selectedIndex)
         : 0;
@@ -296,6 +302,8 @@ class _AdminDashboardState extends State<AdminDashboard>
         return 'Places';
       case 4:  return 'Blog';
       case 5:  return 'Role Requests';
+      case 6:  return 'Payment Methods';
+      case 7:  return 'Bookings';
       default: return 'Admin';
     }
   }
@@ -316,6 +324,8 @@ class _AdminDashboardState extends State<AdminDashboard>
         return c > 0
             ? '$c pending request${c == 1 ? '' : 's'} awaiting review'
             : 'Review and manage admin role requests';
+      case 6:  return 'Configure the payment options places can accept';
+      case 7:  return 'Review and manage tourist booking requests';
       default: return '';
     }
   }
@@ -359,6 +369,10 @@ class _AdminDashboardState extends State<AdminDashboard>
         return AdminBlogListScreen(apiService: _apiService);
       case 5:
         return const AdminRoleRequestsScreen();
+      case 6:
+        return const AdminPaymentMethodsScreen();
+      case 7:
+        return const AdminBookingsScreen();
       default:
         return const SizedBox.shrink();
     }
@@ -989,6 +1003,22 @@ class _DashboardOverview extends StatelessWidget {
                       onTap:       () => onGoTo(5),
                       badge:       pendingRequestsCount > 0 ? pendingRequestsCount : null,
                     ),
+                  _QuickAction(
+                    icon:        Icons.payments_rounded,
+                    label:       'Payment Methods',
+                    description: 'Configure accepted payment options',
+                    color:       const Color(0xFF0D7377),
+                    cardWidth:   actionCardW,
+                    onTap:       () => onGoTo(6),
+                  ),
+                  _QuickAction(
+                    icon:        Icons.calendar_month_rounded,
+                    label:       'Bookings',
+                    description: 'Review tourist booking requests',
+                    color:       const Color(0xFF2196F3),
+                    cardWidth:   actionCardW,
+                    onTap:       () => onGoTo(7),
+                  ),
                 ],
               ),
 
@@ -1203,6 +1233,12 @@ class _WorkflowGuide extends StatelessWidget {
             _step('5', 'Role Requests',
                 'Review and approve admin role applications from users.',
                 const Color(0xFFFF9800)),
+            _step('6', 'Payment Methods',
+                'Define which payment options places can accept (M-Pesa, Card, Cash…).',
+                const Color(0xFF0D7377)),
+            _step('7', 'Bookings',
+                'Review and confirm booking requests submitted by tourists.',
+                const Color(0xFF2196F3)),
           ],
         ),
       );

@@ -1,10 +1,16 @@
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
+import 'package:palmnazi/models/payment_method_model.dart';
 import 'package:palmnazi/models/place_model.dart';
+import 'package:palmnazi/screens/auth_screen.dart';
+import 'package:palmnazi/screens/booking_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/services/payment_methods_service.dart';
+import 'package:palmnazi/services/place_details_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // place_details_screen.dart
@@ -76,6 +82,41 @@ class _PlaceDetailApi {
       return null;
     }
   }
+
+  /// GET /api/places/:id/{rooms|menu-items|shows}
+  ///
+  /// Same public-read convention as fetchPlace above. Returns an empty list
+  /// on any error so the calling section simply doesn't render rather than
+  /// showing an error banner for what is a "nice to have" section.
+  static Future<List<Map<String, dynamic>>> fetchNestedItems(
+      String placeId, String path) async {
+    final uri = Uri.parse(ApiEndpoints.url('/api/places/$placeId/$path'));
+    try {
+      final resp = await http.get(uri).timeout(_timeout);
+      if (resp.statusCode != 200) return const [];
+      final body = jsonDecode(resp.body);
+      final data = body is Map<String, dynamic> ? body['data'] : null;
+      List<dynamic> raw;
+      if (data is List) {
+        raw = data;
+      } else if (data is Map) {
+        raw = (data['rooms'] as List<dynamic>?) ??
+            (data['menuItems'] as List<dynamic>?) ??
+            (data['shows'] as List<dynamic>?) ??
+            const [];
+      } else if (body is Map<String, dynamic>) {
+        raw = (body['rooms'] as List<dynamic>?) ??
+            (body['menuItems'] as List<dynamic>?) ??
+            (body['shows'] as List<dynamic>?) ??
+            const [];
+      } else {
+        raw = const [];
+      }
+      return raw.whereType<Map<String, dynamic>>().toList();
+    } catch (_) {
+      return const [];
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -132,6 +173,28 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
   bool  _detailLoading = false;
   bool  _detailError   = false;
 
+  // ── Nested services (rooms / menu items / shows) — Place_details images ──
+  //
+  // The backend item list comes from a public GET on /api/places/:id/{path};
+  // per-item photos come from Firestore Place_details.{rooms|menuItems|shows}
+  // (see PlaceDetailsService — written by the admin place wizard). Both are
+  // index-aligned the same way the wizard writes them.
+  List<Map<String, dynamic>> _nestedItems = [];
+  List<List<String>> _nestedItemImages = [];
+  String _nestedItemsLabel = '';
+  String _nestedItemsType = ''; // 'rooms' | 'menuItems' | 'shows' | 'exhibitions' | ''
+  bool _loadingNestedItems = false;
+  String _nestedItemsSearchQuery = '';
+
+  // Cultural places only: artifacts shown as a read-only display-case
+  // section (they're informational, not something a tourist books, unlike
+  // exhibitions above which can have visiting slots).
+  List<Map<String, dynamic>> _artifactItems = [];
+  List<List<String>> _artifactItemImages = [];
+
+  // ── Accepted payment methods (Firestore) ──────────────────────────────────
+  List<PaymentMethodModel> _acceptedPaymentMethods = [];
+
   // ── Derived display helpers ───────────────────────────────────────────────
 
   /// First linked category name, or fall back to the category passed in.
@@ -139,6 +202,22 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       _place.categoryLinks.isNotEmpty
           ? _place.categoryLinks.first.categoryName
           : widget.category.name;
+
+  bool get _isAccommodationType => _place.taxonomy.any((t) =>
+      t.contains('accommodation') || t.contains('hotel') ||
+      t.contains('resort') || t.contains('lodge'));
+
+  bool get _isDiningType => _place.taxonomy.any((t) =>
+      t.contains('dining') || t.contains('restaurant') ||
+      t.contains('food') || t.contains('cafe'));
+
+  bool get _isEntertainmentType => _place.taxonomy.any((t) =>
+      t.contains('entertainment') || t.contains('event') ||
+      t.contains('show') || t.contains('cinema'));
+
+  bool get _isCulturalType => _place.taxonomy.any((t) =>
+      t.contains('museum') || t.contains('cultural') ||
+      t.contains('heritage') || t.contains('art'));
 
   /// Human-readable price range built from PlacePricing, e.g. "KES 2,000–5,000/night".
   String? get _priceRangeLabel {
@@ -223,6 +302,150 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         _detailError = true;
       }
     });
+    // Taxonomy (used to decide which nested items to show) only arrives on
+    // the full detail record, so this runs after the state above lands.
+    _fetchPlaceDetailsExtras();
+  }
+
+  /// Loads everything that lives in Firestore's Place_details doc — nested
+  /// item images and accepted payment methods — in a single read, plus the
+  /// nested item list itself from the public REST endpoint. Both sections
+  /// are "nice to have"; any failure here is swallowed so the core place
+  /// detail view above still renders fine.
+  Future<void> _fetchPlaceDetailsExtras() async {
+    final String type;
+    final String path;
+    final String label;
+    if (_isAccommodationType) {
+      type = 'rooms'; path = 'rooms'; label = 'Rooms';
+    } else if (_isDiningType) {
+      type = 'menuItems'; path = 'menu-items'; label = 'Menu';
+    } else if (_isEntertainmentType) {
+      type = 'shows'; path = 'shows'; label = 'Shows';
+    } else if (_isCulturalType) {
+      type = 'exhibitions'; path = 'exhibitions'; label = 'Exhibitions';
+    } else {
+      type = ''; path = ''; label = '';
+    }
+
+    if (type.isNotEmpty) setState(() => _loadingNestedItems = true);
+    try {
+      // Kick requests off in parallel, then await — they're independent.
+      final detailsFuture = PlaceDetailsService.getPlaceDetails(_place.id);
+      final itemsFuture = type.isNotEmpty
+          ? _PlaceDetailApi.fetchNestedItems(_place.id, path)
+          : Future.value(const <Map<String, dynamic>>[]);
+      final artifactsFuture = _isCulturalType
+          ? _PlaceDetailApi.fetchNestedItems(_place.id, 'artifacts')
+          : Future.value(const <Map<String, dynamic>>[]);
+      final details = await detailsFuture;
+      final items = await itemsFuture;
+      final artifacts = await artifactsFuture;
+
+      List<String> imagesAt(List<dynamic> saved, int index) {
+        if (index >= saved.length) return const [];
+        final entry = saved[index];
+        if (entry is Map<String, dynamic>) {
+          return List<String>.from(
+              (entry['images'] as List<dynamic>?) ?? const []);
+        }
+        return const [];
+      }
+
+      if (type.isNotEmpty) {
+        final saved = (details?[type] as List<dynamic>?) ?? const [];
+        if (mounted) {
+          setState(() {
+            _nestedItemsType = type;
+            _nestedItemsLabel = label;
+            _nestedItems = items;
+            _nestedItemImages =
+                List.generate(items.length, (i) => imagesAt(saved, i));
+          });
+        }
+      }
+
+      if (_isCulturalType) {
+        final savedArtifacts =
+            (details?['artifacts'] as List<dynamic>?) ?? const [];
+        if (mounted) {
+          setState(() {
+            _artifactItems = artifacts;
+            _artifactItemImages = List.generate(
+                artifacts.length, (i) => imagesAt(savedArtifacts, i));
+          });
+        }
+      }
+
+      final paymentIds = List<String>.from(
+          (details?['paymentMethods'] as List<dynamic>?) ?? const []);
+      if (paymentIds.isNotEmpty) {
+        final all = await PaymentMethodsService.getActive();
+        final matched = all.where((m) => paymentIds.contains(m.id)).toList();
+        if (mounted) setState(() => _acceptedPaymentMethods = matched);
+      }
+    } catch (_) {
+      // Nice-to-have sections — fail silently, just don't render them.
+    } finally {
+      if (type.isNotEmpty && mounted) {
+        setState(() => _loadingNestedItems = false);
+      }
+    }
+  }
+
+  // NOTE: AuthScreen always pushAndRemoveUntil's to LandingPage on a
+  // successful sign-in (see auth_screen.dart _navigateToLanding) — it never
+  // returns control to whoever pushed it. So a logged-out tourist tapping
+  // "Book Now" can't be seamlessly carried through to BookingScreen; the
+  // honest UX is to ask them to sign in first and come back to this place.
+  Future<void> _startBooking() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      final shouldSignIn = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: _P.deepNavy,
+          title: const Text('Sign in required',
+              style: TextStyle(color: Colors.white)),
+          content: const Text(
+            'You need an account to request a booking. Sign in (or create one), then come back to this place to continue.',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel',
+                  style: TextStyle(color: Colors.white54)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: _P.aquaBright),
+              onPressed: () => Navigator.pop(context, true),
+              child:
+                  const Text('Sign In', style: TextStyle(color: _P.deepNavy)),
+            ),
+          ],
+        ),
+      );
+      if (shouldSignIn == true && mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AuthScreen(isLogin: true)),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BookingScreen(
+          place: _place,
+          city: widget.city,
+          serviceOptions: _nestedItems,
+          serviceLabel: _nestedItemsLabel,
+          serviceType: _nestedItemsType,
+          paymentMethods: _acceptedPaymentMethods,
+        ),
+      ),
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -260,8 +483,11 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                       _buildDescriptionSection(),
                       _buildImageGallery(),
                       if (_featureTags.isNotEmpty) _buildFeaturesSection(),
+                      _buildNestedItemsSection(),
+                      _buildArtifactsSection(),
                       _buildContactSection(),
                       _buildBookingInfoSection(),
+                      _buildPaymentMethodsSection(),
                       _buildCategoriesSection(),
                       _buildActionButtons(),
                       const SizedBox(height: 48),
@@ -951,6 +1177,163 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     );
   }
 
+  // ── Nested services (rooms / menu / shows) ───────────────────────────────
+  Widget _buildNestedItemsSection() {
+    if (_loadingNestedItems) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        child: Center(
+            child: CircularProgressIndicator(
+                color: _P.aquaBright, strokeWidth: 2)),
+      );
+    }
+    if (_nestedItems.isEmpty) return const SizedBox.shrink();
+
+    final query = _nestedItemsSearchQuery.trim().toLowerCase();
+    final visibleEntries = _nestedItems.asMap().entries.where((e) =>
+        query.isEmpty ||
+        ((e.value['name'] as String?)?.toLowerCase().contains(query) ?? false));
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(_nestedItemsLabel,
+              style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white)),
+          const SizedBox(height: 12),
+          if (_nestedItems.length > 3) ...[
+            TextField(
+              onChanged: (v) => setState(() => _nestedItemsSearchQuery = v),
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'Search ${_nestedItemsLabel.toLowerCase()}…',
+                hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                prefixIcon: const Icon(Icons.search_rounded,
+                    color: Colors.white38, size: 16),
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.06),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (visibleEntries.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text('No ${_nestedItemsLabel.toLowerCase()} match "$query".',
+                  style: const TextStyle(color: Colors.white38, fontSize: 13)),
+            )
+          else
+            ...visibleEntries.map((e) {
+              final images = e.key < _nestedItemImages.length
+                  ? _nestedItemImages[e.key]
+                  : const <String>[];
+              return _NestedServiceCard(
+                item: e.value,
+                images: images,
+                itemType: _nestedItemsType,
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  // ── Artifacts (cultural places only — display case, not bookable) ────────
+  Widget _buildArtifactsSection() {
+    if (_artifactItems.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Artifacts',
+              style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white)),
+          const SizedBox(height: 12),
+          ..._artifactItems.asMap().entries.map((e) {
+            final images = e.key < _artifactItemImages.length
+                ? _artifactItemImages[e.key]
+                : const <String>[];
+            return _NestedServiceCard(
+              item: e.value,
+              images: images,
+              itemType: 'artifacts',
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  // ── Accepted payment methods ──────────────────────────────────────────────
+  Widget _buildPaymentMethodsSection() {
+    if (_acceptedPaymentMethods.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Accepted Payment Methods',
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white)),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: _acceptedPaymentMethods.map((m) {
+              return Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: _P.aqua.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _P.aqua.withValues(alpha: 0.40)),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (m.icon != null && m.icon!.isNotEmpty) ...[
+                    Text(m.icon!, style: const TextStyle(fontSize: 14)),
+                    const SizedBox(width: 6),
+                  ] else ...[
+                    const Icon(Icons.payments_outlined,
+                        size: 14, color: _P.aquaBright),
+                    const SizedBox(width: 6),
+                  ],
+                  Text(m.name,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600)),
+                ]),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Contact ───────────────────────────────────────────────────────────────
   Widget _buildContactSection() {
     final contact = _place.contact;
@@ -1192,14 +1575,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           if (_place.isBookable)
             Expanded(
               child: ElevatedButton.icon(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Booking feature coming soon!'),
-                      backgroundColor: Color(0xFF006064),
-                    ),
-                  );
-                },
+                onPressed: _startBooking,
                 icon: const Icon(Icons.calendar_today, size: 20),
                 label: const Text(
                   'Book Now',
@@ -1263,6 +1639,130 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               padding: const EdgeInsets.all(12),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _NestedServiceCard
+//
+// One row per room / menu item / show, with a horizontal strip of its
+// Firestore-stored photos (see PlaceDetailsService, written by the admin
+// place wizard's Step 6 dialogs). Falls back gracefully with no photo strip
+// when none have been uploaded for that item yet.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _NestedServiceCard extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final List<String> images;
+  final String itemType;
+
+  const _NestedServiceCard({
+    required this.item,
+    required this.images,
+    required this.itemType,
+  });
+
+  String get _title => item['name'] as String? ?? 'Untitled';
+
+  String? get _subtitle {
+    switch (itemType) {
+      case 'rooms':
+        final price = item['basePrice'];
+        final currency = item['currency'] as String? ?? '';
+        final type = item['roomType'] as String? ?? '';
+        final parts = <String>[
+          if (type.isNotEmpty) type,
+          if (price != null) '$currency $price',
+        ];
+        return parts.isEmpty ? null : parts.join(' · ');
+      case 'menuItems':
+        final price = item['price'];
+        final currency = item['currency'] as String? ?? '';
+        final mealType = item['mealType'] as String? ?? '';
+        final parts = <String>[
+          if (mealType.isNotEmpty) mealType,
+          if (price != null) '$currency $price',
+        ];
+        return parts.isEmpty ? null : parts.join(' · ');
+      case 'shows':
+        final category = item['category'] as String? ?? '';
+        final duration = item['durationMinutes'];
+        final parts = <String>[
+          if (category.isNotEmpty) category,
+          if (duration != null) '$duration min',
+        ];
+        return parts.isEmpty ? null : parts.join(' · ');
+      case 'exhibitions':
+      case 'artifacts':
+        final desc = item['description'] as String?;
+        return (desc != null && desc.isNotEmpty) ? desc : null;
+      default:
+        return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _P.aqua.withValues(alpha: 0.20)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(_title,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600)),
+          if (_subtitle != null) ...[
+            const SizedBox(height: 4),
+            Text(_subtitle!,
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.65),
+                    fontSize: 12)),
+          ],
+          if (images.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 72,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: images.length,
+                itemBuilder: (context, i) {
+                  final safeUrl = _safeImageUrl(images[i]);
+                  return Container(
+                    width: 96,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: _P.aqua.withValues(alpha: 0.25)),
+                    ),
+                    clipBehavior: Clip.hardEdge,
+                    child: safeUrl != null
+                        ? Image.network(safeUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                                color: _P.deepBlue,
+                                child: const Icon(Icons.broken_image_outlined,
+                                    color: Colors.white24, size: 20)))
+                        : Container(
+                            color: _P.deepBlue,
+                            child: const Icon(Icons.broken_image_outlined,
+                                color: Colors.white24, size: 20)),
+                  );
+                },
+              ),
+            ),
+          ],
         ],
       ),
     );

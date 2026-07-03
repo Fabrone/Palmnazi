@@ -12,6 +12,9 @@ import 'package:palmnazi/admin/admin_shared_widgets.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/place_model.dart';
+import 'package:palmnazi/models/payment_method_model.dart';
+import 'package:palmnazi/services/payment_methods_service.dart';
+import 'package:palmnazi/services/place_details_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AdminPlaceWizardScreen
@@ -40,12 +43,19 @@ class AdminPlaceWizardScreen extends StatefulWidget {
   final List<CategoryModel> categories;
   final PlaceModel? existingPlace;
 
+  /// Pre-selects Step 1's Resort City dropdown. Used when the wizard is
+  /// opened from within a city-filtered Places view (e.g. "View Places" on
+  /// a resort city card) so the admin doesn't have to re-pick the city they
+  /// just drilled into. Ignored when [existingPlace] is set.
+  final String? initialCityId;
+
   const AdminPlaceWizardScreen({
     super.key,
     required this.apiService,
     required this.cities,
     required this.categories,
     this.existingPlace,
+    this.initialCityId,
   });
 
   @override
@@ -93,6 +103,37 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   final List<Map<String, dynamic>> _menuSections = [];
   final List<Map<String, dynamic>> _menuItems = [];
   final List<Map<String, dynamic>> _shows = [];
+  final List<Map<String, dynamic>> _exhibitions = [];
+  final List<Map<String, dynamic>> _artifacts = [];
+
+  // ── Step 6 — Nested-item images (index-aligned with the lists above) ──────
+  //
+  // These are NOT sent to the /api/places nested-data endpoints (the backend
+  // doesn't accept them yet). They're persisted separately to Firestore via
+  // PlaceDetailsService, keyed by placeId, after the item lists above are
+  // saved to the API. See _saveStep6 and PlaceDetailsService.
+  final List<List<String>> _roomImages = [];
+  final List<List<String>> _menuItemImages = [];
+  final List<List<String>> _showImages = [];
+  final List<List<String>> _exhibitionImages = [];
+  final List<List<String>> _artifactImages = [];
+  bool _loadingNestedData = false;
+
+  // Number of leading entries in each nested list that were loaded from the
+  // API on edit (already persisted). _saveStep6 only POSTs entries beyond
+  // this count — the create endpoints are additive, not upserts, so
+  // re-sending already-persisted items would duplicate them on the backend.
+  int _existingRoomCount = 0;
+  int _existingMenuItemCount = 0;
+  int _existingShowCount = 0;
+  int _existingExhibitionCount = 0;
+  int _existingArtifactCount = 0;
+
+  // Quick filter over whichever nested-item list is currently shown (only
+  // one editor is visible per place category, so this is shared). Purely
+  // client-side — these lists are already fully loaded in memory.
+  final _nestedSearchCtrl = TextEditingController();
+  String _nestedSearchQuery = '';
 
   // ── Step 7 — Media
   final _coverImageCtrl = TextEditingController();
@@ -132,6 +173,15 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   String _currency = 'KES';
   String _cancellationPolicy = 'flexible';
 
+  // ── Step 8 — Accepted payment methods ──────────────────────────────────
+  //
+  // Selection is saved to Firestore (Place_details.paymentMethods) rather
+  // than the /api/places booking PATCH — see PlaceDetailsService. The
+  // catalogue itself is managed on the Payment Methods admin screen.
+  List<PaymentMethodModel> _paymentMethods = [];
+  final Set<String> _selectedPaymentMethodIds = {};
+  bool _loadingPaymentMethods = false;
+
   // ── Step 9 — Categories (multi-select)
   final Set<String> _selectedCategoryIds = {};
 
@@ -156,7 +206,11 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     super.initState();
     if (widget.existingPlace != null) {
       _preloadFromExisting(widget.existingPlace!);
+      _loadExistingNestedData();
+    } else if (widget.initialCityId != null) {
+      _selectedCityId = widget.initialCityId;
     }
+    _loadPaymentMethods();
 
     // Capture FirebaseStorage.instance synchronously here — NOT inside any
     // async function — so it resolves within the plain Dart execution context.
@@ -318,6 +372,120 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     debugPrint('[Wizard/infer] Completed steps for existing place: $_completedSteps');
   }
 
+  // ── Reload nested data (rooms / menu items / shows) when editing ─────────
+  //
+  // The wizard previously left the Step 6 editors blank even when editing a
+  // place that already has rooms/menu items/shows, since those were only
+  // ever built up in-session. This fetches the existing items from the API
+  // and zips in any images already saved to Firestore (PlaceDetailsService),
+  // matched by list position.
+  Future<void> _loadExistingNestedData() async {
+    final place = widget.existingPlace;
+    if (place == null) return;
+
+    setState(() => _loadingNestedData = true);
+    try {
+      final details = await PlaceDetailsService.getPlaceDetails(place.id);
+
+      List<String> imagesAt(List<dynamic> saved, int index) {
+        if (index >= saved.length) return <String>[];
+        final entry = saved[index];
+        if (entry is Map<String, dynamic>) {
+          return List<String>.from((entry['images'] as List<dynamic>?) ?? const []);
+        }
+        return <String>[];
+      }
+
+      if (_isAccommodationType) {
+        final rooms = await widget.apiService.getRooms(place.id);
+        final savedRooms = (details?['rooms'] as List<dynamic>?) ?? const [];
+        if (mounted) {
+          setState(() {
+            _rooms..clear()..addAll(rooms);
+            _roomImages..clear()..addAll(
+                List.generate(rooms.length, (i) => imagesAt(savedRooms, i)));
+            _existingRoomCount = rooms.length;
+          });
+        }
+      } else if (_isDiningType) {
+        final items = await widget.apiService.getMenuItems(place.id);
+        final savedItems = (details?['menuItems'] as List<dynamic>?) ?? const [];
+        if (mounted) {
+          setState(() {
+            _menuItems..clear()..addAll(items);
+            _menuItemImages..clear()..addAll(
+                List.generate(items.length, (i) => imagesAt(savedItems, i)));
+            _existingMenuItemCount = items.length;
+          });
+        }
+      } else if (_isEntertainmentType) {
+        final shows = await widget.apiService.getShows(place.id);
+        final savedShows = (details?['shows'] as List<dynamic>?) ?? const [];
+        if (mounted) {
+          setState(() {
+            _shows..clear()..addAll(shows);
+            _showImages..clear()..addAll(
+                List.generate(shows.length, (i) => imagesAt(savedShows, i)));
+            _existingShowCount = shows.length;
+          });
+        }
+      } else if (_isCulturalType) {
+        final exhibitions = await widget.apiService.getExhibitions(place.id);
+        final artifacts = await widget.apiService.getArtifacts(place.id);
+        final savedExhibitions =
+            (details?['exhibitions'] as List<dynamic>?) ?? const [];
+        final savedArtifacts =
+            (details?['artifacts'] as List<dynamic>?) ?? const [];
+        if (mounted) {
+          setState(() {
+            _exhibitions..clear()..addAll(exhibitions);
+            _exhibitionImages..clear()..addAll(List.generate(
+                exhibitions.length, (i) => imagesAt(savedExhibitions, i)));
+            _existingExhibitionCount = exhibitions.length;
+            _artifacts..clear()..addAll(artifacts);
+            _artifactImages..clear()..addAll(List.generate(
+                artifacts.length, (i) => imagesAt(savedArtifacts, i)));
+            _existingArtifactCount = artifacts.length;
+          });
+        }
+      }
+    } catch (e, st) {
+      debugPrint('⚠️ [Wizard/LoadNestedData] Failed to load existing nested data: $e\n$st');
+    } finally {
+      if (mounted) setState(() => _loadingNestedData = false);
+    }
+  }
+
+  // ── Load the payment-methods catalogue for Step 8 ─────────────────────────
+  //
+  // Fetches the active PaymentMethods (Firestore) and, when editing, the
+  // ids this place already accepts from Place_details.paymentMethods.
+  Future<void> _loadPaymentMethods() async {
+    setState(() => _loadingPaymentMethods = true);
+    try {
+      final methods = await PaymentMethodsService.getActive();
+      List<String> selected = const [];
+      final existingId = widget.existingPlace?.id;
+      if (existingId != null) {
+        final details = await PlaceDetailsService.getPlaceDetails(existingId);
+        selected = List<String>.from(
+            (details?['paymentMethods'] as List<dynamic>?) ?? const []);
+      }
+      if (mounted) {
+        setState(() {
+          _paymentMethods = methods;
+          _selectedPaymentMethodIds
+            ..clear()
+            ..addAll(selected);
+        });
+      }
+    } catch (e, st) {
+      debugPrint('⚠️ [Wizard/LoadPaymentMethods] Failed: $e\n$st');
+    } finally {
+      if (mounted) setState(() => _loadingPaymentMethods = false);
+    }
+  }
+
   // ── Maps validation "missing" field names → wizard step indices ──────────
   //
   // Used to highlight which progress-bar segments are invalid after the
@@ -377,6 +545,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     _checkInCtrl.dispose(); _checkOutCtrl.dispose(); _starRatingCtrl.dispose();
     _amenitiesCtrl.dispose(); _cuisineCtrl.dispose(); _seatingCapCtrl.dispose();
     _openingHoursCtrl.dispose(); _minPriceCtrl.dispose(); _maxPriceCtrl.dispose();
+    _nestedSearchCtrl.dispose();
     for (final c in _imageUrlCtrls) { c.dispose(); }
     // _galleryBytes / _galleryUploading / _galleryProgress are plain lists —
     // no extra dispose needed; they GC with the state.
@@ -413,7 +582,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     if (_isAccommodationType) return 'Rooms';
     if (_isDiningType) return 'Menu';
     if (_isEntertainmentType) return 'Shows';
-    if (_isCulturalType) return 'Exhibitions';
+    if (_isCulturalType) return 'Exhibitions & Artifacts';
     return 'Details';
   }
 
@@ -568,6 +737,145 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       }
     }
   }
+
+  // ── Nested-item image upload (rooms / menu items / shows dialogs) ────────
+  //
+  // Uploads one image to Storage under place-nested-media/{slug}/{itemType}/
+  // and appends the resulting URL to [images] via [setSt] (the dialog's own
+  // StatefulBuilder setState). These images are NOT sent to the /api/places
+  // nested-data endpoints — see PlaceDetailsService for where they end up.
+  Future<void> _pickAndUploadNestedImage(
+    String itemType,
+    List<String> images,
+    void Function(void Function()) setSt,
+  ) async {
+    final storage = _storage;
+    if (storage == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text(
+              'Firebase Storage is unavailable. Check Firebase initialisation.'),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      return;
+    }
+
+    final result = await FilePicker.pickFiles(type: FileType.image, withData: true);
+    if (result == null || result.files.isEmpty) return;
+
+    final file = result.files.single;
+    final bytes = file.bytes;
+    if (bytes == null) return;
+
+    final ext = (file.extension ?? 'jpg').toLowerCase();
+    final contentType = _mimeFor(ext);
+    final nameSlug = _nameSlug();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final storagePath = 'place-nested-media/$nameSlug/$itemType/$ts.$ext';
+
+    try {
+      final ref = storage.ref(storagePath);
+      await ref.putData(bytes, SettableMetadata(contentType: contentType));
+      final url = await ref.getDownloadURL();
+      setSt(() => images.add(url));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Image upload failed: $e'),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  /// Thumbnail row + "Add Photo" button used inside the room/menu-item/show
+  /// add-dialogs. [uploading] and [onUploadingChanged] live in the caller's
+  /// dialog state so the spinner reflects that specific dialog's upload.
+  Widget _buildNestedImagePicker({
+    required String itemType,
+    required List<String> images,
+    required bool uploading,
+    required void Function(void Function()) setSt,
+    required void Function(bool) onUploadingChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Photos', style: TextStyle(color: Colors.white54, fontSize: 12)),
+        const SizedBox(height: 6),
+        if (images.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: images.asMap().entries.map((e) {
+                final safeUrl = _safeImageUrl(e.value);
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: safeUrl != null
+                          ? Image.network(safeUrl,
+                              width: 56, height: 56, fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => _nestedImageBrokenTile())
+                          : _nestedImageBrokenTile(),
+                    ),
+                    Positioned(
+                      top: -6,
+                      right: -6,
+                      child: GestureDetector(
+                        onTap: () => setSt(() => images.removeAt(e.key)),
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: const BoxDecoration(
+                              color: Colors.black87, shape: BoxShape.circle),
+                          child: const Icon(Icons.close_rounded,
+                              size: 14, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
+            ),
+          ),
+        OutlinedButton.icon(
+          onPressed: uploading
+              ? null
+              : () async {
+                  onUploadingChanged(true);
+                  await _pickAndUploadNestedImage(itemType, images, setSt);
+                  onUploadingChanged(false);
+                },
+          icon: uploading
+              ? const SizedBox(
+                  width: 14, height: 14,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Color(0xFF14FFEC)))
+              : const Icon(Icons.add_photo_alternate_outlined,
+                  size: 15, color: Color(0xFF14FFEC)),
+          label: Text(uploading ? 'Uploading…' : 'Add Photo',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF14FFEC))),
+          style: OutlinedButton.styleFrom(
+            side: BorderSide(color: const Color(0xFF14FFEC).withValues(alpha: 0.5)),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _nestedImageBrokenTile() => Container(
+        width: 56, height: 56,
+        color: Colors.white12,
+        child: const Icon(Icons.broken_image_rounded, color: Colors.white24, size: 20),
+      );
 
   // ── Gallery slot management (keeps parallel lists in sync) ────────────────
 
@@ -854,31 +1162,142 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     }
   }
 
+  /// Zips an item list with its index-aligned image list into the shape
+  /// PlaceDetailsService persists to Firestore: [{name, images}, ...].
+  List<Map<String, dynamic>> _zipNamesImages(
+      List<Map<String, dynamic>> items, List<List<String>> images) {
+    return List.generate(items.length, (i) => {
+          'name': items[i]['name'],
+          'images': i < images.length ? images[i] : const <String>[],
+        });
+  }
+
+  /// Entries of [items] matching _nestedSearchQuery by name, keeping each
+  /// entry's original index (needed for image lookups and delete/existing
+  /// tracking, which are all positional).
+  Iterable<MapEntry<int, Map<String, dynamic>>> _filteredNestedEntries(
+      List<Map<String, dynamic>> items) {
+    final entries = items.asMap().entries;
+    if (_nestedSearchQuery.trim().isEmpty) return entries;
+    final q = _nestedSearchQuery.toLowerCase();
+    return entries
+        .where((e) => (e.value['name'] as String? ?? '').toLowerCase().contains(q));
+  }
+
+  /// Search box shown above a nested-item list once it has enough entries to
+  /// make filtering worthwhile.
+  Widget _buildNestedSearchField(String hint) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: TextField(
+        controller: _nestedSearchCtrl,
+        onChanged: (v) => setState(() => _nestedSearchQuery = v),
+        style: const TextStyle(color: Colors.white, fontSize: 13),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: const TextStyle(color: Colors.white24, fontSize: 12),
+          prefixIcon: const Icon(Icons.search_rounded, color: Colors.white38, size: 16),
+          suffixIcon: _nestedSearchQuery.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear_rounded, color: Colors.white38, size: 14),
+                  onPressed: () => setState(() {
+                    _nestedSearchCtrl.clear();
+                    _nestedSearchQuery = '';
+                  }),
+                )
+              : null,
+          filled: true,
+          fillColor: const Color(0xFF0D1117),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Colors.white12),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        ),
+      ),
+    );
+  }
+
   Future<void> _saveStep6() async {
     if (_place == null) { debugPrint('⚠️ [Wizard/Step6] Skipped — _place is null'); return; }
     debugPrint('📝 [Wizard/Step6] Saving nested data — placeId=${_place!.id}  type: accommodation=$_isAccommodationType  dining=$_isDiningType  entertainment=$_isEntertainmentType');
-    if (_isAccommodationType && _rooms.isNotEmpty) {
-      debugPrint('   ↳ POSTing ${_rooms.length} room(s)');
-      await widget.apiService.createRooms(_place!.id, _rooms);
-      debugPrint('✅ [Wizard/Step6] Rooms saved');
+
+    // Only the items added since the last successful save are new — the
+    // create endpoints are additive, not upserts, so re-sending
+    // already-persisted items (loaded on edit via _loadExistingNestedData)
+    // would duplicate them on the backend.
+    if (_isAccommodationType) {
+      final newRooms = _rooms.sublist(_existingRoomCount);
+      if (newRooms.isNotEmpty) {
+        debugPrint('   ↳ POSTing ${newRooms.length} room(s)');
+        final created = await widget.apiService.createRooms(_place!.id, newRooms);
+        // Merge server-assigned ids back so a later delete can target them.
+        for (var i = 0; i < created.length && (_existingRoomCount + i) < _rooms.length; i++) {
+          _rooms[_existingRoomCount + i] = created[i];
+        }
+        debugPrint('✅ [Wizard/Step6] Rooms saved');
+      }
+      if (_rooms.isNotEmpty) {
+        await PlaceDetailsService.saveNestedItemImages(_place!.id,
+            rooms: _zipNamesImages(_rooms, _roomImages));
+      }
+      _existingRoomCount = _rooms.length;
     } else if (_isDiningType) {
       if (_menuSections.isNotEmpty) {
         debugPrint('   ↳ POSTing ${_menuSections.length} menu section(s)');
         await widget.apiService.createMenuSections(_place!.id, _menuSections);
         debugPrint('✅ [Wizard/Step6] Menu sections saved');
       }
-      if (_menuItems.isNotEmpty) {
-        debugPrint('   ↳ POSTing ${_menuItems.length} menu item(s)');
-        await widget.apiService.createMenuItems(_place!.id, _menuItems);
+      final newMenuItems = _menuItems.sublist(_existingMenuItemCount);
+      if (newMenuItems.isNotEmpty) {
+        debugPrint('   ↳ POSTing ${newMenuItems.length} menu item(s)');
+        await widget.apiService.createMenuItems(_place!.id, newMenuItems);
         debugPrint('✅ [Wizard/Step6] Menu items saved');
       }
-      if (_menuSections.isEmpty && _menuItems.isEmpty) {
+      if (_menuItems.isNotEmpty) {
+        await PlaceDetailsService.saveNestedItemImages(_place!.id,
+            menuItems: _zipNamesImages(_menuItems, _menuItemImages));
+      }
+      _existingMenuItemCount = _menuItems.length;
+      if (_menuSections.isEmpty && newMenuItems.isEmpty) {
         debugPrint('⏭️ [Wizard/Step6] No menu data to save — skipping');
       }
-    } else if (_isEntertainmentType && _shows.isNotEmpty) {
-      debugPrint('   ↳ POSTing ${_shows.length} show(s)');
-      await widget.apiService.createShows(_place!.id, _shows);
-      debugPrint('✅ [Wizard/Step6] Shows saved');
+    } else if (_isEntertainmentType) {
+      final newShows = _shows.sublist(_existingShowCount);
+      if (newShows.isNotEmpty) {
+        debugPrint('   ↳ POSTing ${newShows.length} show(s)');
+        await widget.apiService.createShows(_place!.id, newShows);
+        debugPrint('✅ [Wizard/Step6] Shows saved');
+      }
+      if (_shows.isNotEmpty) {
+        await PlaceDetailsService.saveNestedItemImages(_place!.id,
+            shows: _zipNamesImages(_shows, _showImages));
+      }
+      _existingShowCount = _shows.length;
+    } else if (_isCulturalType) {
+      final newExhibitions = _exhibitions.sublist(_existingExhibitionCount);
+      if (newExhibitions.isNotEmpty) {
+        debugPrint('   ↳ POSTing ${newExhibitions.length} exhibition(s)');
+        await widget.apiService.createExhibitions(_place!.id, newExhibitions);
+        debugPrint('✅ [Wizard/Step6] Exhibitions saved');
+      }
+      if (_exhibitions.isNotEmpty) {
+        await PlaceDetailsService.saveNestedItemImages(_place!.id,
+            exhibitions: _zipNamesImages(_exhibitions, _exhibitionImages));
+      }
+      _existingExhibitionCount = _exhibitions.length;
+
+      final newArtifacts = _artifacts.sublist(_existingArtifactCount);
+      if (newArtifacts.isNotEmpty) {
+        debugPrint('   ↳ POSTing ${newArtifacts.length} artifact(s)');
+        await widget.apiService.createArtifacts(_place!.id, newArtifacts);
+        debugPrint('✅ [Wizard/Step6] Artifacts saved');
+      }
+      if (_artifacts.isNotEmpty) {
+        await PlaceDetailsService.saveNestedItemImages(_place!.id,
+            artifacts: _zipNamesImages(_artifacts, _artifactImages));
+      }
+      _existingArtifactCount = _artifacts.length;
     } else {
       debugPrint('⏭️ [Wizard/Step6] No nested data to save for this category — skipping');
     }
@@ -924,6 +1343,12 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       },
     });
     debugPrint('✅ [Wizard/Step8] Booking saved — placeId=${_place?.id}  isBookable=${_place?.isBookable}');
+
+    // Accepted payment methods aren't part of the /api/places booking
+    // contract yet — persisted separately to Firestore.
+    await PlaceDetailsService.savePaymentMethods(
+        _place!.id, _selectedPaymentMethodIds.toList());
+    debugPrint('✅ [Wizard/Step8] Payment methods saved — count=${_selectedPaymentMethodIds.length}');
   }
 
   Future<void> _saveStep9() async {
@@ -1494,6 +1919,13 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     if (_isAccommodationType) return _buildRoomsEditor();
     if (_isDiningType) return _buildMenuEditor();
     if (_isEntertainmentType) return _buildShowsEditor();
+    if (_isCulturalType) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _buildExhibitionsEditor(),
+        const SizedBox(height: 24),
+        _buildArtifactsEditor(),
+      ]);
+    }
     return Column(mainAxisSize: MainAxisSize.min, children: [
       Container(
         padding: const EdgeInsets.all(20),
@@ -1531,16 +1963,58 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           ),
         ]),
         const SizedBox(height: 8),
-        if (_rooms.isEmpty)
+        if (_loadingNestedData)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF14FFEC))),
+          )
+        else if (_rooms.isEmpty)
           _EmptyNestedState(label: 'No rooms added yet', onAdd: _showAddRoomDialog)
-        else
-          ..._rooms.asMap().entries.map((e) => _NestedItemRow(
+        else ...[
+          if (_rooms.length > 3) _buildNestedSearchField('Search rooms by name…'),
+          ..._filteredNestedEntries(_rooms).map((e) => _NestedItemRow(
                 title: e.value['name'] as String? ?? 'Room ${e.key + 1}',
                 subtitle: '${e.value['roomType'] ?? ''} · KES ${e.value['basePrice'] ?? 0}',
-                onDelete: () => setState(() => _rooms.removeAt(e.key)),
+                imageCount: e.key < _roomImages.length ? _roomImages[e.key].length : 0,
+                onDelete: () => _deleteRoom(e.key),
               )),
+        ],
       ],
     );
+  }
+
+  /// Removes room [index]. Rooms loaded from the API (index < _existingRoomCount)
+  /// are deleted via the API first so the backend and local list stay in sync;
+  /// rooms only added this session are removed locally without an API call
+  /// since nothing has been POSTed for them yet.
+  Future<void> _deleteRoom(int index) async {
+    final isExisting = index < _existingRoomCount;
+    if (isExisting) {
+      final id = _rooms[index]['id'] as String?;
+      if (id != null) {
+        try {
+          await widget.apiService.deleteRoom(id);
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Failed to delete room: $e'),
+              backgroundColor: Colors.red.shade700,
+              behavior: SnackBarBehavior.floating,
+            ));
+          }
+          return;
+        }
+      }
+    }
+    setState(() {
+      _rooms.removeAt(index);
+      if (index < _roomImages.length) _roomImages.removeAt(index);
+      if (isExisting) _existingRoomCount--;
+    });
+    if (isExisting && _place != null) {
+      await PlaceDetailsService.saveNestedItemImages(_place!.id,
+          rooms: _zipNamesImages(_rooms, _roomImages));
+    }
   }
 
   void _showAddRoomDialog() {
@@ -1548,6 +2022,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     final priceCtrl = TextEditingController();
     final guestsCtrl = TextEditingController(text: '2');
     String roomType = 'DOUBLE';
+    final images = <String>[];
+    bool uploadingImage = false;
 
     showDialog(
       context: context,
@@ -1572,6 +2048,14 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                 keyboardType: TextInputType.number),
             _SimpleField(ctrl: priceCtrl, label: 'Base Price (KES)', hint: '15000',
                 keyboardType: TextInputType.number),
+            const SizedBox(height: 4),
+            _buildNestedImagePicker(
+              itemType: 'rooms',
+              images: images,
+              uploading: uploadingImage,
+              setSt: setSt,
+              onUploadingChanged: (v) => setSt(() => uploadingImage = v),
+            ),
           ])),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
@@ -1592,6 +2076,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                     'currency': 'KES',
                     'sortOrder': _rooms.length + 1,
                   });
+                  _roomImages.add(List<String>.from(images));
                 });
                 Navigator.pop(ctx);
               },
@@ -1617,22 +2102,67 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           ),
         ]),
         const SizedBox(height: 8),
-        if (_menuItems.isEmpty)
+        if (_loadingNestedData)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF14FFEC))),
+          )
+        else if (_menuItems.isEmpty)
           _EmptyNestedState(label: 'No menu items added yet', onAdd: _showAddMenuItemDialog)
-        else
-          ..._menuItems.asMap().entries.map((e) => _NestedItemRow(
+        else ...[
+          if (_menuItems.length > 3) _buildNestedSearchField('Search menu items by name…'),
+          ..._filteredNestedEntries(_menuItems).map((e) => _NestedItemRow(
                 title: e.value['name'] as String? ?? 'Item ${e.key + 1}',
                 subtitle: '${e.value['mealType'] ?? ''} · KES ${e.value['price'] ?? 0}',
-                onDelete: () => setState(() => _menuItems.removeAt(e.key)),
+                imageCount: e.key < _menuItemImages.length ? _menuItemImages[e.key].length : 0,
+                onDelete: () => _deleteMenuItem(e.key),
               )),
+        ],
       ],
     );
+  }
+
+  /// Removes menu item [index]. See _deleteRoom for the existing-vs-new logic.
+  /// Menu items created earlier this session (already POSTed but without a
+  /// known id, since createMenuItems returns void) are removed locally only —
+  /// they'll be visible again as "existing" the next time this place is
+  /// reopened, when _loadExistingNestedData fetches real ids.
+  Future<void> _deleteMenuItem(int index) async {
+    final isExisting = index < _existingMenuItemCount;
+    if (isExisting) {
+      final id = _menuItems[index]['id'] as String?;
+      if (id != null) {
+        try {
+          await widget.apiService.deleteMenuItem(id);
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Failed to delete menu item: $e'),
+              backgroundColor: Colors.red.shade700,
+              behavior: SnackBarBehavior.floating,
+            ));
+          }
+          return;
+        }
+      }
+    }
+    setState(() {
+      _menuItems.removeAt(index);
+      if (index < _menuItemImages.length) _menuItemImages.removeAt(index);
+      if (isExisting) _existingMenuItemCount--;
+    });
+    if (isExisting && _place != null) {
+      await PlaceDetailsService.saveNestedItemImages(_place!.id,
+          menuItems: _zipNamesImages(_menuItems, _menuItemImages));
+    }
   }
 
   void _showAddMenuItemDialog() {
     final nameCtrl = TextEditingController();
     final priceCtrl = TextEditingController();
     String mealType = 'LUNCH';
+    final images = <String>[];
+    bool uploadingImage = false;
 
     showDialog(
       context: context,
@@ -1655,6 +2185,14 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
             const SizedBox(height: 12),
             _SimpleField(ctrl: priceCtrl, label: 'Price (KES)', hint: '1500',
                 keyboardType: TextInputType.number),
+            const SizedBox(height: 4),
+            _buildNestedImagePicker(
+              itemType: 'menu-items',
+              images: images,
+              uploading: uploadingImage,
+              setSt: setSt,
+              onUploadingChanged: (v) => setSt(() => uploadingImage = v),
+            ),
           ])),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
@@ -1671,6 +2209,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                     'isAvailable': true,
                     'sortOrder': _menuItems.length + 1,
                   });
+                  _menuItemImages.add(List<String>.from(images));
                 });
                 Navigator.pop(ctx);
               },
@@ -1689,26 +2228,265 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
             const Expanded(child: Text('Shows / Events',
                 style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600))),
             TextButton.icon(
-              onPressed: () => setState(() => _shows.add({
-                    'name': 'New Show',
-                    'category': 'CONCERT',
-                    'durationMinutes': 90,
-                    'ticketPricing': {'standard': 1000},
-                  })),
+              onPressed: _showAddShowDialog,
               icon: const Icon(Icons.add_rounded, size: 16, color: Color(0xFF14FFEC)),
               label: const Text('Add Show', style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
             ),
           ]),
-          if (_shows.isEmpty)
-            _EmptyNestedState(label: 'No shows added', onAdd: null)
+          if (_loadingNestedData)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF14FFEC))),
+            )
+          else if (_shows.isEmpty)
+            _EmptyNestedState(label: 'No shows added', onAdd: _showAddShowDialog)
           else
             ..._shows.asMap().entries.map((e) => _NestedItemRow(
                   title: e.value['name'] as String? ?? 'Show ${e.key + 1}',
                   subtitle: '${e.value['category'] ?? ''} · ${e.value['durationMinutes']} min',
-                  onDelete: () => setState(() => _shows.removeAt(e.key)),
+                  imageCount: e.key < _showImages.length ? _showImages[e.key].length : 0,
+                  // No delete endpoint exists for shows on the backend — removing
+                  // a show here only clears it locally, so items already POSTed
+                  // this session cannot be un-saved. See createShows/getShows.
+                  onDelete: () => setState(() {
+                    _shows.removeAt(e.key);
+                    if (e.key < _showImages.length) _showImages.removeAt(e.key);
+                    if (e.key < _existingShowCount) _existingShowCount--;
+                  }),
                 )),
         ],
       );
+
+  void _showAddShowDialog() {
+    final nameCtrl = TextEditingController();
+    final durationCtrl = TextEditingController(text: '90');
+    final priceCtrl = TextEditingController(text: '1000');
+    String category = 'CONCERT';
+    final images = <String>[];
+    bool uploadingImage = false;
+
+    showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(builder: (ctx, setSt) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF111827),
+          title: const Text('Add Show', style: TextStyle(color: Colors.white)),
+          content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            _SimpleField(ctrl: nameCtrl, label: 'Show Name', hint: 'Sunset Beach Concert'),
+            const SizedBox(height: 12),
+            const Text('Category', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            const SizedBox(height: 4),
+            _AdminDropdown<String>(
+              value: category,
+              items: ['CONCERT', 'DANCE', 'THEATRE', 'CULTURAL', 'COMEDY', 'FESTIVAL']
+                  .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                  .toList(),
+              onChanged: (v) => setSt(() => category = v ?? 'CONCERT'),
+            ),
+            const SizedBox(height: 12),
+            _SimpleField(ctrl: durationCtrl, label: 'Duration (minutes)', hint: '90',
+                keyboardType: TextInputType.number),
+            _SimpleField(ctrl: priceCtrl, label: 'Standard Ticket Price (KES)', hint: '1000',
+                keyboardType: TextInputType.number),
+            const SizedBox(height: 4),
+            _buildNestedImagePicker(
+              itemType: 'shows',
+              images: images,
+              uploading: uploadingImage,
+              setSt: setSt,
+              onUploadingChanged: (v) => setSt(() => uploadingImage = v),
+            ),
+          ])),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2196F3)),
+              onPressed: () {
+                if (nameCtrl.text.trim().isEmpty) return;
+                setState(() {
+                  _shows.add({
+                    'name': nameCtrl.text.trim(),
+                    'category': category,
+                    'durationMinutes': int.tryParse(durationCtrl.text) ?? 90,
+                    'ticketPricing': {'standard': double.tryParse(priceCtrl.text) ?? 1000},
+                  });
+                  _showImages.add(List<String>.from(images));
+                });
+                Navigator.pop(ctx);
+              },
+              child: const Text('Add Show'),
+            ),
+          ],
+        );
+      }),
+    );
+  }
+
+  Widget _buildExhibitionsEditor() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Expanded(child: Text('Exhibitions',
+                style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600))),
+            TextButton.icon(
+              onPressed: _showAddExhibitionDialog,
+              icon: const Icon(Icons.add_rounded, size: 16, color: Color(0xFF14FFEC)),
+              label: const Text('Add Exhibition', style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+            ),
+          ]),
+          if (_loadingNestedData)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF14FFEC))),
+            )
+          else if (_exhibitions.isEmpty)
+            _EmptyNestedState(label: 'No exhibitions added', onAdd: _showAddExhibitionDialog)
+          else
+            ..._exhibitions.asMap().entries.map((e) => _NestedItemRow(
+                  title: e.value['name'] as String? ?? 'Exhibition ${e.key + 1}',
+                  subtitle: (e.value['description'] as String?) ?? '',
+                  imageCount: e.key < _exhibitionImages.length ? _exhibitionImages[e.key].length : 0,
+                  // No delete endpoint exists for exhibitions on the backend —
+                  // removing one here only clears it locally.
+                  onDelete: () => setState(() {
+                    _exhibitions.removeAt(e.key);
+                    if (e.key < _exhibitionImages.length) _exhibitionImages.removeAt(e.key);
+                    if (e.key < _existingExhibitionCount) _existingExhibitionCount--;
+                  }),
+                )),
+        ],
+      );
+
+  void _showAddExhibitionDialog() {
+    final nameCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final images = <String>[];
+    bool uploadingImage = false;
+
+    showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(builder: (ctx, setSt) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF111827),
+          title: const Text('Add Exhibition', style: TextStyle(color: Colors.white)),
+          content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            _SimpleField(ctrl: nameCtrl, label: 'Exhibition Name', hint: 'Ancient Swahili Trade Routes'),
+            const SizedBox(height: 12),
+            _SimpleField(ctrl: descCtrl, label: 'Description', hint: 'Short description (optional)'),
+            const SizedBox(height: 4),
+            _buildNestedImagePicker(
+              itemType: 'exhibitions',
+              images: images,
+              uploading: uploadingImage,
+              setSt: setSt,
+              onUploadingChanged: (v) => setSt(() => uploadingImage = v),
+            ),
+          ])),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2196F3)),
+              onPressed: () {
+                if (nameCtrl.text.trim().isEmpty) return;
+                setState(() {
+                  _exhibitions.add({
+                    'name': nameCtrl.text.trim(),
+                    if (descCtrl.text.trim().isNotEmpty) 'description': descCtrl.text.trim(),
+                  });
+                  _exhibitionImages.add(List<String>.from(images));
+                });
+                Navigator.pop(ctx);
+              },
+              child: const Text('Add Exhibition'),
+            ),
+          ],
+        );
+      }),
+    );
+  }
+
+  Widget _buildArtifactsEditor() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Expanded(child: Text('Artifacts',
+                style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600))),
+            TextButton.icon(
+              onPressed: _showAddArtifactDialog,
+              icon: const Icon(Icons.add_rounded, size: 16, color: Color(0xFF14FFEC)),
+              label: const Text('Add Artifact', style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+            ),
+          ]),
+          if (_loadingNestedData)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF14FFEC))),
+            )
+          else if (_artifacts.isEmpty)
+            _EmptyNestedState(label: 'No artifacts added', onAdd: _showAddArtifactDialog)
+          else
+            ..._artifacts.asMap().entries.map((e) => _NestedItemRow(
+                  title: e.value['name'] as String? ?? 'Artifact ${e.key + 1}',
+                  subtitle: (e.value['description'] as String?) ?? '',
+                  imageCount: e.key < _artifactImages.length ? _artifactImages[e.key].length : 0,
+                  // No delete endpoint exists for artifacts on the backend —
+                  // removing one here only clears it locally.
+                  onDelete: () => setState(() {
+                    _artifacts.removeAt(e.key);
+                    if (e.key < _artifactImages.length) _artifactImages.removeAt(e.key);
+                    if (e.key < _existingArtifactCount) _existingArtifactCount--;
+                  }),
+                )),
+        ],
+      );
+
+  void _showAddArtifactDialog() {
+    final nameCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final images = <String>[];
+    bool uploadingImage = false;
+
+    showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(builder: (ctx, setSt) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF111827),
+          title: const Text('Add Artifact', style: TextStyle(color: Colors.white)),
+          content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            _SimpleField(ctrl: nameCtrl, label: 'Artifact Name', hint: 'Carved Ivory Tusk'),
+            const SizedBox(height: 12),
+            _SimpleField(ctrl: descCtrl, label: 'Description / Origin', hint: 'Short description (optional)'),
+            const SizedBox(height: 4),
+            _buildNestedImagePicker(
+              itemType: 'artifacts',
+              images: images,
+              uploading: uploadingImage,
+              setSt: setSt,
+              onUploadingChanged: (v) => setSt(() => uploadingImage = v),
+            ),
+          ])),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2196F3)),
+              onPressed: () {
+                if (nameCtrl.text.trim().isEmpty) return;
+                setState(() {
+                  _artifacts.add({
+                    'name': nameCtrl.text.trim(),
+                    if (descCtrl.text.trim().isNotEmpty) 'description': descCtrl.text.trim(),
+                  });
+                  _artifactImages.add(List<String>.from(images));
+                });
+                Navigator.pop(ctx);
+              },
+              child: const Text('Add Artifact'),
+            ),
+          ],
+        );
+      }),
+    );
+  }
 
   // ── Step 7 — Media ────────────────────────────────────────────────────────
   Widget _buildStep7() {
@@ -1888,8 +2666,75 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
               onChanged: (v) => setState(() => _cancellationPolicy = v ?? 'flexible'),
             ),
           ],
+          const Divider(color: Colors.white12, height: 24),
+          _buildPaymentMethodsSection(),
         ],
       );
+
+  // ── Accepted payment methods ──────────────────────────────────────────────
+  Widget _buildPaymentMethodsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Accepted Payment Methods',
+            style: TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 1)),
+        const SizedBox(height: 4),
+        const Text(
+            'Which payment options can customers use at this place?',
+            style: TextStyle(color: Colors.white38, fontSize: 11)),
+        const SizedBox(height: 10),
+        if (_loadingPaymentMethods)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF14FFEC))),
+          )
+        else if (_paymentMethods.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: const Text(
+                'No payment methods configured yet. Add some from the Payment Methods section of the admin dashboard.',
+                style: TextStyle(color: Colors.white38, fontSize: 12)),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _paymentMethods.map((m) {
+              final selected = _selectedPaymentMethodIds.contains(m.id);
+              return FilterChip(
+                label: Text(m.name),
+                avatar: m.icon != null && m.icon!.isNotEmpty
+                    ? Text(m.icon!, style: const TextStyle(fontSize: 12))
+                    : null,
+                selected: selected,
+                onSelected: (v) => setState(() {
+                  if (v) {
+                    _selectedPaymentMethodIds.add(m.id);
+                  } else {
+                    _selectedPaymentMethodIds.remove(m.id);
+                  }
+                }),
+                selectedColor: const Color(0xFF14FFEC).withValues(alpha: 0.2),
+                checkmarkColor: const Color(0xFF14FFEC),
+                backgroundColor: const Color(0xFF0D1117),
+                labelStyle: TextStyle(
+                    color: selected ? const Color(0xFF14FFEC) : Colors.white70,
+                    fontSize: 12),
+                side: BorderSide(
+                    color: selected
+                        ? const Color(0xFF14FFEC).withValues(alpha: 0.5)
+                        : Colors.white12),
+              );
+            }).toList(),
+          ),
+      ],
+    );
+  }
 
   // ── Step 9 — Categories multi-select ─────────────────────────────────────
   Widget _buildStep9() {
@@ -2826,8 +3671,14 @@ class _SimpleField extends StatelessWidget {
 class _NestedItemRow extends StatelessWidget {
   final String title;
   final String subtitle;
-  final VoidCallback onDelete;
-  const _NestedItemRow({required this.title, required this.subtitle, required this.onDelete});
+  final int imageCount;
+  final VoidCallback? onDelete;
+  const _NestedItemRow({
+    required this.title,
+    required this.subtitle,
+    this.imageCount = 0,
+    required this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) => Container(
@@ -2845,8 +3696,24 @@ class _NestedItemRow extends StatelessWidget {
             Text(title, style: const TextStyle(color: Colors.white70, fontSize: 13)),
             Text(subtitle, style: const TextStyle(color: Colors.white38, fontSize: 11)),
           ])),
+          if (imageCount > 0) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFF14FFEC).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.photo_rounded, size: 11, color: Color(0xFF14FFEC)),
+                const SizedBox(width: 3),
+                Text('$imageCount', style: const TextStyle(color: Color(0xFF14FFEC), fontSize: 10)),
+              ]),
+            ),
+            const SizedBox(width: 8),
+          ],
           IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 16),
+            icon: Icon(Icons.delete_outline_rounded,
+                color: onDelete != null ? Colors.redAccent : Colors.white12, size: 16),
             onPressed: onDelete,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),

@@ -28,39 +28,11 @@
 // tokens on cross-origin requests without the header being stripped.
 
 const functions  = require('firebase-functions');
+const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin      = require('firebase-admin');
-const nodemailer = require('nodemailer');
 
 admin.initializeApp();
 const db = admin.firestore();
-
-// ── Email transport ───────────────────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-  host:   process.env.EMAIL_HOST,
-  port:   Number(process.env.EMAIL_PORT ?? 465),
-  secure: process.env.EMAIL_SECURE !== 'false',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
-
-const FROM = `"${process.env.EMAIL_FROM_NAME ?? 'App'}" <${process.env.EMAIL_USER}>`;
-
-// ── OTP config ────────────────────────────────────────────────────────────────
-const OTP_DIGITS    = 6;
-const OTP_TTL_MS    = 10 * 60 * 1000;
-const MAX_ATTEMPTS  = 5;
-const RATE_LIMIT_MS = 60 * 1000;
-
-function generateOtp() {
-  return String(Math.floor(Math.random() * Math.pow(10, OTP_DIGITS)))
-    .padStart(OTP_DIGITS, '0');
-}
-
-function otpDocRef(uid) {
-  return db.collection('_mfa_otps').doc(uid);
-}
 
 // ── CORS helper ───────────────────────────────────────────────────────────────
 //
@@ -154,22 +126,148 @@ function sendError(res, httpsError) {
   });
 }
 
-// ── SEND OTP ──────────────────────────────────────────────────────────────────
-exports.mfaSendOtp = functions.https.onRequest(async (req, res) => {
+// ── Booking push notifications ───────────────────────────────────────────────
+//
+// These are Firestore-triggered (v2 API) rather than onRequest — nothing on
+// the client calls them directly. The Flutter app only writes fcmToken onto
+// each user's Users/{uid} doc (see push_notification_service.dart); sending
+// the actual push has to happen server-side since a client can't push to
+// another user's device.
+//
+// STATUS_LABELS mirrors BookingModel.statusLabel on the Dart side — keep
+// them in sync if that ever changes.
+const STATUS_LABELS = {
+  pending:   'Pending',
+  confirmed: 'Confirmed',
+  cancelled: 'Cancelled',
+  completed: 'Completed',
+};
+
+async function sendPushToUid(uid, notification, data) {
+  if (!uid) return;
+  const userDoc = await db.collection('Users').doc(uid).get();
+  const token = userDoc.data()?.fcmToken;
+  if (!token) return;
+  try {
+    await admin.messaging().send({ token, notification, data });
+  } catch (err) {
+    console.error(`sendPushToUid: failed for uid=${uid} —`, err.code, err.message);
+  }
+}
+
+async function sendPushToAdmins(notification, data) {
+  const snap = await db.collection('Users').where('role', 'in', ['Admin', 'MainAdmin']).get();
+  const tokens = snap.docs.map((d) => d.data().fcmToken).filter(Boolean);
+  if (tokens.length === 0) return;
+  try {
+    await admin.messaging().sendEachForMulticast({ tokens, notification, data });
+  } catch (err) {
+    console.error('sendPushToAdmins: failed —', err.code, err.message);
+  }
+}
+
+// New booking → notify every Admin/MainAdmin with an fcmToken on file.
+exports.onBookingCreated = onDocumentCreated('Bookings/{bookingId}', async (event) => {
+  const booking = event.data.data();
+  const serviceNote = booking.serviceName ? ` — ${booking.serviceName}` : '';
+  await sendPushToAdmins(
+    {
+      title: '📅 New Booking Request',
+      body: `${booking.userEmail || 'A tourist'} requested "${booking.placeName}"${serviceNote}.`,
+    },
+    { type: 'booking_created', bookingId: event.params.bookingId },
+  );
+});
+
+// Booking status change → notify the tourist who made it.
+exports.onBookingStatusChanged = onDocumentUpdated('Bookings/{bookingId}', async (event) => {
+  const before = event.data.before.data();
+  const after  = event.data.after.data();
+  if (before.status === after.status) return;
+
+  const label = STATUS_LABELS[after.status] || after.status;
+  await sendPushToUid(
+    after.firebaseUid,
+    {
+      title: `Booking ${label}`,
+      body: `Your booking for "${after.placeName}" is now ${label.toLowerCase()}.`,
+    },
+    { type: 'booking_status_changed', bookingId: event.params.bookingId, status: after.status },
+  );
+});
+
+// ── M-Pesa (Daraja) — SANDBOX STK Push ───────────────────────────────────────
+//
+// Sandbox only. Safaricom's test environment uses a fixed test shortcode
+// (174379) and shared test passkey unless MPESA_SHORTCODE/MPESA_PASSKEY
+// override them, and its own test harness "presses the PIN" server-side a
+// few seconds after the push — no real phone or money is involved.
+//
+// Flow:
+//   1. Client calls initiateMpesaPayment with a client-generated
+//      transactionRef (a pre-allocated Transactions/{id} doc id), a phone
+//      number, and an amount. This function gets a Daraja OAuth token and
+//      sends the STK push, then writes Transactions/{transactionRef} with
+//      status 'pending'.
+//   2. Safaricom calls mpesaCallback (public URL, no auth — it can't send our
+//      Firebase ID tokens) once the customer enters their PIN or cancels.
+//      That function resolves the matching Transaction to 'success'/'failed'.
+//   3. The client streams Transactions/{transactionRef} directly from
+//      Firestore to see the result the moment it lands. queryMpesaStatus is a
+//      manual fallback for when Safaricom's sandbox callback is delayed/lost.
+//
+// Credentials live in functions/.env (MPESA_*) — same protection level as the
+// existing EMAIL_* vars above. See that file for what needs to be filled in.
+const MPESA_BASE_URL = 'https://sandbox.safaricom.co.ke';
+
+function mpesaTimestamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return (
+    d.getFullYear().toString() +
+    pad(d.getMonth() + 1) +
+    pad(d.getDate()) +
+    pad(d.getHours()) +
+    pad(d.getMinutes()) +
+    pad(d.getSeconds())
+  );
+}
+
+async function getMpesaAccessToken() {
+  const key = process.env.MPESA_CONSUMER_KEY;
+  const secret = process.env.MPESA_CONSUMER_SECRET;
+  if (!key || !secret) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'M-Pesa is not configured on the server (missing MPESA_CONSUMER_KEY/MPESA_CONSUMER_SECRET).',
+    );
+  }
+  const auth = Buffer.from(`${key}:${secret}`).toString('base64');
+  const resp = await fetch(`${MPESA_BASE_URL}/oauth/v1/generate?grant_type=client_credentials`, {
+    headers: { Authorization: `Basic ${auth}` },
+  });
+  if (!resp.ok) {
+    console.error('getMpesaAccessToken: OAuth failed —', resp.status, await resp.text());
+    throw new functions.https.HttpsError('unavailable', 'Could not reach M-Pesa. Please try again shortly.');
+  }
+  const json = await resp.json();
+  return json.access_token;
+}
+
+// Normalises common Kenyan phone formats to Safaricom's expected 2547XXXXXXXX
+// / 2541XXXXXXXX shape (handles 07.., +2547.., 2547.., 7...).
+function normalizeMpesaPhone(raw) {
+  let phone = (raw || '').toString().replace(/[\s+-]/g, '');
+  if (phone.startsWith('0')) phone = `254${phone.slice(1)}`;
+  else if (phone.startsWith('7') || phone.startsWith('1')) phone = `254${phone}`;
+  return phone;
+}
+
+exports.initiateMpesaPayment = functions.https.onRequest(async (req, res) => {
   applyCors(req, res);
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
 
-  // Respond to the browser CORS preflight immediately.
-  if (req.method === 'OPTIONS') {
-    res.status(204).send('');
-    return;
-  }
-
-  if (req.method !== 'POST') {
-    res.status(405).send('Method Not Allowed');
-    return;
-  }
-
-  // ── Auth ────────────────────────────────────────────────────────────────────
   let decoded;
   try {
     decoded = await requireAuth(req);
@@ -178,93 +276,173 @@ exports.mfaSendOtp = functions.https.onRequest(async (req, res) => {
     return;
   }
 
-  const uid = decoded.uid;
+  const data = req.body?.data ?? req.body ?? {};
+  const transactionRef = (data.transactionRef ?? '').toString().trim();
+  const phoneNumber = normalizeMpesaPhone(data.phoneNumber);
+  const amount = Math.round(Number(data.amount));
+  const placeName = (data.placeName ?? 'Palmnazi Booking').toString();
 
-  // The Dart client sends: {"data": {"email": "..."}}
-  // Unpack the "data" wrapper added by _callFunctionViaHttp.
-  const data  = req.body?.data ?? req.body ?? {};
-  const email = (data.email ?? decoded.email ?? '').trim().toLowerCase();
-
-  if (!email) {
-    sendError(res, new functions.https.HttpsError('invalid-argument', 'email is required.'));
+  if (!transactionRef) {
+    sendError(res, new functions.https.HttpsError('invalid-argument', 'transactionRef is required.'));
+    return;
+  }
+  if (!/^254(7|1)\d{8}$/.test(phoneNumber)) {
+    sendError(res, new functions.https.HttpsError(
+      'invalid-argument',
+      'Enter a valid Safaricom number, e.g. 0712345678.',
+    ));
+    return;
+  }
+  if (!Number.isFinite(amount) || amount < 1) {
+    sendError(res, new functions.https.HttpsError('invalid-argument', 'Invalid amount.'));
     return;
   }
 
-  // ── Rate limiting ────────────────────────────────────────────────────────────
-  const existing = await otpDocRef(uid).get();
-  if (existing.exists) {
-    const sentAt = existing.data().sentAt?.toMillis() ?? 0;
-    if (Date.now() - sentAt < RATE_LIMIT_MS) {
+  const shortcode = process.env.MPESA_SHORTCODE || '174379';
+  const passkey = process.env.MPESA_PASSKEY;
+  const callbackUrl = process.env.MPESA_CALLBACK_URL;
+  if (!passkey || !callbackUrl) {
+    sendError(res, new functions.https.HttpsError(
+      'failed-precondition',
+      'M-Pesa is not fully configured on the server (missing MPESA_PASSKEY/MPESA_CALLBACK_URL).',
+    ));
+    return;
+  }
+
+  try {
+    const token = await getMpesaAccessToken();
+    const timestamp = mpesaTimestamp();
+    const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64');
+
+    const stkResp = await fetch(`${MPESA_BASE_URL}/mpesa/stkpush/v1/processrequest`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        BusinessShortCode: shortcode,
+        Password: password,
+        Timestamp: timestamp,
+        TransactionType: 'CustomerPayBillOnline',
+        Amount: amount,
+        PartyA: phoneNumber,
+        PartyB: shortcode,
+        PhoneNumber: phoneNumber,
+        CallBackURL: callbackUrl,
+        AccountReference: transactionRef.slice(0, 12),
+        TransactionDesc: placeName.slice(0, 13) || 'Booking',
+      }),
+    });
+
+    const stkJson = await stkResp.json();
+
+    if (!stkResp.ok || stkJson.ResponseCode !== '0') {
+      console.error('initiateMpesaPayment: STK push rejected —', stkJson);
+      await db.collection('Transactions').doc(transactionRef).set({
+        firebaseUid: decoded.uid,
+        method: 'mpesa',
+        phoneNumber,
+        amount,
+        currency: 'KES',
+        status: 'failed',
+        resultDesc: stkJson.errorMessage || stkJson.ResponseDescription || 'STK push failed.',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
       sendError(res, new functions.https.HttpsError(
-        'resource-exhausted',
-        'Please wait before requesting another code.',
+        'internal',
+        stkJson.errorMessage || stkJson.ResponseDescription || 'M-Pesa rejected the request.',
       ));
       return;
     }
-  }
 
-  // ── Generate and store OTP ────────────────────────────────────────────────
-  const otp = generateOtp();
-  await otpDocRef(uid).set({
-    otp,
-    email,
-    sentAt:    admin.firestore.FieldValue.serverTimestamp(),
-    expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + OTP_TTL_MS),
-    attempts:  0,
-  });
-
-  // ── Send email ────────────────────────────────────────────────────────────
-  try {
-    await transporter.sendMail({
-      from:    FROM,
-      to:      email,
-      subject: 'Your verification code',
-      text:    `Your one-time code is: ${otp}\n\nIt expires in 10 minutes. Do not share it.`,
-      html: `
-        <div style="font-family:sans-serif;max-width:480px;margin:auto">
-          <h2 style="color:#1E3A5F">Email Verification</h2>
-          <p>Use the code below to enable two-factor authentication.</p>
-          <div style="
-            font-size:36px;letter-spacing:12px;font-weight:bold;
-            background:#f4f4f4;border-radius:8px;padding:20px;
-            text-align:center;color:#1E3A5F;margin:24px 0
-          ">${otp}</div>
-          <p style="color:#888;font-size:13px">
-            This code expires in <strong>10 minutes</strong>.<br>
-            If you did not request this, you can safely ignore this email.
-          </p>
-        </div>
-      `,
+    await db.collection('Transactions').doc(transactionRef).set({
+      firebaseUid: decoded.uid,
+      method: 'mpesa',
+      phoneNumber,
+      amount,
+      currency: 'KES',
+      checkoutRequestId: stkJson.CheckoutRequestID,
+      merchantRequestId: stkJson.MerchantRequestID,
+      status: 'pending',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-  } catch (mailErr) {
-    console.error('mfaSendOtp: sendMail failed —', mailErr);
-    // Clean up the stored OTP so the user can retry without rate-limit penalty.
-    await otpDocRef(uid).delete().catch(() => {});
-    sendError(res, new functions.https.HttpsError(
-      'internal',
-      'Failed to send email. Please try again.',
-    ));
-    return;
-  }
 
-  console.log(`mfaSendOtp: OTP sent to ${email} for uid ${uid}`);
-  // Success shape: {"result": {...}} matches the Dart parser's expectations.
-  res.status(200).json({ result: { message: 'OTP sent.' } });
+    console.log(`initiateMpesaPayment: STK push sent — ref=${transactionRef} checkoutRequestId=${stkJson.CheckoutRequestID}`);
+    res.status(200).json({
+      result: {
+        checkoutRequestId: stkJson.CheckoutRequestID,
+        merchantRequestId: stkJson.MerchantRequestID,
+      },
+    });
+  } catch (err) {
+    if (err instanceof functions.https.HttpsError) {
+      sendError(res, err);
+      return;
+    }
+    console.error('initiateMpesaPayment: unexpected error —', err);
+    sendError(res, new functions.https.HttpsError('internal', 'Could not initiate M-Pesa payment.'));
+  }
 });
 
-// ── VERIFY OTP ────────────────────────────────────────────────────────────────
-exports.mfaVerifyOtp = functions.https.onRequest(async (req, res) => {
+// Public callback — Safaricom posts here once the customer enters their PIN
+// (or cancels/times out). No auth is possible here: Safaricom can't send our
+// Firebase ID tokens. The CheckoutRequestID it echoes back is the only link
+// to a Transactions doc, so this only ever updates an already-known doc —
+// it never creates bookings or moves anything on its own authority.
+exports.mpesaCallback = functions.https.onRequest(async (req, res) => {
+  const stkCallback = req.body?.Body?.stkCallback;
+  if (!stkCallback) {
+    res.status(200).json({ ResultCode: 0, ResultDesc: 'Ignored — no stkCallback body.' });
+    return;
+  }
+
+  const { CheckoutRequestID, ResultCode, ResultDesc } = stkCallback;
+  console.log(`mpesaCallback: CheckoutRequestID=${CheckoutRequestID} ResultCode=${ResultCode}`);
+
+  const snap = await db.collection('Transactions')
+    .where('checkoutRequestId', '==', CheckoutRequestID)
+    .limit(1)
+    .get();
+
+  if (snap.empty) {
+    console.warn(`mpesaCallback: no Transaction found for CheckoutRequestID=${CheckoutRequestID}`);
+    res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
+    return;
+  }
+
+  const doc = snap.docs[0];
+  const update = {
+    resultDesc: ResultDesc,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  if (ResultCode === 0) {
+    const items = stkCallback.CallbackMetadata?.Item ?? [];
+    const findVal = (name) => items.find((i) => i.Name === name)?.Value;
+    update.status = 'success';
+    update.mpesaReceiptNumber = findVal('MpesaReceiptNumber');
+    update.amountConfirmed = findVal('Amount');
+    update.transactionDate = findVal('TransactionDate');
+  } else {
+    update.status = 'failed';
+  }
+
+  await doc.ref.set(update, { merge: true });
+
+  // Ack Safaricom so it stops retrying the callback.
+  res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
+});
+
+// Manual fallback for when Safaricom's async callback is delayed or lost
+// (occasionally flaky on the sandbox) — lets the client actively ask
+// "did it happen yet?" via the STK Push Query API.
+exports.queryMpesaStatus = functions.https.onRequest(async (req, res) => {
   applyCors(req, res);
-
-  if (req.method === 'OPTIONS') {
-    res.status(204).send('');
-    return;
-  }
-
-  if (req.method !== 'POST') {
-    res.status(405).send('Method Not Allowed');
-    return;
-  }
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  if (req.method !== 'POST') { res.status(405).send('Method Not Allowed'); return; }
 
   let decoded;
   try {
@@ -274,100 +452,67 @@ exports.mfaVerifyOtp = functions.https.onRequest(async (req, res) => {
     return;
   }
 
-  const uid  = decoded.uid;
   const data = req.body?.data ?? req.body ?? {};
-  const otp  = (data.otp ?? '').trim();
-
-  if (!otp || otp.length !== OTP_DIGITS) {
-    sendError(res, new functions.https.HttpsError('invalid-argument', 'Invalid OTP format.'));
+  const transactionRef = (data.transactionRef ?? '').toString().trim();
+  if (!transactionRef) {
+    sendError(res, new functions.https.HttpsError('invalid-argument', 'transactionRef is required.'));
     return;
   }
 
-  const docRef  = otpDocRef(uid);
-  const docSnap = await docRef.get();
-
-  if (!docSnap.exists) {
-    sendError(res, new functions.https.HttpsError(
-      'not-found',
-      'No pending OTP. Please request a new code.',
-    ));
+  const txRef = db.collection('Transactions').doc(transactionRef);
+  const txDoc = await txRef.get();
+  if (!txDoc.exists || txDoc.data().firebaseUid !== decoded.uid) {
+    sendError(res, new functions.https.HttpsError('not-found', 'Transaction not found.'));
     return;
   }
 
-  const stored = docSnap.data();
-
-  if (stored.expiresAt.toMillis() < Date.now()) {
-    await docRef.delete();
-    sendError(res, new functions.https.HttpsError(
-      'deadline-exceeded',
-      'Code has expired. Please request a new one.',
-    ));
+  const tx = txDoc.data();
+  if (tx.status !== 'pending') {
+    res.status(200).json({
+      result: { status: tx.status, mpesaReceiptNumber: tx.mpesaReceiptNumber ?? null },
+    });
     return;
   }
 
-  if ((stored.attempts ?? 0) >= MAX_ATTEMPTS) {
-    await docRef.delete();
-    sendError(res, new functions.https.HttpsError(
-      'resource-exhausted',
-      'Too many incorrect attempts. Please request a new code.',
-    ));
-    return;
-  }
-
-  if (stored.otp !== otp) {
-    await docRef.update({ attempts: admin.firestore.FieldValue.increment(1) });
-    const remaining = MAX_ATTEMPTS - (stored.attempts + 1);
-    sendError(res, new functions.https.HttpsError(
-      'invalid-argument',
-      `Incorrect code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`,
-    ));
-    return;
-  }
-
-  // Success
-  const batch = db.batch();
-  batch.delete(docRef);
-  batch.set(
-    db.collection('Users').doc(uid),
-    { mfaEnabled: true, mfaEnabledAt: admin.firestore.FieldValue.serverTimestamp() },
-    { merge: true },
-  );
-  await batch.commit();
-
-  console.log(`mfaVerifyOtp: MFA enabled for uid ${uid}`);
-  res.status(200).json({ result: { message: 'MFA enabled.', mfaEnabled: true } });
-});
-
-// ── DISABLE MFA ───────────────────────────────────────────────────────────────
-exports.mfaDisable = functions.https.onRequest(async (req, res) => {
-  applyCors(req, res);
-
-  if (req.method === 'OPTIONS') {
-    res.status(204).send('');
-    return;
-  }
-
-  if (req.method !== 'POST') {
-    res.status(405).send('Method Not Allowed');
-    return;
-  }
-
-  let decoded;
   try {
-    decoded = await requireAuth(req);
+    const shortcode = process.env.MPESA_SHORTCODE || '174379';
+    const passkey = process.env.MPESA_PASSKEY;
+    const token = await getMpesaAccessToken();
+    const timestamp = mpesaTimestamp();
+    const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64');
+
+    const queryResp = await fetch(`${MPESA_BASE_URL}/mpesa/stkpushquery/v1/query`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        BusinessShortCode: shortcode,
+        Password: password,
+        Timestamp: timestamp,
+        CheckoutRequestID: tx.checkoutRequestId,
+      }),
+    });
+    const queryJson = await queryResp.json();
+
+    if (String(queryJson.ResultCode) === '0') {
+      await txRef.set({
+        status: 'success',
+        resultDesc: queryJson.ResultDesc,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      res.status(200).json({ result: { status: 'success' } });
+    } else if (queryJson.ResultCode !== undefined) {
+      await txRef.set({
+        status: 'failed',
+        resultDesc: queryJson.ResultDesc,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      res.status(200).json({ result: { status: 'failed', resultDesc: queryJson.ResultDesc } });
+    } else {
+      // Still awaiting the customer's PIN entry.
+      res.status(200).json({ result: { status: 'pending' } });
+    }
   } catch (err) {
-    sendError(res, err);
-    return;
+    console.error('queryMpesaStatus: error —', err);
+    res.status(200).json({ result: { status: 'pending' } });
   }
-
-  const uid = decoded.uid;
-
-  await db.collection('Users').doc(uid).set(
-    { mfaEnabled: false, mfaDisabledAt: admin.firestore.FieldValue.serverTimestamp() },
-    { merge: true },
-  );
-  await otpDocRef(uid).delete().catch(() => {});
-
-  console.log(`mfaDisable: MFA disabled for uid ${uid}`);
-  res.status(200).json({ result: { message: 'MFA disabled.', mfaEnabled: false } });
 });

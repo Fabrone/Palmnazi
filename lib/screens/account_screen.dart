@@ -8,6 +8,7 @@ import 'package:logger/logger.dart';
 import 'package:palmnazi/models/admin_request_model.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/landing_page.dart';
+import 'package:palmnazi/screens/my_bookings_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/services/firebase_mfa_service.dart';
 import 'package:palmnazi/services/firebase_service.dart';
@@ -813,6 +814,7 @@ class _AccountScreenState extends State<AccountScreen> {
             )
           else ...[
             SliverToBoxAdapter(child: _profileCard()),
+            SliverToBoxAdapter(child: _bookingsSection()),
             SliverToBoxAdapter(child: _securitySection()),
             if (_isTourist || (_adminRequest != null && !_isAdmin))
               SliverToBoxAdapter(child: _adminAccessSection()),
@@ -944,6 +946,38 @@ class _AccountScreenState extends State<AccountScreen> {
               ]),
             ],
           ),
+        ),
+      );
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Bookings section
+  // ─────────────────────────────────────────────────────────────────────────
+  Widget _bookingsSection() => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(left: 4, bottom: 14),
+              child: Text('BOOKINGS',
+                  style: TextStyle(color: RC.textMute, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.4)),
+            ),
+            Container(
+              decoration: _cardDecoration(),
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                leading: _iconCircle(Icons.calendar_month_rounded, RC.teal),
+                title: const Text('My Bookings',
+                    style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
+                subtitle: const Text('View and manage your booking requests',
+                    style: TextStyle(color: RC.textMute, fontSize: 12)),
+                trailing: const Icon(Icons.chevron_right_rounded, color: RC.textMute),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const MyBookingsScreen()),
+                ),
+              ),
+            ),
+          ],
         ),
       );
 

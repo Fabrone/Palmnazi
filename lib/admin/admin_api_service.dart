@@ -145,6 +145,26 @@ class AdminApiException implements Exception {
 // ─────────────────────────────────────────────────────────────────────────────
 class AdminApiService {
 
+  // ── In-memory cache (cities / category tree) ─────────────────────────────
+  //
+  // The admin dashboard rebuilds AdminResortCitiesScreen/AdminCategoriesScreen/
+  // AdminPlacesScreen from scratch on every tab switch (no IndexedStack keeps
+  // them alive), so each one re-fetches its own copy of the full cities list
+  // and category tree. Both change rarely, so a short TTL cache here avoids a
+  // redundant round trip every time the admin flips tabs. Only the
+  // no-filter/default query is cached — filtered queries (e.g. isActive
+  // toggles) always hit the network. Mutations clear the cache immediately so
+  // a create/update/delete is reflected on the very next read.
+  static const _cacheTtl = Duration(seconds: 60);
+
+  List<CityModel>? _allCitiesCache;
+  DateTime? _allCitiesCachedAt;
+  List<CategoryModel>? _categoryTreeCache;
+  DateTime? _categoryTreeCachedAt;
+
+  bool _isFresh(DateTime? cachedAt) =>
+      cachedAt != null && DateTime.now().difference(cachedAt) < _cacheTtl;
+
   // ── Response unwrapping helpers ──────────────────────────────────────────
 
   Map<String, dynamic> _unwrapObject(
@@ -212,15 +232,25 @@ class AdminApiService {
   // ══════════════════════════════════════════════════════════════════════════
 
   Future<List<CityModel>> getCities({Map<String, String>? filters}) async {
+    final useCache = filters == null || filters.isEmpty;
+    if (useCache && _isFresh(_allCitiesCachedAt)) {
+      _adminLog.d('🏙️  [AdminApiService] GET cities  →  serving ${_allCitiesCache!.length} from cache');
+      return _allCitiesCache!;
+    }
     _adminLog.i('🏙️  [AdminApiService] GET cities  filters=$filters');
     final response = await ApiClient.authGetWithParams(
       _Ep.cities,
       queryParams: filters,
     );
     final list = _unwrapList(response, 'GET', _Ep.cities);
-    return list
+    final cities = list
         .map((e) => CityModel.fromJson(e as Map<String, dynamic>))
         .toList();
+    if (useCache) {
+      _allCitiesCache = cities;
+      _allCitiesCachedAt = DateTime.now();
+    }
+    return cities;
   }
 
   Future<CityModel> getCityById(String id) async {
@@ -232,18 +262,23 @@ class AdminApiService {
   Future<CityModel> createCity(Map<String, dynamic> payload) async {
     _adminLog.i('➕ [AdminApiService] POST createCity  payload=$payload');
     final response = await ApiClient.authPost(_Ep.cities, body: payload);
-    return CityModel.fromJson(_unwrapObject(response, 'POST', _Ep.cities));
+    final city = CityModel.fromJson(_unwrapObject(response, 'POST', _Ep.cities));
+    _allCitiesCache = null;
+    return city;
   }
 
   Future<CityModel> updateCity(String id, Map<String, dynamic> payload) async {
     final ep = _Ep.cityById(id);
     final response = await ApiClient.authPut(ep, body: payload);
-    return CityModel.fromJson(_unwrapObject(response, 'PUT', ep));
+    final city = CityModel.fromJson(_unwrapObject(response, 'PUT', ep));
+    _allCitiesCache = null;
+    return city;
   }
 
   Future<void> deleteCity(String id) async {
     final ep = _Ep.cityById(id);
     _unwrapDelete(await ApiClient.authDelete(ep), 'DELETE', ep);
+    _allCitiesCache = null;
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -272,15 +307,24 @@ class AdminApiService {
   }
 
   Future<List<CategoryModel>> getCategoryTree() async {
+    if (_isFresh(_categoryTreeCachedAt)) {
+      _adminLog.d('📂 [AdminApiService] getCategoryTree  →  serving ${_categoryTreeCache!.length} from cache');
+      return _categoryTreeCache!;
+    }
     final all = await getCategories(includeChildren: true);
-    return all.where((c) => c.isRoot).toList();
+    final roots = all.where((c) => c.isRoot).toList();
+    _categoryTreeCache = roots;
+    _categoryTreeCachedAt = DateTime.now();
+    return roots;
   }
 
   Future<CategoryModel> createCategory(Map<String, dynamic> payload) async {
     _adminLog.i('➕ [AdminApiService] POST createCategory  payload=$payload');
     final response = await ApiClient.authPost(_Ep.categories, body: payload);
-    return CategoryModel.fromJson(
+    final category = CategoryModel.fromJson(
         _unwrapObject(response, 'POST', _Ep.categories));
+    _categoryTreeCache = null;
+    return category;
   }
 
   Future<CategoryModel> createSubcategory(
@@ -288,8 +332,10 @@ class AdminApiService {
     _adminLog.i('➕ [AdminApiService] POST createSubcategory  parentId=$parentId');
     final merged = {...payload, 'parentId': parentId};
     final response = await ApiClient.authPost(_Ep.categories, body: merged);
-    return CategoryModel.fromJson(
+    final category = CategoryModel.fromJson(
         _unwrapObject(response, 'POST', _Ep.categories));
+    _categoryTreeCache = null;
+    return category;
   }
 
   Future<CategoryModel> updateCategory(
@@ -297,13 +343,16 @@ class AdminApiService {
     _adminLog.i('✏️  [AdminApiService] PUT updateCategory  id=$id');
     final ep = _Ep.categoryById(id);
     final response = await ApiClient.authPut(ep, body: payload);
-    return CategoryModel.fromJson(_unwrapObject(response, 'PUT', ep));
+    final category = CategoryModel.fromJson(_unwrapObject(response, 'PUT', ep));
+    _categoryTreeCache = null;
+    return category;
   }
 
   Future<void> deleteCategory(String id, {bool cascade = false}) async {
     final ep = _Ep.deleteCategory(id, cascade: cascade);
     _adminLog.i('🗑️  [AdminApiService] DELETE category  id=$id  cascade=$cascade');
     _unwrapDelete(await ApiClient.authDelete(ep), 'DELETE', ep);
+    _categoryTreeCache = null;
   }
 
   // ══════════════════════════════════════════════════════════════════════════

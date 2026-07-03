@@ -6,12 +6,14 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'package:palmnazi/main.dart' show emailLinkResultNotifier;
+import 'package:palmnazi/models/city_details_model.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/account_screen.dart';
 import 'package:palmnazi/screens/resort_city_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/services/city_details_service.dart';
 import 'package:palmnazi/services/firebase_service.dart';
 import 'package:palmnazi/admin/admin_dashboard.dart';
 
@@ -535,9 +537,17 @@ class _LandingPageState extends State<LandingPage>
     });
     try {
       final cities = await _LandingApi.fetchCities();
+      // Best-effort — if City_details can't be read, cities still show in
+      // whatever order the API returned them in.
+      Map<String, CityDetailsModel> details = const {};
+      try {
+        details = await CityDetailsService.getAll();
+      } catch (_) {}
+      final sorted = CityDetailsService.sortByDetails(
+          cities, details, (c) => c.id, (c) => c.name);
       if (mounted) {
         setState(() {
-          _cities = cities;
+          _cities = sorted;
           _citiesLoading = false;
         });
         _revealCtrl.forward(from: 0);

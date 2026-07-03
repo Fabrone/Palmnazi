@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dart format *)",
+      "Bash(flutter analyze *)",
+      "Bash(node -c index.js)",
+      "WebFetch(domain:developer.safaricom.co.ke)",
+      "WebSearch",
+      "WebFetch(domain:mpesa-docs.vercel.app)",
+      "WebFetch(domain:medium.com)",
+      "Bash(firebase deploy *)",
+      "Bash(timeout 15 node -e \"require\\('./index.js'\\); console.log\\('loaded OK'\\);\")",
+      "Bash(firebase --version)",
+      "Bash(FUNCTIONS_DISCOVERY_TIMEOUT=30 firebase deploy --only functions)",
+      "Bash(FUNCTIONS_DISCOVERY_TIMEOUT=30 firebase deploy --only functions:initiateMpesaPayment,functions:mpesaCallback,functions:queryMpesaStatus)"
+    ]
+  }
+}
