@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:logger/logger.dart';
+import 'package:palmnazi/admin/admin_dashboard.dart';
 import 'package:palmnazi/models/admin_request_model.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/landing_page.dart';
@@ -1348,6 +1349,55 @@ class _AccountScreenState extends State<AccountScreen> {
                 ),
               ),
             ),
+            if (_effectiveRole == 'Admin') ...[
+              const SizedBox(height: 10),
+              Container(
+                decoration: _cardDecoration(),
+                child: ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                  leading: _iconCircle(Icons.storefront_outlined, RC.teal),
+                  title: const Text('Place Admin Panel',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500)),
+                  subtitle: const Text(
+                      'Manage bookings, queries and details for your place',
+                      style: TextStyle(color: RC.textMute, fontSize: 12)),
+                  trailing: const Icon(Icons.chevron_right_rounded,
+                      color: RC.textMute),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const AdminDashboard()),
+                  ),
+                ),
+              ),
+            ],
+            if (_effectiveRole == 'MainAdmin') ...[
+              const SizedBox(height: 10),
+              Container(
+                decoration: _cardDecoration(),
+                child: ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                  leading:
+                      _iconCircle(Icons.admin_panel_settings_outlined, RC.teal),
+                  title: const Text('Admin Console',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500)),
+                  subtitle: const Text(
+                      'Full system management — places, bookings, reports',
+                      style: TextStyle(color: RC.textMute, fontSize: 12)),
+                  trailing: const Icon(Icons.chevron_right_rounded,
+                      color: RC.textMute),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const AdminDashboard()),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       );

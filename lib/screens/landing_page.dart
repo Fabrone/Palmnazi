@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
+import 'dart:math' as math;
 // ignore: deprecated_member_use, avoid_web_libraries_in_flutter
 import 'dart:html' as html
     show window; // web-only: used for last-section storage
+import 'dart:ui' show ImageFilter;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -35,17 +37,25 @@ final Logger _log = Logger(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Design tokens  (unchanged from v1 — kept in one place)
+// Design tokens  —  gold-forward navy (premium/corporate refresh)
+//
+// Gold is now the dominant CTA/highlight accent; teal is muted to a
+// secondary/tertiary role (small icons, minor accents) rather than the
+// primary brand color it used to be. Backgrounds are left close to their
+// original values since dozens of call sites across this file lean on them
+// and the requested change is one of accent identity, not a full re-theme.
 // ─────────────────────────────────────────────────────────────────────────────
 abstract final class RC {
   static const Color navy = Color(0xFF010C18);
   static const Color deepBlue = Color(0xFF071829);
   static const Color surface = Color(0xFF0B2135);
   static const Color surfaceHi = Color(0xFF0F2840);
-  static const Color teal = Color(0xFF00D4F5);
-  static const Color tealMid = Color(0xFF0097B2);
-  static const Color tealDark = Color(0xFF006580);
-  static const Color gold = Color(0xFFF5A623);
+  static const Color teal = Color(0xFF3FA9C4);
+  static const Color tealMid = Color(0xFF2C8598);
+  static const Color tealDark = Color(0xFF1D5F6E);
+  static const Color gold = Color(0xFFD4AF37);
+  static const Color goldMid = Color(0xFFC49A2C);
+  static const Color goldDark = Color(0xFF8C6D1F);
   static const Color coral = Color(0xFFFF6B6B);
   static const Color emerald = Color(0xFF00C98A);
   static const Color textPri = Color(0xFFFFFFFF);
@@ -54,6 +64,8 @@ abstract final class RC {
 
   static const LinearGradient tealGrad =
       LinearGradient(colors: [teal, tealDark]);
+  static const LinearGradient goldGrad =
+      LinearGradient(colors: [gold, goldMid]);
   static const LinearGradient heroGrad = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
@@ -254,6 +266,19 @@ class _LandingApi {
   }
 
   // ── Search ─────────────────────────────────────────────────────────────────
+  /// The backend's `search` query param only actually filters `/api/places`
+  /// — `/api/cities`, `/api/categories`, and `/api/blog` silently ignore it
+  /// and return every record regardless of what was typed (verified against
+  /// the live API). Since the REST contract is frozen, results are filtered
+  /// locally here so every type genuinely narrows as the user types,
+  /// independent of what the backend actually does with the param.
+  static List<_SearchResult> _filterByQuery(
+      List<_SearchResult> results, String q) {
+    final needle = q.trim().toLowerCase();
+    if (needle.isEmpty) return results;
+    return results.where((r) => r.name.toLowerCase().contains(needle)).toList();
+  }
+
   static Future<List<_SearchResult>> search(String q, _SearchType type) async {
     final enc = Uri.encodeQueryComponent(q.trim());
     switch (type) {
@@ -277,21 +302,23 @@ class _LandingApi {
         } else {
           list = [];
         }
-        return list
-            .whereType<Map<String, dynamic>>()
-            .map(CityModel.fromJson)
-            .where((c) => c.isActive)
-            .map((c) => _SearchResult(
-                  id: c.id,
-                  name: c.name,
-                  subtitle: c.country.isNotEmpty
-                      ? '${c.region.isNotEmpty ? "${c.region}, " : ""}${c.country}'
-                      : null,
-                  imageUrl: c.coverImage.isNotEmpty ? c.coverImage : null,
-                  type: _SearchType.city,
-                  raw: c,
-                ))
-            .toList();
+        return _filterByQuery(
+            list
+                .whereType<Map<String, dynamic>>()
+                .map(CityModel.fromJson)
+                .where((c) => c.isActive)
+                .map((c) => _SearchResult(
+                      id: c.id,
+                      name: c.name,
+                      subtitle: c.country.isNotEmpty
+                          ? '${c.region.isNotEmpty ? "${c.region}, " : ""}${c.country}'
+                          : null,
+                      imageUrl: c.coverImage.isNotEmpty ? c.coverImage : null,
+                      type: _SearchType.city,
+                      raw: c,
+                    ))
+                .toList(),
+            q);
 
       case _SearchType.place:
         final uri = Uri.parse(
@@ -317,20 +344,23 @@ class _LandingApi {
         } else {
           places = (body['places'] as List<dynamic>?) ?? [];
         }
-        return places
-            .whereType<Map<String, dynamic>>()
-            .map((p) => _SearchResult(
-                  id: p['id'] as String? ?? '',
-                  name: p['name'] as String? ?? '',
-                  subtitle:
-                      (p['city'] as Map<String, dynamic>?)?['name'] as String?,
-                  imageUrl: (p['images'] as List<dynamic>?)?.isNotEmpty == true
-                      ? (p['images'] as List<dynamic>).first as String?
-                      : null,
-                  type: _SearchType.place,
-                  raw: p,
-                ))
-            .toList();
+        return _filterByQuery(
+            places
+                .whereType<Map<String, dynamic>>()
+                .map((p) => _SearchResult(
+                      id: p['id'] as String? ?? '',
+                      name: p['name'] as String? ?? '',
+                      subtitle: (p['city'] as Map<String, dynamic>?)?['name']
+                          as String?,
+                      imageUrl:
+                          (p['images'] as List<dynamic>?)?.isNotEmpty == true
+                              ? (p['images'] as List<dynamic>).first as String?
+                              : null,
+                      type: _SearchType.place,
+                      raw: p,
+                    ))
+                .toList(),
+            q);
 
       case _SearchType.category:
         final uri = Uri.parse(ApiEndpoints.url(
@@ -347,17 +377,19 @@ class _LandingApi {
         final list = (body['data'] as List<dynamic>?) ??
             (body['categories'] as List<dynamic>?) ??
             [];
-        return list
-            .whereType<Map<String, dynamic>>()
-            .map(CategoryModel.fromJson)
-            .map((cat) => _SearchResult(
-                  id: cat.id,
-                  name: cat.name,
-                  subtitle: cat.description,
-                  type: _SearchType.category,
-                  raw: cat,
-                ))
-            .toList();
+        return _filterByQuery(
+            list
+                .whereType<Map<String, dynamic>>()
+                .map(CategoryModel.fromJson)
+                .map((cat) => _SearchResult(
+                      id: cat.id,
+                      name: cat.name,
+                      subtitle: cat.description,
+                      type: _SearchType.category,
+                      raw: cat,
+                    ))
+                .toList(),
+            q);
 
       case _SearchType.blog:
         // NOTE: '/api/blog/search' is not a real endpoint (it 404s — the
@@ -374,22 +406,24 @@ class _LandingApi {
         final body = jsonDecode(resp.body) as Map<String, dynamic>;
         // FIX: was List<<dynamic>
         final posts = (body['posts'] as List<dynamic>?) ?? [];
-        return posts
-            .whereType<Map<String, dynamic>>()
-            .map(BlogPost.fromJson)
-            .map((p) => _SearchResult(
-                  id: p.id,
-                  name: p.title,
-                  subtitle: p.categories.isNotEmpty
-                      ? p.categories.join(' · ')
-                      : p.cityName.isNotEmpty
-                          ? p.cityName
-                          : null,
-                  imageUrl: p.featuredImage,
-                  type: _SearchType.blog,
-                  raw: p,
-                ))
-            .toList();
+        return _filterByQuery(
+            posts
+                .whereType<Map<String, dynamic>>()
+                .map(BlogPost.fromJson)
+                .map((p) => _SearchResult(
+                      id: p.id,
+                      name: p.title,
+                      subtitle: p.categories.isNotEmpty
+                          ? p.categories.join(' · ')
+                          : p.cityName.isNotEmpty
+                              ? p.cityName
+                              : null,
+                      imageUrl: p.featuredImage,
+                      type: _SearchType.blog,
+                      raw: p,
+                    ))
+                .toList(),
+            q);
     }
   }
 }
@@ -439,6 +473,15 @@ class _LandingPageState extends State<LandingPage>
   // FIX: was Animation<<Offset>
   late Animation<Offset> _heroSlide;
 
+  // ── Hero ambient motion — slow background zoom + bouncing scroll cue ──────
+  late AnimationController _kenBurnsCtrl;
+  late Animation<double> _kenBurnsScale;
+  late AnimationController _scrollCueCtrl;
+  late Animation<double> _scrollCueOffset;
+
+  // ── Hero search — focus requested from the mobile menu's "Search" item ───
+  final FocusNode _heroSearchFocusNode = FocusNode();
+
   // ── Section reveal ────────────────────────────────────────────────────────
   late AnimationController _revealCtrl;
   late Animation<double> _revealFade;
@@ -462,6 +505,18 @@ class _LandingPageState extends State<LandingPage>
     _revealCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 800));
     _revealFade = CurvedAnimation(parent: _revealCtrl, curve: Curves.easeIn);
+
+    _kenBurnsCtrl =
+        AnimationController(vsync: this, duration: const Duration(seconds: 20))
+          ..repeat(reverse: true);
+    _kenBurnsScale = Tween<double>(begin: 1.0, end: 1.08).animate(
+        CurvedAnimation(parent: _kenBurnsCtrl, curve: Curves.easeInOut));
+
+    _scrollCueCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1200))
+      ..repeat(reverse: true);
+    _scrollCueOffset = Tween<double>(begin: 0.0, end: 8.0).animate(
+        CurvedAnimation(parent: _scrollCueCtrl, curve: Curves.easeInOut));
 
     _heroCtrl.forward();
     _loadAll();
@@ -696,13 +751,15 @@ class _LandingPageState extends State<LandingPage>
     );
   }
 
-  // ── Search dialog ─────────────────────────────────────────────────────────
-  void _openSearchDialog() {
-    showDialog(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.75),
-      builder: (_) => _SearchDialog(onOpenCategories: _openCategoriesOverlay),
-    );
+  // ── Focus the inline hero search field ────────────────────────────────────
+  // Search now lives inline in the hero (not a popup) — reached from the
+  // mobile menu's "Search" item by scrolling back to the top and focusing it.
+  void _focusHeroSearch() {
+    _scrollCtrl.animateTo(0,
+        duration: const Duration(milliseconds: 400), curve: Curves.easeOut);
+    Future.delayed(const Duration(milliseconds: 450), () {
+      if (mounted) _heroSearchFocusNode.requestFocus();
+    });
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -713,6 +770,9 @@ class _LandingPageState extends State<LandingPage>
     _scrollCtrl.dispose();
     _heroCtrl.dispose();
     _revealCtrl.dispose();
+    _kenBurnsCtrl.dispose();
+    _scrollCueCtrl.dispose();
+    _heroSearchFocusNode.dispose();
     super.dispose();
   }
 
@@ -755,36 +815,43 @@ class _LandingPageState extends State<LandingPage>
       top: 0,
       left: 0,
       right: 0,
-      child: Container(
-        decoration: BoxDecoration(
-          color: RC.navy.withValues(alpha: opacity > 0.1 ? 0.92 * opacity : 0),
-          border: Border(
-            bottom:
-                BorderSide(color: RC.teal.withValues(alpha: opacity * 0.18)),
-          ),
-        ),
-        child: SafeArea(
-          bottom: false,
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-                horizontal: isMobile ? 16 : 28, vertical: 10),
-            child: Row(children: [
-              _brand(),
-              const Spacer(),
-              if (!isMobile) ...[
-                _navLink('Destinations', onTap: () => _scrollToKey(_citiesKey)),
-                _navLink(TourismLabels.categoryPlural,
-                    onTap: _openCategoriesOverlay),
-                _navLink('Blog', onTap: () => _scrollToKey(_blogKey)),
-                const SizedBox(width: 8),
-                _signInButton(),
-              ],
-              if (isMobile) ...[
-                _signInButtonMobile(),
-                const SizedBox(width: 4),
-                _menuIconButton(),
-              ],
-            ]),
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10 * opacity, sigmaY: 10 * opacity),
+          child: Container(
+            decoration: BoxDecoration(
+              color:
+                  RC.navy.withValues(alpha: opacity > 0.1 ? 0.92 * opacity : 0),
+              border: Border(
+                bottom: BorderSide(
+                    color: RC.gold.withValues(alpha: opacity * 0.18)),
+              ),
+            ),
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                    horizontal: isMobile ? 16 : 28, vertical: 10),
+                child: Row(children: [
+                  _brand(),
+                  const Spacer(),
+                  if (!isMobile) ...[
+                    _navLink('Destinations',
+                        onTap: () => _scrollToKey(_citiesKey)),
+                    _navLink(TourismLabels.categoryPlural,
+                        onTap: _openCategoriesOverlay),
+                    _navLink('Blog', onTap: () => _scrollToKey(_blogKey)),
+                    const SizedBox(width: 8),
+                    _signInButton(),
+                  ],
+                  if (isMobile) ...[
+                    _signInButtonMobile(),
+                    const SizedBox(width: 4),
+                    _menuIconButton(),
+                  ],
+                ]),
+              ),
+            ),
           ),
         ),
       ),
@@ -955,7 +1022,7 @@ class _LandingPageState extends State<LandingPage>
               }),
               _mobileMenuItem(Icons.search_rounded, 'Search', () {
                 Navigator.pop(context);
-                _openSearchDialog();
+                _focusHeroSearch();
               }),
               const Divider(color: Color(0xFF1A3550), height: 24),
               if (_isLoggedIn)
@@ -1060,7 +1127,7 @@ class _LandingPageState extends State<LandingPage>
         const SizedBox(width: 10),
         ShaderMask(
           shaderCallback: (b) =>
-              const LinearGradient(colors: [RC.teal, Colors.white])
+              const LinearGradient(colors: [RC.gold, Colors.white])
                   .createShader(b),
           child: const Text(
             'PALMNAZI RC',
@@ -1090,32 +1157,40 @@ class _LandingPageState extends State<LandingPage>
         ),
       );
 
-  Widget _navLink(String label, {required VoidCallback onTap}) => TextButton(
-        onPressed: onTap,
-        style: TextButton.styleFrom(
-          foregroundColor: RC.textSec,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        ),
-        child: Text(label, style: const TextStyle(fontSize: 13)),
-      );
+  Widget _navLink(String label, {required VoidCallback onTap}) =>
+      _NavLink(label: label, onTap: onTap);
 
   // ─────────────────────────────────────────────────────────────────────────
   // HERO
   // ─────────────────────────────────────────────────────────────────────────
   Widget _hero(double w) {
+    final viewport = MediaQuery.of(context).size;
     final isMobile = w < 600;
-    final hPad = isMobile ? 20.0 : 48.0;
+    final isTablet = w >= 600 && w < 1024;
+    final isShort = viewport.height < 560;
+    final hPad = isMobile ? 20.0 : (isTablet ? 36.0 : 48.0);
+
+    final heroHeight = isShort
+        ? math.max(440.0, viewport.height * 0.94)
+        : (isMobile ? 700.0 : (isTablet ? 740.0 : 800.0));
 
     return SizedBox(
-      height: isMobile ? 640.0 : 740.0,
+      height: heroHeight,
+      width: double.infinity,
       child: Stack(
         children: [
+          // ── Slow Ken-Burns background zoom ──────────────────────────────
           Positioned.fill(
-            child: Image.asset(
-              'assets/images/homepage.jpg',
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                decoration: const BoxDecoration(gradient: RC.heroGrad),
+            child: AnimatedBuilder(
+              animation: _kenBurnsScale,
+              builder: (_, child) =>
+                  Transform.scale(scale: _kenBurnsScale.value, child: child),
+              child: Image.asset(
+                'assets/images/homepage.jpg',
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  decoration: const BoxDecoration(gradient: RC.heroGrad),
+                ),
               ),
             ),
           ),
@@ -1126,173 +1201,137 @@ class _LandingPageState extends State<LandingPage>
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Color(0x99010C18),
-                    Color(0xBB010C18),
-                    Color(0xEE010C18),
+                    Color(0xB3010C18),
+                    Color(0xCC010C18),
+                    Color(0xF2010C18),
                   ],
-                  stops: [0.0, 0.45, 1.0],
+                  stops: [0.0, 0.5, 1.0],
                 ),
               ),
             ),
           ),
           Positioned.fill(
             child: CustomPaint(
-              painter: _DotGridPainter(color: RC.teal.withValues(alpha: 0.035)),
+              painter: _DotGridPainter(color: RC.gold.withValues(alpha: 0.03)),
             ),
           ),
           Positioned(
               top: -100,
               right: -60,
-              child: _glow(340, RC.teal.withValues(alpha: 0.08))),
+              child: _glow(340, RC.gold.withValues(alpha: 0.09))),
           Positioned(
               bottom: 30,
               left: -50,
-              child: _glow(260, RC.gold.withValues(alpha: 0.06))),
+              child: _glow(260, RC.teal.withValues(alpha: 0.05))),
           Positioned.fill(
-            child: Padding(
-              padding:
-                  EdgeInsets.fromLTRB(hPad, isMobile ? 110 : 140, hPad, 52),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  FadeTransition(
-                    opacity: _heroFade,
-                    child: SlideTransition(
-                      position: _heroSlide,
-                      child: _tagPill(
-                          '✦  Discover Africa\'s Premier Resort Destinations',
-                          RC.teal),
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-                  FadeTransition(
-                    opacity: _heroFade,
-                    child: SlideTransition(
-                      position: _heroSlide,
-                      child: RichText(
-                        text: TextSpan(
-                          style: TextStyle(
-                            fontSize: isMobile ? 38 : 62,
-                            fontWeight: FontWeight.bold,
-                            height: 1.1,
-                            letterSpacing: -0.8,
-                            color: Colors.white,
-                          ),
-                          children: [
-                            const TextSpan(text: 'Find Your\n'),
-                            TextSpan(
-                              text: 'Perfect Escape',
-                              style: TextStyle(
-                                foreground: Paint()
-                                  ..shader = const LinearGradient(
-                                    colors: [RC.teal, RC.gold],
-                                  ).createShader(
-                                      const Rect.fromLTWH(0, 0, 420, 80)),
-                              ),
-                            ),
-                          ],
+            child: SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                    hPad, isMobile ? 90 : 110, hPad, isShort ? 16 : 28),
+                // A SingleChildScrollView is a structural guarantee against
+                // RenderFlex overflow on any extreme aspect ratio (short
+                // landscape phones, resized desktop windows) rather than
+                // relying purely on font/padding tuning to always fit.
+                child: SingleChildScrollView(
+                  physics: const ClampingScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      FadeTransition(
+                        opacity: _heroFade,
+                        child: SlideTransition(
+                          position: _heroSlide,
+                          child: _tagPill(
+                              '✦  Discover Africa\'s Premier Resort Destinations',
+                              RC.gold),
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  FadeTransition(
-                    opacity: _heroFade,
-                    child: Text(
-                      'Explore handpicked resort cities, luxury stays,\nand unforgettable experiences across Africa.',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.80),
-                        fontSize: isMobile ? 15 : 18,
-                        height: 1.65,
-                        shadows: const [
-                          Shadow(color: Colors.black54, blurRadius: 6)
-                        ],
+                      SizedBox(height: isShort ? 14 : 22),
+                      FadeTransition(
+                        opacity: _heroFade,
+                        child: SlideTransition(
+                          position: _heroSlide,
+                          child: RichText(
+                            text: TextSpan(
+                              style: TextStyle(
+                                fontSize: isMobile ? 36 : (isTablet ? 48 : 62),
+                                fontWeight: FontWeight.bold,
+                                height: 1.1,
+                                letterSpacing: -0.8,
+                                color: Colors.white,
+                              ),
+                              children: [
+                                const TextSpan(text: 'Find Your\n'),
+                                TextSpan(
+                                  text: 'Perfect Escape',
+                                  style: TextStyle(
+                                    foreground: Paint()
+                                      ..shader = const LinearGradient(
+                                        colors: [RC.gold, RC.goldMid],
+                                      ).createShader(
+                                          const Rect.fromLTWH(0, 0, 420, 80)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+                      if (!isShort) ...[
+                        const SizedBox(height: 18),
+                        FadeTransition(
+                          opacity: _heroFade,
+                          child: Text(
+                            'Explore handpicked resort cities, luxury stays,\nand unforgettable experiences across Africa.',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.80),
+                              fontSize: isMobile ? 15 : 18,
+                              height: 1.65,
+                              shadows: const [
+                                Shadow(color: Colors.black54, blurRadius: 6)
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                      SizedBox(height: isShort ? 20 : 36),
+                      FadeTransition(
+                        opacity: _heroFade,
+                        child: _HeroSearch(
+                          isMobile: isMobile,
+                          width: w,
+                          focusNode: _heroSearchFocusNode,
+                          onOpenCategories: _openCategoriesOverlay,
+                        ),
+                      ),
+                      if (!isShort) ...[
+                        const SizedBox(height: 26),
+                        FadeTransition(
+                          opacity: _heroFade,
+                          child: _heroQuickChips(),
+                        ),
+                      ],
+                      if (isTablet || (!isMobile && !isShort)) ...[
+                        const SizedBox(height: 28),
+                        FadeTransition(
+                          opacity: _heroFade,
+                          child: _heroTrustStrip(),
+                        ),
+                      ],
+                      SizedBox(height: isShort ? 14 : 26),
+                      FadeTransition(
+                        opacity: _heroFade,
+                        child: _heroScrollCue(),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 40),
-                  FadeTransition(
-                    opacity: _heroFade,
-                    child: _heroSearchTrigger(isMobile),
-                  ),
-                  const Spacer(),
-                  FadeTransition(
-                    opacity: _heroFade,
-                    child: _heroQuickChips(),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _heroSearchTrigger(bool isMobile) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        GestureDetector(
-          onTap: _openSearchDialog,
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: isMobile ? 20 : 28,
-              vertical: 14,
-            ),
-            decoration: BoxDecoration(
-              color: RC.deepBlue.withValues(alpha: 0.88),
-              borderRadius: BorderRadius.circular(50),
-              border: Border.all(
-                  color: RC.teal.withValues(alpha: 0.35), width: 1.2),
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.35),
-                    blurRadius: 20,
-                    offset: const Offset(0, 6)),
-                BoxShadow(
-                    color: RC.teal.withValues(alpha: 0.12), blurRadius: 24),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.search_rounded, color: RC.teal, size: 20),
-                const SizedBox(width: 12),
-                Text(
-                  isMobile
-                      ? 'Search destinations…'
-                      : 'Search cities, places, or categories…',
-                  style: const TextStyle(color: RC.textSec, fontSize: 14),
-                ),
-                if (!isMobile) ...[
-                  const SizedBox(width: 20),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      gradient:
-                          const LinearGradient(colors: [RC.teal, RC.tealMid]),
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: [
-                        BoxShadow(
-                            color: RC.teal.withValues(alpha: 0.35),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3))
-                      ],
-                    ),
-                    child: const Text('Search',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13)),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -1325,7 +1364,7 @@ class _LandingPageState extends State<LandingPage>
                         Border.all(color: Colors.white.withValues(alpha: 0.15)),
                   ),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(c.$1, size: 14, color: RC.teal),
+                    Icon(c.$1, size: 14, color: RC.gold),
                     const SizedBox(width: 6),
                     Text(c.$2,
                         style: const TextStyle(
@@ -1336,6 +1375,66 @@ class _LandingPageState extends State<LandingPage>
                 ),
               ))
           .toList(),
+    );
+  }
+
+  // ── Inline trust-stat strip — same figures used in _statsSection below ───
+  Widget _heroTrustStrip() {
+    final count = _cities.isEmpty ? '10' : '${_cities.length}';
+    final items = [
+      ('$count+', 'Resort Cities'),
+      ('500+', 'Curated ${TourismLabels.placePlural}'),
+      ('4.9★', 'Avg. Rating'),
+      ('20K+', 'Travellers'),
+    ];
+    return Wrap(
+      spacing: 26,
+      runSpacing: 10,
+      children: items
+          .map((it) => Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(it.$1,
+                      style: const TextStyle(
+                          color: RC.gold,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 6),
+                  Text(it.$2,
+                      style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.72),
+                          fontSize: 12)),
+                ],
+              ))
+          .toList(),
+    );
+  }
+
+  // ── Scroll-cue affordance — bounces gently, tap-through to Destinations ──
+  Widget _heroScrollCue() {
+    return GestureDetector(
+      onTap: () => _scrollToKey(_citiesKey),
+      child: AnimatedBuilder(
+        animation: _scrollCueOffset,
+        builder: (_, child) => Transform.translate(
+          offset: Offset(0, _scrollCueOffset.value),
+          child: child,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('EXPLORE RESORT CITIES',
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 10,
+                    letterSpacing: 1.4,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 2),
+            Icon(Icons.keyboard_arrow_down_rounded,
+                color: RC.gold.withValues(alpha: 0.85), size: 22),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1839,6 +1938,61 @@ class _LandingPageState extends State<LandingPage>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// _NavLink — nav bar item with a hover-driven gold underline/background
+// (desktop mouse feedback; taps behave identically on touch devices).
+// ─────────────────────────────────────────────────────────────────────────────
+class _NavLink extends StatefulWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _NavLink({required this.label, required this.onTap});
+
+  @override
+  State<_NavLink> createState() => _NavLinkState();
+}
+
+class _NavLinkState extends State<_NavLink> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: _hovered ? RC.gold.withValues(alpha: 0.08) : null,
+            borderRadius: BorderRadius.circular(8),
+            border: Border(
+              bottom: BorderSide(
+                color: _hovered
+                    ? RC.gold.withValues(alpha: 0.85)
+                    : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
+          child: Text(
+            widget.label,
+            style: TextStyle(
+              fontSize: 13,
+              color: _hovered ? Colors.white : RC.textSec,
+              fontWeight: _hovered ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // _StatCard
 // ─────────────────────────────────────────────────────────────────────────────
 class _StatCard extends StatelessWidget {
@@ -1906,19 +2060,29 @@ class _StatCard extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // _SearchDialog
 // ─────────────────────────────────────────────────────────────────────────────
-class _SearchDialog extends StatefulWidget {
+class _HeroSearch extends StatefulWidget {
+  final bool isMobile;
+  final double width;
+  final FocusNode focusNode;
   final VoidCallback onOpenCategories;
 
-  const _SearchDialog({required this.onOpenCategories});
+  const _HeroSearch({
+    required this.isMobile,
+    required this.width,
+    required this.focusNode,
+    required this.onOpenCategories,
+  });
 
   @override
-  State<_SearchDialog> createState() => _SearchDialogState();
+  State<_HeroSearch> createState() => _HeroSearchState();
 }
 
-class _SearchDialogState extends State<_SearchDialog> {
+class _HeroSearchState extends State<_HeroSearch> {
   final _ctrl = TextEditingController();
+  final _layerLink = LayerLink();
   Timer? _debounce;
   int _requestId = 0;
+  OverlayEntry? _overlayEntry;
 
   // null = show results across every type (the default, live-search mode).
   // Non-null = the tourist tapped a filter chip to narrow an already-fetched
@@ -1940,9 +2104,36 @@ class _SearchDialogState extends State<_SearchDialog> {
     _SearchType.blog: ('Blog', Icons.article_outlined),
   };
 
+  double get _fieldWidth =>
+      widget.isMobile ? widget.width - 40 : math.min(widget.width - 96, 560.0);
+
   List<_SearchResult> get _visibleResults => _filter == null
       ? _allResults
       : _allResults.where((r) => r.type == _filter).toList();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.focusNode.addListener(_onFocusChange);
+  }
+
+  @override
+  void dispose() {
+    widget.focusNode.removeListener(_onFocusChange);
+    _debounce?.cancel();
+    _removeOverlay();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    setState(() {}); // refresh the field's focus-driven border highlight
+    if (widget.focusNode.hasFocus) {
+      _showOverlay();
+    } else {
+      _removeOverlay();
+    }
+  }
 
   void _onQueryChanged(String raw) {
     _debounce?.cancel();
@@ -1954,9 +2145,11 @@ class _SearchDialogState extends State<_SearchDialog> {
         _loading = false;
         _error = null;
       });
+      _updateOverlay();
       return;
     }
     setState(() => _loading = true);
+    _updateOverlay();
     _debounce = Timer(const Duration(milliseconds: 400), () => _doSearch(q));
   }
 
@@ -1966,8 +2159,9 @@ class _SearchDialogState extends State<_SearchDialog> {
       _loading = true;
       _error = null;
     });
+    _updateOverlay();
     try {
-      // Every type is searched concurrently so the dialog shows a single,
+      // Every type is searched concurrently so the panel shows a single,
       // unified live result list — the filter chips below just narrow what's
       // already been fetched, they don't trigger another round-trip.
       // Each branch has its own catchError so one failing type (e.g. a
@@ -1988,6 +2182,7 @@ class _SearchDialogState extends State<_SearchDialog> {
         _loading = false;
         _searched = true;
       });
+      _updateOverlay();
     } catch (e, st) {
       developer.log('Unexpected failure running search for "$q"',
           name: 'LandingSearch', error: e, stackTrace: st);
@@ -1997,6 +2192,7 @@ class _SearchDialogState extends State<_SearchDialog> {
         _loading = false;
         _searched = true;
       });
+      _updateOverlay();
     }
   }
 
@@ -2011,123 +2207,147 @@ class _SearchDialogState extends State<_SearchDialog> {
     }
   }
 
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _ctrl.dispose();
-    super.dispose();
+  // ── Anchored overlay (replaces the old popup Dialog) ──────────────────────
+  void _showOverlay() {
+    if (_overlayEntry != null) return;
+    final overlay = Overlay.of(context);
+    _overlayEntry = OverlayEntry(builder: (_) => _buildOverlayContent());
+    overlay.insert(_overlayEntry!);
+  }
+
+  void _updateOverlay() => _overlayEntry?.markNeedsBuild();
+
+  void _removeOverlay() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+  }
+
+  void _closeAndUnfocus() {
+    widget.focusNode.unfocus();
+    _removeOverlay();
+  }
+
+  Widget _buildOverlayContent() {
+    return Positioned(
+      width: _fieldWidth,
+      child: CompositedTransformFollower(
+        link: _layerLink,
+        showWhenUnlinked: false,
+        offset: const Offset(0, 62),
+        child: TapRegion(
+          groupId: 'hero-search',
+          onTapOutside: (_) => _closeAndUnfocus(),
+          child: Material(
+            color: Colors.transparent,
+            child: _buildPanel(),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
-    final isMobile = w < 600;
-    final dlgW = isMobile ? w * 0.95 : 560.0;
+    return TapRegion(
+      groupId: 'hero-search',
+      child: CompositedTransformTarget(
+        link: _layerLink,
+        child: _buildField(),
+      ),
+    );
+  }
 
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding:
-          EdgeInsets.symmetric(horizontal: isMobile ? 12 : 40, vertical: 60),
-      child: Container(
-        width: dlgW,
-        constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.78),
-        decoration: BoxDecoration(
-          color: RC.deepBlue,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: RC.teal.withValues(alpha: 0.20)),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withValues(alpha: 0.55),
-                blurRadius: 40,
-                offset: const Offset(0, 16)),
-            BoxShadow(color: RC.teal.withValues(alpha: 0.08), blurRadius: 40),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // ── Header ──────────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 16, 0),
-              child: Row(children: [
-                const Icon(Icons.search_rounded, color: RC.teal, size: 20),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Text('Search',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700)),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded,
-                      color: RC.textMute, size: 20),
-                  onPressed: () => Navigator.pop(context),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-              ]),
-            ),
-            const SizedBox(height: 16),
-
-            // ── Search input — live, debounced as-you-type ─────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: RC.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: RC.teal.withValues(alpha: 0.20)),
-                ),
-                child: TextField(
-                  controller: _ctrl,
-                  autofocus: true,
-                  onChanged: _onQueryChanged,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                  decoration: InputDecoration(
-                    hintText:
-                        'Search cities, ${TourismLabels.placePlural.toLowerCase()}, ${TourismLabels.categoryPlural.toLowerCase()}…',
-                    hintStyle:
-                        const TextStyle(color: RC.textMute, fontSize: 13),
-                    prefixIcon: const Icon(Icons.search_rounded,
-                        color: RC.teal, size: 18),
-                    suffixIcon: _loading
-                        ? const Padding(
-                            padding: EdgeInsets.all(14),
-                            child: SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                  color: RC.teal, strokeWidth: 2),
-                            ),
-                          )
-                        : (_ctrl.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.close_rounded,
-                                    color: RC.textMute, size: 18),
-                                onPressed: () {
-                                  _ctrl.clear();
-                                  _onQueryChanged('');
-                                },
-                              )
-                            : null),
-                    border: InputBorder.none,
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
-                  ),
-                ),
+  Widget _buildField() {
+    final focused = widget.focusNode.hasFocus;
+    return Container(
+      width: _fieldWidth,
+      padding: EdgeInsets.symmetric(horizontal: widget.isMobile ? 16 : 22),
+      decoration: BoxDecoration(
+        color: RC.deepBlue.withValues(alpha: 0.90),
+        borderRadius: BorderRadius.circular(50),
+        border: Border.all(
+            color: RC.gold.withValues(alpha: focused ? 0.60 : 0.32),
+            width: 1.2),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 20,
+              offset: const Offset(0, 6)),
+          BoxShadow(color: RC.gold.withValues(alpha: 0.10), blurRadius: 24),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search_rounded, color: RC.gold, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: _ctrl,
+              focusNode: widget.focusNode,
+              onChanged: _onQueryChanged,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: widget.isMobile
+                    ? 'Search destinations…'
+                    : 'Search cities, ${TourismLabels.placePlural.toLowerCase()}, ${TourismLabels.categoryPlural.toLowerCase()}…',
+                hintStyle: const TextStyle(color: RC.textSec, fontSize: 13),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 16),
               ),
             ),
-            const SizedBox(height: 14),
+          ),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.only(left: 8),
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child:
+                    CircularProgressIndicator(color: RC.gold, strokeWidth: 2),
+              ),
+            )
+          else if (_ctrl.text.isNotEmpty)
+            GestureDetector(
+              onTap: () {
+                _ctrl.clear();
+                _onQueryChanged('');
+              },
+              child: const Padding(
+                padding: EdgeInsets.only(left: 4),
+                child: Icon(Icons.close_rounded, color: RC.textMute, size: 18),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 
-            // ── Filter chips — narrow the already-fetched results ──────────
-            if (_allResults.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+  Widget _buildPanel() {
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      constraints: const BoxConstraints(maxHeight: 440),
+      decoration: BoxDecoration(
+        color: RC.deepBlue,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: RC.gold.withValues(alpha: 0.22)),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.55),
+              blurRadius: 30,
+              offset: const Offset(0, 12)),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_allResults.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+              child: SizedBox(
+                height: 34,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
                   children: [null, ..._SearchType.values].map((t) {
                     final selected = t == _filter;
                     final count = t == null
@@ -2137,51 +2357,53 @@ class _SearchDialogState extends State<_SearchDialog> {
                     final label = t == null ? 'All' : _labels[t]!.$1;
                     final icon =
                         t == null ? Icons.apps_rounded : _labels[t]!.$2;
-                    return GestureDetector(
-                      onTap: () => setState(() => _filter = t),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 9),
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? RC.teal.withValues(alpha: 0.15)
-                              : RC.surface,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() => _filter = t);
+                          _updateOverlay();
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 7),
+                          decoration: BoxDecoration(
                             color: selected
-                                ? RC.teal.withValues(alpha: 0.50)
-                                : Colors.white.withValues(alpha: 0.06),
+                                ? RC.gold.withValues(alpha: 0.15)
+                                : RC.surface,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: selected
+                                  ? RC.gold.withValues(alpha: 0.50)
+                                  : Colors.white.withValues(alpha: 0.06),
+                            ),
                           ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(icon,
-                                size: 14,
-                                color: selected ? RC.teal : RC.textMute),
-                            const SizedBox(width: 5),
-                            Text('$label ($count)',
-                                style: TextStyle(
-                                  color: selected ? RC.teal : RC.textMute,
-                                  fontSize: 12,
-                                  fontWeight: selected
-                                      ? FontWeight.w700
-                                      : FontWeight.normal,
-                                )),
-                          ],
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(icon,
+                                  size: 13,
+                                  color: selected ? RC.gold : RC.textMute),
+                              const SizedBox(width: 5),
+                              Text('$label ($count)',
+                                  style: TextStyle(
+                                    color: selected ? RC.gold : RC.textMute,
+                                    fontSize: 11,
+                                    fontWeight: selected
+                                        ? FontWeight.w700
+                                        : FontWeight.normal,
+                                  )),
+                            ],
+                          ),
                         ),
                       ),
                     );
                   }).toList(),
                 ),
               ),
-            const SizedBox(height: 16),
-
-            // ── Results ───────────────────────────────────────────────────
-            Flexible(child: _buildResults()),
-            const SizedBox(height: 8),
-          ],
-        ),
+            ),
+          Flexible(child: _buildResults()),
+        ],
       ),
     );
   }
@@ -2189,35 +2411,33 @@ class _SearchDialogState extends State<_SearchDialog> {
   Widget _buildResults() {
     if (!_searched && !_loading) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const SizedBox(height: 8),
             Icon(Icons.travel_explore_rounded,
-                color: RC.textMute.withValues(alpha: 0.5), size: 48),
+                color: RC.textMute.withValues(alpha: 0.5), size: 40),
             const SizedBox(height: 10),
             Text(
                 'Type to search across cities, ${TourismLabels.placePlural.toLowerCase()} and ${TourismLabels.categoryPlural.toLowerCase()}',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: RC.textMute, fontSize: 13)),
-            const SizedBox(height: 16),
           ],
         ),
       );
     }
     if (_loading) {
       return const Padding(
-        padding: EdgeInsets.all(32),
+        padding: EdgeInsets.all(28),
         child: Center(
-            child: CircularProgressIndicator(color: RC.teal, strokeWidth: 2)),
+            child: CircularProgressIndicator(color: RC.gold, strokeWidth: 2)),
       );
     }
     if (_error != null) {
       return Padding(
         padding: const EdgeInsets.all(24),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.error_outline_rounded, color: RC.coral, size: 36),
+          const Icon(Icons.error_outline_rounded, color: RC.coral, size: 32),
           const SizedBox(height: 10),
           Text(_error!,
               textAlign: TextAlign.center,
@@ -2231,8 +2451,8 @@ class _SearchDialogState extends State<_SearchDialog> {
         padding: const EdgeInsets.all(24),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.search_off_rounded,
-              color: RC.textMute.withValues(alpha: 0.6), size: 44),
-          const SizedBox(height: 12),
+              color: RC.textMute.withValues(alpha: 0.6), size: 40),
+          const SizedBox(height: 10),
           Text(
             'No results found for "${_ctrl.text.trim()}"',
             textAlign: TextAlign.center,
@@ -2250,7 +2470,7 @@ class _SearchDialogState extends State<_SearchDialog> {
 
     return ListView.separated(
       shrinkWrap: true,
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 12),
       itemCount: visible.length,
       separatorBuilder: (_, __) =>
           Divider(color: Colors.white.withValues(alpha: 0.05), height: 1),
@@ -2302,7 +2522,7 @@ class _SearchDialogState extends State<_SearchDialog> {
             : t == _SearchType.blog
                 ? Icons.article_outlined
                 : Icons.category_outlined;
-    final color = t == _SearchType.blog ? RC.gold : RC.teal;
+    final color = t == _SearchType.blog ? RC.teal : RC.gold;
     return Container(
       width: 44,
       height: 44,
@@ -2315,7 +2535,7 @@ class _SearchDialogState extends State<_SearchDialog> {
   }
 
   void _onResultTap(_SearchResult r) {
-    Navigator.pop(context);
+    _closeAndUnfocus();
     switch (r.type) {
       case _SearchType.city:
         if (r.raw is CityModel) {
