@@ -46,10 +46,10 @@ final Logger _log = Logger(
 // and the requested change is one of accent identity, not a full re-theme.
 // ─────────────────────────────────────────────────────────────────────────────
 abstract final class RC {
-  static const Color navy = Color(0xFF010C18);
-  static const Color deepBlue = Color(0xFF071829);
-  static const Color surface = Color(0xFF0B2135);
-  static const Color surfaceHi = Color(0xFF0F2840);
+  static const Color navy = Color(0xFF121F2E);
+  static const Color deepBlue = Color(0xFF1C2E42);
+  static const Color surface = Color(0xFF23374D);
+  static const Color surfaceHi = Color(0xFF2C4258);
   static const Color teal = Color(0xFF3FA9C4);
   static const Color tealMid = Color(0xFF2C8598);
   static const Color tealDark = Color(0xFF1D5F6E);
@@ -59,8 +59,8 @@ abstract final class RC {
   static const Color coral = Color(0xFFFF6B6B);
   static const Color emerald = Color(0xFF00C98A);
   static const Color textPri = Color(0xFFFFFFFF);
-  static const Color textSec = Color(0xFFAFC6D8);
-  static const Color textMute = Color(0xFF4E6A7A);
+  static const Color textSec = Color(0xFFC7D6E3);
+  static const Color textMute = Color(0xFF7C93A8);
 
   static const LinearGradient tealGrad =
       LinearGradient(colors: [teal, tealDark]);
@@ -69,7 +69,7 @@ abstract final class RC {
   static const LinearGradient heroGrad = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: [Color(0xCC010C18), Color(0xBB071829), Color(0xDD0A2030)],
+    colors: [Color(0xCC121F2E), Color(0xBB1C2E42), Color(0xDD24384E)],
     stops: [0.0, 0.45, 1.0],
   );
 }
@@ -1201,9 +1201,9 @@ class _LandingPageState extends State<LandingPage>
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Color(0xB3010C18),
-                    Color(0xCC010C18),
-                    Color(0xF2010C18),
+                    Color(0x99121F2E),
+                    Color(0xB31C2E42),
+                    Color(0xE0121F2E),
                   ],
                   stops: [0.0, 0.5, 1.0],
                 ),
@@ -1243,59 +1243,13 @@ class _LandingPageState extends State<LandingPage>
                         child: SlideTransition(
                           position: _heroSlide,
                           child: _tagPill(
-                              '✦  Discover Africa\'s Premier Resort Destinations',
-                              RC.gold),
+                              '✦  Where Every Journey Begins', RC.gold),
                         ),
                       ),
-                      SizedBox(height: isShort ? 14 : 22),
-                      FadeTransition(
-                        opacity: _heroFade,
-                        child: SlideTransition(
-                          position: _heroSlide,
-                          child: RichText(
-                            text: TextSpan(
-                              style: TextStyle(
-                                fontSize: isMobile ? 36 : (isTablet ? 48 : 62),
-                                fontWeight: FontWeight.bold,
-                                height: 1.1,
-                                letterSpacing: -0.8,
-                                color: Colors.white,
-                              ),
-                              children: [
-                                const TextSpan(text: 'Find Your\n'),
-                                TextSpan(
-                                  text: 'Perfect Escape',
-                                  style: TextStyle(
-                                    foreground: Paint()
-                                      ..shader = const LinearGradient(
-                                        colors: [RC.gold, RC.goldMid],
-                                      ).createShader(
-                                          const Rect.fromLTWH(0, 0, 420, 80)),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (!isShort) ...[
-                        const SizedBox(height: 18),
-                        FadeTransition(
-                          opacity: _heroFade,
-                          child: Text(
-                            'Explore handpicked resort cities, luxury stays,\nand unforgettable experiences across Africa.',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.80),
-                              fontSize: isMobile ? 15 : 18,
-                              height: 1.65,
-                              shadows: const [
-                                Shadow(color: Colors.black54, blurRadius: 6)
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                      SizedBox(height: isShort ? 20 : 36),
+                      SizedBox(height: isShort ? 16 : 26),
+                      // Search moved to the top of the hero, right under the
+                      // tag pill, so it's the first interactive thing a
+                      // visitor sees rather than buried below the copy.
                       FadeTransition(
                         opacity: _heroFade,
                         child: _HeroSearch(
@@ -1305,8 +1259,27 @@ class _LandingPageState extends State<LandingPage>
                           onOpenCategories: _openCategoriesOverlay,
                         ),
                       ),
+                      SizedBox(height: isShort ? 20 : 34),
+                      FadeTransition(
+                        opacity: _heroFade,
+                        child: SlideTransition(
+                          position: _heroSlide,
+                          child: _RotatingHeadline(
+                            fontSize: isMobile ? 36 : (isTablet ? 48 : 62),
+                          ),
+                        ),
+                      ),
                       if (!isShort) ...[
-                        const SizedBox(height: 26),
+                        const SizedBox(height: 16),
+                        FadeTransition(
+                          opacity: _heroFade,
+                          child: _TypewriterTagline(
+                            fontSize: isMobile ? 15 : 18,
+                          ),
+                        ),
+                      ],
+                      if (!isShort) ...[
+                        const SizedBox(height: 30),
                         FadeTransition(
                           opacity: _heroFade,
                           child: _heroQuickChips(),
@@ -1987,6 +1960,160 @@ class _NavLinkState extends State<_NavLink> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _RotatingHeadline — "Find Your Perfect" stays fixed; the second line cycles
+// through a few destination-style words with a fade/slide transition.
+// ─────────────────────────────────────────────────────────────────────────────
+class _RotatingHeadline extends StatefulWidget {
+  final double fontSize;
+  const _RotatingHeadline({required this.fontSize});
+
+  @override
+  State<_RotatingHeadline> createState() => _RotatingHeadlineState();
+}
+
+class _RotatingHeadlineState extends State<_RotatingHeadline> {
+  static const _words = ['Escape', 'Adventure', 'Retreat', 'Getaway'];
+  int _index = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(milliseconds: 2600), (_) {
+      if (mounted) setState(() => _index = (_index + 1) % _words.length);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontSize: widget.fontSize,
+      fontWeight: FontWeight.bold,
+      height: 1.1,
+      letterSpacing: -0.8,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('Find Your Perfect', style: style.copyWith(color: Colors.white)),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 450),
+          transitionBuilder: (child, anim) => FadeTransition(
+            opacity: anim,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.35),
+                end: Offset.zero,
+              ).animate(anim),
+              child: child,
+            ),
+          ),
+          child: ShaderMask(
+            key: ValueKey(_index),
+            shaderCallback: (b) =>
+                const LinearGradient(colors: [RC.gold, RC.goldMid])
+                    .createShader(b),
+            child: Text(_words[_index],
+                style: style.copyWith(color: Colors.white)),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _TypewriterTagline — types out one of a few taglines, pauses, then moves
+// on to the next (no delete/backspace, just a clean cut to the next line).
+// ─────────────────────────────────────────────────────────────────────────────
+class _TypewriterTagline extends StatefulWidget {
+  final double fontSize;
+  const _TypewriterTagline({required this.fontSize});
+
+  @override
+  State<_TypewriterTagline> createState() => _TypewriterTaglineState();
+}
+
+class _TypewriterTaglineState extends State<_TypewriterTagline> {
+  static const _lines = [
+    'Handpicked resort cities across Africa, curated just for you.',
+    'From luxury stays to hidden gems — plan every moment in one place.',
+    'Bookings, experiences, and unforgettable stays — simplified.',
+  ];
+  int _lineIndex = 0;
+  int _charCount = 0;
+  Timer? _typeTimer;
+  Timer? _pauseTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTyping();
+  }
+
+  void _startTyping() {
+    _typeTimer?.cancel();
+    _charCount = 0;
+    _typeTimer = Timer.periodic(const Duration(milliseconds: 35), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final full = _lines[_lineIndex];
+      if (_charCount >= full.length) {
+        timer.cancel();
+        _pauseTimer = Timer(const Duration(milliseconds: 2200), () {
+          if (!mounted) return;
+          setState(() => _lineIndex = (_lineIndex + 1) % _lines.length);
+          _startTyping();
+        });
+        return;
+      }
+      setState(() => _charCount++);
+    });
+  }
+
+  @override
+  void dispose() {
+    _typeTimer?.cancel();
+    _pauseTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final full = _lines[_lineIndex];
+    final shown = full.substring(0, _charCount);
+    return RichText(
+      text: TextSpan(
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.82),
+          fontSize: widget.fontSize,
+          height: 1.6,
+          shadows: const [Shadow(color: Colors.black45, blurRadius: 6)],
+        ),
+        children: [
+          TextSpan(text: shown),
+          TextSpan(
+            text: '|',
+            style: TextStyle(
+                color: RC.gold.withValues(alpha: 0.85),
+                fontWeight: FontWeight.bold),
+          ),
+        ],
       ),
     );
   }
