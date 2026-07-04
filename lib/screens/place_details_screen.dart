@@ -1,7 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:palmnazi/constants/tourism_labels.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
@@ -11,8 +15,10 @@ import 'package:palmnazi/models/place_query_model.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/booking_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/services/favorite_service.dart';
 import 'package:palmnazi/services/payment_methods_service.dart';
 import 'package:palmnazi/services/place_details_service.dart';
+import 'package:palmnazi/services/place_lookup_service.dart';
 import 'package:palmnazi/services/place_query_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -62,29 +68,6 @@ abstract final class _P {
 // ─────────────────────────────────────────────────────────────────────────────
 class _PlaceDetailApi {
   static const _timeout = Duration(seconds: 15);
-
-  /// GET /api/places/:id?includeAttributes=true
-  ///
-  /// Returns the full place detail object including contact, description,
-  /// attributes, images, bookingSettings, and categoryLinks.
-  /// Returns null on any non-200 response or parse failure.
-  static Future<PlaceModel?> fetchPlace(String placeId) async {
-    final uri = Uri.parse(
-      ApiEndpoints.url('/api/places/$placeId?includeAttributes=true'),
-    );
-    try {
-      final resp = await http.get(uri).timeout(_timeout);
-      if (resp.statusCode != 200) return null;
-      final body = jsonDecode(resp.body) as Map<String, dynamic>;
-      final data = body['data'];
-      if (data is Map<String, dynamic>) {
-        return PlaceModel.fromJson(data);
-      }
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
 
   /// GET /api/places/:id/{rooms|menu-items|shows}
   ///
@@ -198,6 +181,10 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
   // ── Accepted payment methods (Firestore) ──────────────────────────────────
   List<PaymentMethodModel> _acceptedPaymentMethods = [];
 
+  // ── Favorites ──────────────────────────────────────────────────────────────
+  bool _isFavorited = false;
+  StreamSubscription<bool>? _favoriteSub;
+
   // ── Derived display helpers ───────────────────────────────────────────────
 
   /// First linked category name, or fall back to the category passed in.
@@ -285,13 +272,66 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     );
     _fadeController.forward();
     _fetchDetail();
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      _favoriteSub = FavoriteService.isFavorited(uid, _place.id).listen((fav) {
+        if (mounted) setState(() => _isFavorited = fav);
+      });
+    }
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
     _fadeController.dispose();
+    _favoriteSub?.cancel();
     super.dispose();
+  }
+
+  // ── Favorites ──────────────────────────────────────────────────────────────
+  Future<void> _toggleFavorite() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      final shouldSignIn = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: _P.deepNavy,
+          title: const Text('Sign in required',
+              style: TextStyle(color: Colors.white)),
+          content: const Text(
+            'You need an account to save favorites. Sign in (or create one), then come back to this place to continue.',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child:
+                  const Text('Cancel', style: TextStyle(color: Colors.white54)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: _P.aquaBright),
+              onPressed: () => Navigator.pop(context, true),
+              child:
+                  const Text('Sign In', style: TextStyle(color: _P.deepNavy)),
+            ),
+          ],
+        ),
+      );
+      if (shouldSignIn == true && mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AuthScreen(isLogin: true)),
+        );
+      }
+      return;
+    }
+    try {
+      await FavoriteService.toggle(uid: user.uid, place: _place);
+    } catch (e, st) {
+      developer.log('Failed to toggle favorite for ${_place.id}',
+          name: 'PlaceDetails', error: e, stackTrace: st);
+      _showActionFailure('Could not update favorites. Please try again.');
+    }
   }
 
   void _onScroll() => setState(() => _scrollOffset = _scrollController.offset);
@@ -302,7 +342,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       _detailLoading = true;
       _detailError = false;
     });
-    final full = await _PlaceDetailApi.fetchPlace(widget.place.id);
+    final full = await PlaceLookupService.fetchPlace(widget.place.id);
     if (!mounted) return;
     setState(() {
       _detailLoading = false;
@@ -1034,48 +1074,104 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         children: [
           if (phone.isNotEmpty) ...[
             Expanded(
-              child: _buildQuickActionButton(Icons.phone, 'Call', _P.aqua, () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Call $phone')),
-                );
-              }),
+              child: _buildQuickActionButton(
+                  Icons.phone, 'Call', _P.aqua, () => _launchCall(phone)),
             ),
             const SizedBox(width: 12),
           ],
           if (hasMap) ...[
             Expanded(
-              child: _buildQuickActionButton(
-                  Icons.directions, 'Directions', const Color(0xFF2979FF), () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text('Maps integration coming soon!')),
-                );
-              }),
+              child: _buildQuickActionButton(Icons.directions, 'Directions',
+                  const Color(0xFF2979FF), _launchDirections),
             ),
             const SizedBox(width: 12),
           ],
           if (website.isNotEmpty) ...[
             Expanded(
-              child: _buildQuickActionButton(
-                  Icons.language, 'Website', const Color(0xFFAA00FF), () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Open $website')),
-                );
-              }),
+              child: _buildQuickActionButton(Icons.language, 'Website',
+                  const Color(0xFFAA00FF), () => _launchWebsite(website)),
             ),
             const SizedBox(width: 12),
           ],
           Expanded(
             child: _buildQuickActionButton(
-                Icons.share, 'Share', const Color(0xFF00BFA5), () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Share feature coming soon!')),
-              );
-            }),
+                Icons.share, 'Share', const Color(0xFF00BFA5), _sharePlace),
           ),
         ],
       ),
     );
+  }
+
+  void _showActionFailure(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _launchCall(String phone) async {
+    final uri = Uri(scheme: 'tel', path: phone);
+    try {
+      final launched =
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) _showActionFailure('Could not open the dialer.');
+    } catch (e, st) {
+      developer.log('Failed to launch dialer for $phone',
+          name: 'PlaceDetails', error: e, stackTrace: st);
+      _showActionFailure('Could not open the dialer.');
+    }
+  }
+
+  Future<void> _launchDirections() async {
+    final lat = _place.latitude;
+    final lng = _place.longitude;
+    if (lat == null || lng == null) return;
+    final uri =
+        Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    try {
+      final launched =
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) _showActionFailure('Could not open maps.');
+    } catch (e, st) {
+      developer.log('Failed to launch directions for ${_place.id}',
+          name: 'PlaceDetails', error: e, stackTrace: st);
+      _showActionFailure('Could not open maps.');
+    }
+  }
+
+  Future<void> _launchWebsite(String website) async {
+    final normalized =
+        website.startsWith('http://') || website.startsWith('https://')
+            ? website
+            : 'https://$website';
+    final uri = Uri.tryParse(normalized);
+    if (uri == null) {
+      _showActionFailure('This website address looks invalid.');
+      return;
+    }
+    try {
+      final launched =
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) _showActionFailure('Could not open the website.');
+    } catch (e, st) {
+      developer.log('Failed to launch website $website',
+          name: 'PlaceDetails', error: e, stackTrace: st);
+      _showActionFailure('Could not open the website.');
+    }
+  }
+
+  Future<void> _sharePlace() async {
+    final buffer = StringBuffer('Check out ${_place.name} on Palmnazi!');
+    final address = _place.address;
+    if (address != null && address.isNotEmpty) {
+      buffer.write('\n$address');
+    }
+    try {
+      await Share.share(buffer.toString());
+    } catch (e, st) {
+      developer.log('Failed to open share sheet for ${_place.id}',
+          name: 'PlaceDetails', error: e, stackTrace: st);
+      _showActionFailure('Could not open the share sheet.');
+    }
   }
 
   Widget _buildQuickActionButton(
@@ -1723,16 +1819,14 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Favourites feature coming soon!'),
-                    backgroundColor: Color(0xFF006064),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.favorite_border,
-                  color: _P.aquaBright, size: 24),
+              onPressed: _toggleFavorite,
+              tooltip:
+                  _isFavorited ? 'Remove from favorites' : 'Add to favorites',
+              icon: Icon(
+                _isFavorited ? Icons.favorite : Icons.favorite_border,
+                color: _isFavorited ? const Color(0xFFFF6B6B) : _P.aquaBright,
+                size: 24,
+              ),
               padding: const EdgeInsets.all(12),
             ),
           ),

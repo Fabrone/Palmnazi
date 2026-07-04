@@ -10,6 +10,7 @@ import 'package:palmnazi/models/admin_request_model.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/landing_page.dart';
 import 'package:palmnazi/screens/my_bookings_screen.dart';
+import 'package:palmnazi/screens/my_favorites_screen.dart';
 import 'package:palmnazi/screens/my_queries_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/services/firebase_mfa_service.dart';
@@ -1323,6 +1324,27 @@ class _AccountScreenState extends State<AccountScreen> {
                     const Icon(Icons.chevron_right_rounded, color: RC.textMute),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const MyQueriesScreen()),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              decoration: _cardDecoration(),
+              child: ListTile(
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                leading: _iconCircle(Icons.favorite_border_rounded, RC.teal),
+                title: const Text('My Favorites',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500)),
+                subtitle: const Text('Places you\'ve saved',
+                    style: TextStyle(color: RC.textMute, fontSize: 12)),
+                trailing:
+                    const Icon(Icons.chevron_right_rounded, color: RC.textMute),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const MyFavoritesScreen()),
                 ),
               ),
             ),

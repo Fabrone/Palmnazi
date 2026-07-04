@@ -309,5 +309,35 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Collection: Favorites
+    // Document id = "{firebaseUid}_{placeId}" (deterministic — enforced on
+    // create below so a tourist can only ever have one favorite doc per
+    // place). Fields: firebaseUid, placeId, placeName, placeCoverImage,
+    // cityId, cityName, createdAt.
+    //
+    // Pure owner-only collection, no admin workflow — toggling is a plain
+    // create/delete from place_details_screen.dart / my_favorites_screen.dart.
+    //
+    // READ   — the owning tourist only.
+    // CREATE — authenticated user; firebaseUid must equal caller uid; the
+    //          doc id must match the deterministic uid_placeId scheme.
+    // UPDATE — never (toggle is create/delete only).
+    // DELETE — the owning tourist only.
+    match /Favorites/{favoriteId} {
+
+      allow read: if isAuth() && resource.data.firebaseUid == request.auth.uid;
+
+      allow create:
+        if isAuth()
+        && request.resource.data.firebaseUid == request.auth.uid
+        && favoriteId == request.auth.uid + '_' + request.resource.data.placeId;
+
+      allow update: if false;
+
+      allow delete:
+        if isAuth() && resource.data.firebaseUid == request.auth.uid;
+    }
+
   }
 }

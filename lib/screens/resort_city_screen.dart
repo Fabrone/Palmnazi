@@ -4,9 +4,12 @@ import 'package:http/http.dart' as http;
 import 'package:palmnazi/constants/tourism_labels.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
+import 'package:palmnazi/models/place_model.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/category_screen.dart';
+import 'package:palmnazi/screens/place_details_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/widgets/place_card.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // resort_city_screen.dart
@@ -174,6 +177,41 @@ class _ResortApi {
 
     return categories;
   }
+
+  /// GET /api/places?cityId=…&status=ACTIVE
+  ///
+  /// Every active place in the city, with no category filter — backs the
+  /// "All Listings" tab so a tourist can browse places directly instead of
+  /// always having to drill through a category first.
+  static Future<List<PlaceModel>> fetchAllPlaces({
+    required String cityId,
+  }) async {
+    final uri = Uri.parse(
+      ApiEndpoints.url('/api/places?cityId=$cityId&status=ACTIVE'),
+    );
+    final resp = await http.get(uri).timeout(_timeout);
+    if (resp.statusCode != 200) return [];
+
+    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    final data = body['data'];
+
+    List<dynamic> raw;
+    if (data is List) {
+      raw = data;
+    } else if (data is Map) {
+      // Backend wraps as { places: [...], pagination: {...} }
+      raw = (data['places'] as List<dynamic>?) ??
+          (data['data'] as List<dynamic>?) ??
+          <dynamic>[];
+    } else {
+      raw = [];
+    }
+
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map(PlaceModel.fromJson)
+        .toList();
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -203,9 +241,19 @@ class _ResortCityScreenState extends State<ResortCityScreen>
   bool _catsLoading = true;
   String? _catsError;
 
+  // ── Live "All Listings" data — places for this city, no category filter ──
+  List<PlaceModel> _listings = [];
+  bool _listingsLoading = true;
+  String? _listingsError;
+
+  // ── "Browse by Service" vs "All Listings" ─────────────────────────────────
+  late final TabController _tabController;
+
   @override
   void initState() {
     super.initState();
+
+    _tabController = TabController(length: 2, vsync: this);
 
     _scrollController = ScrollController()..addListener(_onScroll);
 
@@ -219,6 +267,7 @@ class _ResortCityScreenState extends State<ResortCityScreen>
     _fadeController.forward();
 
     _loadCategories();
+    _loadListings();
   }
 
   // ── Data loading ──────────────────────────────────────────────────────────
@@ -248,6 +297,31 @@ class _ResortCityScreenState extends State<ResortCityScreen>
     }
   }
 
+  Future<void> _loadListings() async {
+    if (!mounted) return;
+    setState(() {
+      _listingsLoading = true;
+      _listingsError = null;
+    });
+    try {
+      final places = await _ResortApi.fetchAllPlaces(cityId: widget.city.id);
+      if (mounted) {
+        setState(() {
+          _listings = places;
+          _listingsLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _listingsError =
+              'Could not load ${TourismLabels.placePlural.toLowerCase()}. Tap to retry.';
+          _listingsLoading = false;
+        });
+      }
+    }
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   void _onScroll() => setState(() => _scrollOffset = _scrollController.offset);
@@ -264,10 +338,40 @@ class _ResortCityScreenState extends State<ResortCityScreen>
     );
   }
 
+  /// Navigates straight to PlaceDetailsScreen from the "All Listings" tab,
+  /// where there is no single category context. Derives a category from the
+  /// place's own first category link when available, mirroring the
+  /// `_placeholderCategory` pattern already used for icon lookups —
+  /// PlaceDetailsScreen only reads `.name` as a breadcrumb/fallback label,
+  /// so this is safe even when it's empty.
+  void _navigateToPlaceDetails(PlaceModel place) {
+    final category = place.categoryLinks.isNotEmpty
+        ? CategoryModel(
+            id: place.categoryLinks.first.categoryId,
+            name: place.categoryLinks.first.categoryName,
+            slug: '',
+            isActive: true,
+            children: const [],
+            sortOrder: 0,
+          )
+        : _placeholderCategory(TourismLabels.categorySingular);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PlaceDetailsScreen(
+          city: widget.city,
+          category: category,
+          place: place,
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _scrollController.dispose();
     _fadeController.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
@@ -300,22 +404,25 @@ class _ResortCityScreenState extends State<ResortCityScreen>
                 ),
               ),
 
-              // "Explore Categories" heading
-              SliverToBoxAdapter(
-                child: FadeTransition(
-                  opacity: _fadeAnimation,
-                  child: _buildCategoriesHeading(),
+              // Pinned "Browse by Service" / "All Listings" tab bar
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _TabBarDelegate(_buildTabBar()),
+              ),
+
+              // Each tab owns its own scrollable content (including its own
+              // footer) so it can scroll independently within the remaining
+              // viewport below the pinned tab bar.
+              SliverFillRemaining(
+                hasScrollBody: true,
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildServicesTab(),
+                    _buildListingsTab(),
+                  ],
                 ),
               ),
-
-              // Categories grid (live data / loading / error)
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                sliver: _buildCategoriesSliver(),
-              ),
-
-              // Footer
-              SliverToBoxAdapter(child: _buildFooter()),
             ],
           ),
 
@@ -743,6 +850,198 @@ class _ResortCityScreenState extends State<ResortCityScreen>
         ),
       );
 
+  // ── Browse-by-Service / All-Listings tab bar ──────────────────────────────
+  Widget _buildTabBar() {
+    return Container(
+      color: _P.deepNavy.withValues(alpha: 0.94),
+      child: TabBar(
+        controller: _tabController,
+        indicatorColor: _P.aquaBright,
+        indicatorWeight: 3,
+        labelColor: Colors.white,
+        unselectedLabelColor: Colors.white54,
+        labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        tabs: [
+          Tab(
+            icon: const Icon(Icons.category_outlined, size: 18),
+            text: 'Browse by ${TourismLabels.categorySingular}',
+          ),
+          Tab(
+            icon: const Icon(Icons.place_outlined, size: 18),
+            text: 'All ${TourismLabels.placePlural}',
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── "Browse by Service" tab — unchanged category grid + footer ───────────
+  Widget _buildServicesTab() {
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: FadeTransition(
+            opacity: _fadeAnimation,
+            child: _buildCategoriesHeading(),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          sliver: _buildCategoriesSliver(),
+        ),
+        SliverToBoxAdapter(child: _buildFooter()),
+      ],
+    );
+  }
+
+  // ── "All Listings" tab — every place in the city, no category filter ─────
+  Widget _buildListingsTab() {
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: FadeTransition(
+            opacity: _fadeAnimation,
+            child: _buildListingsHeading(),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          sliver: _buildListingsSliver(),
+        ),
+        SliverToBoxAdapter(child: _buildFooter()),
+      ],
+    );
+  }
+
+  Widget _buildListingsHeading() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      child: Column(
+        children: [
+          ShaderMask(
+            shaderCallback: (bounds) => const LinearGradient(
+              colors: [_P.aquaBright, Colors.white],
+            ).createShader(bounds),
+            child: Text(
+              'All ${TourismLabels.placePlural}',
+              style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                    fontSize: 34,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Every ${TourismLabels.placeSingular.toLowerCase()} in ${widget.city.name}, in one browsable list — no need to pick a ${TourismLabels.categorySingular.toLowerCase()} first.',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.white.withValues(alpha: 0.80),
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildListingsSliver() {
+    if (_listingsLoading) return _buildListingsLoadingSliver();
+    if (_listingsError != null) return _buildListingsErrorSliver();
+    if (_listings.isEmpty) return _buildListingsEmptySliver();
+
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) => FadeTransition(
+          opacity: _fadeAnimation,
+          child: PlaceCard(
+            place: _listings[index],
+            fallbackCategoryName: TourismLabels.categorySingular,
+            onTap: () => _navigateToPlaceDetails(_listings[index]),
+          ),
+        ),
+        childCount: _listings.length,
+      ),
+    );
+  }
+
+  SliverToBoxAdapter _buildListingsLoadingSliver() => SliverToBoxAdapter(
+        child: SizedBox(
+          height: 220,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(
+                    color: _P.aquaBright, strokeWidth: 2),
+                const SizedBox(height: 14),
+                Text('Loading ${TourismLabels.placePlural.toLowerCase()}…',
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 13)),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  SliverToBoxAdapter _buildListingsErrorSliver() => SliverToBoxAdapter(
+        child: GestureDetector(
+          onTap: _loadListings,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 24),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.redAccent.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(16),
+              border:
+                  Border.all(color: Colors.redAccent.withValues(alpha: 0.30)),
+            ),
+            child: Column(
+              children: [
+                const Icon(Icons.error_outline_rounded,
+                    color: Colors.redAccent, size: 36),
+                const SizedBox(height: 10),
+                Text(
+                  _listingsError!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Tap to retry',
+                  style: TextStyle(
+                      color: _P.aquaBright,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  SliverToBoxAdapter _buildListingsEmptySliver() => SliverToBoxAdapter(
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 24),
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            children: [
+              Icon(Icons.place_outlined,
+                  size: 48, color: Colors.white.withValues(alpha: 0.30)),
+              const SizedBox(height: 12),
+              Text(
+                'No ${TourismLabels.placePlural.toLowerCase()} available yet for ${widget.city.name}.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55), fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      );
+
   // ── Category card ─────────────────────────────────────────────────────────
   Widget _buildCategoryCard(CategoryModel category, int index) {
     final accent = _accentFor(index);
@@ -988,6 +1287,28 @@ class _ResortCityScreenState extends State<ResortCityScreen>
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Pins the "Browse by Service" / "All Listings" TabBar in place while the
+/// tab's own content scrolls beneath it.
+class _TabBarDelegate extends SliverPersistentHeaderDelegate {
+  final Widget child;
+  const _TabBarDelegate(this.child);
+
+  @override
+  double get minExtent => 48;
+
+  @override
+  double get maxExtent => 48;
+
+  @override
+  Widget build(
+          BuildContext context, double shrinkOffset, bool overlapsContent) =>
+      child;
+
+  @override
+  bool shouldRebuild(covariant _TabBarDelegate oldDelegate) =>
+      oldDelegate.child != child;
+}
 
 class _StatChipData {
   final IconData icon;

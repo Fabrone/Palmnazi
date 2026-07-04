@@ -318,7 +318,8 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
             Expanded(child: _field(_cardCvvCtrl, 'CVV', TextInputType.number)),
           ]),
           const SizedBox(height: 12),
-          _noteBox('Card details are never sent anywhere in this demo.'),
+          _noteBox(
+              'Card payments are not yet processed by a live gateway — this is a demo flow only. Card details are never sent anywhere.'),
         ];
       case PaymentMethodType.paypal:
         return [

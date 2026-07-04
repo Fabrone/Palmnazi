@@ -8,9 +8,9 @@
 // changes again later.
 // ─────────────────────────────────────────────────────────────────────────────
 abstract final class TourismLabels {
-  static const String categorySingular = 'Experience Type';
-  static const String categoryPlural = 'Experience Types';
+  static const String categorySingular = 'Service';
+  static const String categoryPlural = 'Services';
 
-  static const String placeSingular = 'Attraction';
-  static const String placePlural = 'Attractions';
+  static const String placeSingular = 'Listing';
+  static const String placePlural = 'Listings';
 }

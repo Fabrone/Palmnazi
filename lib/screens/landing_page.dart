@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 // ignore: deprecated_member_use, avoid_web_libraries_in_flutter
 import 'dart:html' as html
     show window; // web-only: used for last-section storage
@@ -260,7 +261,11 @@ class _LandingApi {
         final uri = Uri.parse(
             ApiEndpoints.url('/api/cities?search=$enc&isActive=true&limit=20'));
         final resp = await http.get(uri).timeout(_timeout);
-        if (resp.statusCode != 200) return [];
+        if (resp.statusCode != 200) {
+          developer.log('City search returned ${resp.statusCode}: ${resp.body}',
+              name: 'LandingSearch');
+          return [];
+        }
         final body = jsonDecode(resp.body) as Map<String, dynamic>;
         final data = body['data'];
         // FIX: was List<<dynamic> (×2)
@@ -292,12 +297,26 @@ class _LandingApi {
         final uri = Uri.parse(
             ApiEndpoints.url('/api/places?search=$enc&status=ACTIVE&limit=20'));
         final resp = await http.get(uri).timeout(_timeout);
-        if (resp.statusCode != 200) return [];
+        if (resp.statusCode != 200) {
+          developer.log(
+              'Place search returned ${resp.statusCode}: ${resp.body}',
+              name: 'LandingSearch');
+          return [];
+        }
         final body = jsonDecode(resp.body) as Map<String, dynamic>;
-        // FIX: was List<<dynamic> (×3)
-        final places = (body['data'] as List<dynamic>?) ??
-            (body['places'] as List<dynamic>?) ??
-            [];
+        // The real API shape wraps the list as data: { places: [...] } —
+        // `body['data'] as List<dynamic>?` used to throw here (a Map isn't
+        // a List, so the cast fails instead of returning null), which
+        // silently killed the whole Future.wait search batch every time.
+        final data = body['data'];
+        final List<dynamic> places;
+        if (data is List) {
+          places = data;
+        } else if (data is Map) {
+          places = (data['places'] as List<dynamic>?) ?? [];
+        } else {
+          places = (body['places'] as List<dynamic>?) ?? [];
+        }
         return places
             .whereType<Map<String, dynamic>>()
             .map((p) => _SearchResult(
@@ -317,7 +336,12 @@ class _LandingApi {
         final uri = Uri.parse(ApiEndpoints.url(
             '/api/categories?search=$enc&isActive=true&limit=20'));
         final resp = await http.get(uri).timeout(_timeout);
-        if (resp.statusCode != 200) return [];
+        if (resp.statusCode != 200) {
+          developer.log(
+              'Category search returned ${resp.statusCode}: ${resp.body}',
+              name: 'LandingSearch');
+          return [];
+        }
         final body = jsonDecode(resp.body) as Map<String, dynamic>;
         // FIX: was List<<dynamic> (×2)
         final list = (body['data'] as List<dynamic>?) ??
@@ -336,10 +360,17 @@ class _LandingApi {
             .toList();
 
       case _SearchType.blog:
-        final uri = Uri.parse(
-            ApiEndpoints.url('/api/blog/search?q=$enc&page=1&limit=20'));
+        // NOTE: '/api/blog/search' is not a real endpoint (it 404s — the
+        // backend has no such route). The working search path is the
+        // regular listing endpoint with a `search` query param.
+        final uri =
+            Uri.parse(ApiEndpoints.url('/api/blog?search=$enc&limit=20'));
         final resp = await http.get(uri).timeout(_timeout);
-        if (resp.statusCode != 200) return [];
+        if (resp.statusCode != 200) {
+          developer.log('Blog search returned ${resp.statusCode}: ${resp.body}',
+              name: 'LandingSearch');
+          return [];
+        }
         final body = jsonDecode(resp.body) as Map<String, dynamic>;
         // FIX: was List<<dynamic>
         final posts = (body['posts'] as List<dynamic>?) ?? [];
@@ -1939,11 +1970,15 @@ class _SearchDialogState extends State<_SearchDialog> {
       // Every type is searched concurrently so the dialog shows a single,
       // unified live result list — the filter chips below just narrow what's
       // already been fetched, they don't trigger another round-trip.
+      // Each branch has its own catchError so one failing type (e.g. a
+      // search param unsupported server-side, or a CORS failure on web)
+      // degrades to an empty list for that type instead of failing the
+      // whole search.
       final results = await Future.wait([
-        _LandingApi.search(q, _SearchType.city),
-        _LandingApi.search(q, _SearchType.place),
-        _LandingApi.search(q, _SearchType.category),
-        _LandingApi.search(q, _SearchType.blog),
+        _searchTypeSafely(q, _SearchType.city),
+        _searchTypeSafely(q, _SearchType.place),
+        _searchTypeSafely(q, _SearchType.category),
+        _searchTypeSafely(q, _SearchType.blog),
       ]);
       // A newer keystroke's request may have already landed — ignore a
       // stale, slower response so it can't clobber fresher results.
@@ -1953,13 +1988,26 @@ class _SearchDialogState extends State<_SearchDialog> {
         _loading = false;
         _searched = true;
       });
-    } catch (e) {
+    } catch (e, st) {
+      developer.log('Unexpected failure running search for "$q"',
+          name: 'LandingSearch', error: e, stackTrace: st);
       if (myRequestId != _requestId || !mounted) return;
       setState(() {
         _error = 'Search failed. Please try again.';
         _loading = false;
         _searched = true;
       });
+    }
+  }
+
+  Future<List<_SearchResult>> _searchTypeSafely(
+      String q, _SearchType type) async {
+    try {
+      return await _LandingApi.search(q, type);
+    } catch (e, st) {
+      developer.log('Search failed for type=$type, query="$q"',
+          name: 'LandingSearch', error: e, stackTrace: st);
+      return const [];
     }
   }
 
