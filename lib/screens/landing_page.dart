@@ -1243,7 +1243,7 @@ class _LandingPageState extends State<LandingPage>
                         child: SlideTransition(
                           position: _heroSlide,
                           child: _tagPill(
-                              '✦  Where Every Journey Begins', RC.gold),
+                              '✦  For Every Trip, Every Traveller', RC.gold),
                         ),
                       ),
                       SizedBox(height: isShort ? 16 : 26),
@@ -1279,7 +1279,14 @@ class _LandingPageState extends State<LandingPage>
                         ),
                       ],
                       if (!isShort) ...[
-                        const SizedBox(height: 30),
+                        const SizedBox(height: 18),
+                        FadeTransition(
+                          opacity: _heroFade,
+                          child: _heroAudienceBadges(),
+                        ),
+                      ],
+                      if (!isShort) ...[
+                        const SizedBox(height: 26),
                         FadeTransition(
                           opacity: _heroFade,
                           child: _heroQuickChips(),
@@ -1313,6 +1320,7 @@ class _LandingPageState extends State<LandingPage>
       (Icons.location_city_outlined, 'Destinations'),
       (Icons.category_outlined, TourismLabels.categoryPlural),
       (Icons.hotel_outlined, 'Stays'),
+      (Icons.groups_outlined, 'Meetings & Events'),
       (Icons.restaurant_outlined, 'Dining'),
     ];
     return Wrap(
@@ -1323,7 +1331,10 @@ class _LandingPageState extends State<LandingPage>
                 onTap: () {
                   if (c.$2 == 'Destinations') {
                     _scrollToKey(_citiesKey);
-                  } else if (c.$2 == TourismLabels.categoryPlural) {
+                  } else {
+                    // Stays / Meetings & Events / Dining / Services all
+                    // resolve to "browse by type" — the categories overlay
+                    // is where every one of those is actually filterable.
                     _openCategoriesOverlay();
                   }
                 },
@@ -1351,6 +1362,37 @@ class _LandingPageState extends State<LandingPage>
     );
   }
 
+  // ── Audience badges — explicitly names who this platform is for, so a
+  // business/group traveller doesn't have to guess whether they belong here.
+  Widget _heroAudienceBadges() {
+    const audiences = [
+      'Leisure',
+      'Business',
+      'Groups',
+      'Meetings & Events',
+    ];
+    return Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      children: audiences
+          .map((label) => Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+                decoration: BoxDecoration(
+                  color: RC.gold.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: RC.gold.withValues(alpha: 0.30)),
+                ),
+                child: Text(label,
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600)),
+              ))
+          .toList(),
+    );
+  }
+
   // ── Inline trust-stat strip — same figures used in _statsSection below ───
   Widget _heroTrustStrip() {
     final count = _cities.isEmpty ? '10' : '${_cities.length}';
@@ -1358,7 +1400,7 @@ class _LandingPageState extends State<LandingPage>
       ('$count+', 'Resort Cities'),
       ('500+', 'Curated ${TourismLabels.placePlural}'),
       ('4.9★', 'Avg. Rating'),
-      ('20K+', 'Travellers'),
+      ('20K+', 'Guests Hosted'),
     ];
     return Wrap(
       spacing: 26,
@@ -1479,7 +1521,7 @@ class _LandingPageState extends State<LandingPage>
               ),
               const SizedBox(height: 10),
               const Text(
-                'Handpicked resort destinations with the best places to stay,\ndine, and experience across Africa.',
+                'Handpicked resort destinations for every kind of trip — leisure escapes, team retreats, and everything in between.',
                 style: TextStyle(color: RC.textSec, fontSize: 15, height: 1.6),
               ),
               const SizedBox(height: 40),
@@ -1725,7 +1767,7 @@ class _LandingPageState extends State<LandingPage>
         RC.gold
       ),
       (Icons.star_rounded, '4.9★', 'Avg. Rating', RC.coral),
-      (Icons.people_alt_rounded, '20K+', 'Happy Travellers', RC.emerald),
+      (Icons.people_alt_rounded, '20K+', 'Guests Hosted', RC.emerald),
     ];
 
     return Container(
@@ -1835,7 +1877,7 @@ class _LandingPageState extends State<LandingPage>
                         style: TextStyle(color: RC.textMute, fontSize: 12)),
                   ),
                   if (!isMobile)
-                    const Text('Made with ❤ for Africa\'s travellers',
+                    const Text('Made with ❤ for every kind of traveller',
                         style: TextStyle(color: RC.textMute, fontSize: 12)),
                 ],
               ),
@@ -1978,7 +2020,14 @@ class _RotatingHeadline extends StatefulWidget {
 }
 
 class _RotatingHeadlineState extends State<_RotatingHeadline> {
-  static const _words = ['Escape', 'Adventure', 'Retreat', 'Getaway'];
+  static const _words = [
+    'Escape',
+    'Adventure',
+    'Retreat',
+    'Venue',
+    'Getaway',
+    'Offsite'
+  ];
   int _index = 0;
   Timer? _timer;
 
@@ -2049,9 +2098,9 @@ class _TypewriterTagline extends StatefulWidget {
 
 class _TypewriterTaglineState extends State<_TypewriterTagline> {
   static const _lines = [
-    'Handpicked resort cities across Africa, curated just for you.',
-    'From luxury stays to hidden gems — plan every moment in one place.',
-    'Bookings, experiences, and unforgettable stays — simplified.',
+    'Handpicked resort cities across Africa, for leisure and business alike.',
+    'From luxury stays to boardrooms — plan every trip in one place.',
+    'Team retreats, group meetings, or solo getaways — all simplified here.',
   ];
   int _lineIndex = 0;
   int _charCount = 0;
