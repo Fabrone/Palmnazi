@@ -12,16 +12,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 //   userEmail        – email (snapshot for display)
 //   facilityName     – hotel / place / facility name (legacy free-text label,
 //                      kept for display; placeId below is the real link)
-//   placeId          – the /api/places id the requester picked (Admin role is
-//                      scoped to this place once granted — see managedPlaceId
-//                      on the Users doc)
+//   placeId          – the /api/places id the requester picked (City Manager
+//                      and Content Admin roles are scoped to this place once
+//                      granted — see managedPlaceId on the Users doc)
 //   placeName        – snapshot of the place's name at request time
 //   cityId           – snapshot of the place's city id
 //   cityName         – snapshot of the place's city name
 //   servicesOffered  – list of service strings
 //   agreedToTerms    – must be true for request to be submitted
 //   status           – 'pending' | 'accepted' | 'denied'
-//   grantedRole      – 'Admin' | 'MainAdmin'  (set by MainAdmin on accept)
+//   grantedRole      – 'CityManager' | 'ContentAdmin' | 'MainAdmin'
+//                      (set by MainAdmin on accept — MainAdmin is the sole
+//                      role allowed to grant/revoke roles)
 //   denialReason     – free-text reason (set on denial)
 //   createdAt        – request submission timestamp
 //   respondedAt      – timestamp of MainAdmin action
@@ -44,7 +46,7 @@ class AdminRequest {
   final List<String> servicesOffered;
   final bool agreedToTerms;
   final AdminRequestStatus status;
-  final String? grantedRole; // 'Admin' or 'MainAdmin'
+  final String? grantedRole; // 'CityManager', 'ContentAdmin' or 'MainAdmin'
   final String? denialReason;
   final DateTime createdAt;
   final DateTime? respondedAt;

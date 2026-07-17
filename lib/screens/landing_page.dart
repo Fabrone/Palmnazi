@@ -14,16 +14,19 @@ import 'package:palmnazi/main.dart' show emailLinkResultNotifier;
 import 'package:palmnazi/models/city_details_model.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
+import 'package:palmnazi/models/place_model.dart';
 import 'package:palmnazi/screens/about_screen.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/account_screen.dart';
 import 'package:palmnazi/screens/careers_screen.dart';
 import 'package:palmnazi/screens/contact_screen.dart';
+import 'package:palmnazi/screens/place_details_screen.dart';
 import 'package:palmnazi/screens/resort_city_screen.dart';
 import 'package:palmnazi/screens/static_info_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/services/city_details_service.dart';
 import 'package:palmnazi/services/firebase_service.dart';
+import 'package:palmnazi/services/rbac_service.dart';
 import 'package:palmnazi/admin/admin_dashboard.dart';
 import 'package:palmnazi/constants/tourism_labels.dart';
 
@@ -224,6 +227,36 @@ class _LandingApi {
         .whereType<Map<String, dynamic>>()
         .map(CityModel.fromJson)
         .where((c) => c.isActive)
+        .toList();
+  }
+
+  // ── Featured places ────────────────────────────────────────────────────────
+  // GET /api/places?status=ACTIVE&includeAttributes=true&limit=…
+  //
+  // No dedicated "featured" query param exists on the backend, so this pulls
+  // a generous page of active places (attributes included, since isFeatured
+  // lives in that freeform bag — see PlaceModel.isFeatured) and filters
+  // client-side. Fine for a homepage highlight strip; would need a real
+  // backend filter if the catalogue grows past a few hundred active places.
+  static Future<List<PlaceModel>> fetchFeaturedPlaces({int limit = 60}) async {
+    final uri = Uri.parse(ApiEndpoints.url(
+        '/api/places?status=ACTIVE&includeAttributes=true&limit=$limit'));
+    final resp = await http.get(uri).timeout(_timeout);
+    if (resp.statusCode != 200) return [];
+    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    final data = body['data'];
+    final List<dynamic> list;
+    if (data is List) {
+      list = data;
+    } else if (data is Map) {
+      list = (data['places'] ?? data['data'] ?? <dynamic>[]) as List<dynamic>;
+    } else {
+      list = [];
+    }
+    return list
+        .whereType<Map<String, dynamic>>()
+        .map(PlaceModel.fromJson)
+        .where((p) => p.isFeatured)
         .toList();
   }
 
@@ -456,6 +489,7 @@ class _LandingPageState extends State<LandingPage>
   List<BlogPost> _blogPosts = [];
   // FIX: was List<<CategoryModel>
   List<CategoryModel> _cachedCategories = []; // pre-fetched for instant overlay
+  List<PlaceModel> _featuredPlaces = [];
   bool _citiesLoading = true;
   bool _blogLoading = true;
   bool _blogLoadingMore = false;
@@ -544,7 +578,17 @@ class _LandingPageState extends State<LandingPage>
     _loadCities();
     _loadBlog();
     _loadCategories();
+    _loadFeaturedPlaces();
     _loadAuthState();
+  }
+
+  Future<void> _loadFeaturedPlaces() async {
+    try {
+      final places = await _LandingApi.fetchFeaturedPlaces();
+      if (mounted) setState(() => _featuredPlaces = places);
+    } catch (_) {
+      // Decorative section — fail silently and just don't show it.
+    }
   }
 
   Future<void> _loadAuthState() async {
@@ -615,14 +659,17 @@ class _LandingPageState extends State<LandingPage>
           .doc(userId)
           .get();
       final role = doc.data()?['role'] as String?;
-      final isAdmin = role == 'Admin' || role == 'MainAdmin';
+      final normalizedRole =
+          role == null ? null : RbacService.normalizeRole(role);
+      final isAdmin =
+          normalizedRole != null && RbacService.isAdminRole(normalizedRole);
 
       _log.i(
           'LandingPage._checkAdminRole: userId=$userId, role=$role, isAdmin=$isAdmin');
 
       if (mounted) {
         setState(() {
-          _userRole = role;
+          _userRole = normalizedRole;
           _isAdmin = isAdmin;
         });
       }
@@ -739,6 +786,70 @@ class _LandingPageState extends State<LandingPage>
     );
   }
 
+  // ── Featured place navigation ─────────────────────────────────────────────
+  // PlaceDetailsScreen expects a full CityModel/CategoryModel (it only reads
+  // .name off either), but a featured place can belong to any city/category
+  // across the whole platform. Resolve against what's already cached
+  // (_cities, _cachedCategories); fall back to a minimal model built from
+  // the place's own embedded city map / categoryLinks when the match isn't
+  // in cache yet (e.g. cities still loading).
+  CityModel _cityForPlace(PlaceModel place) {
+    final cached = _cities.where((c) => c.id == place.cityId).firstOrNull;
+    if (cached != null) return cached;
+    return CityModel.fromJson({
+      ...?place.city,
+      'id': place.cityId,
+      'name': place.cityName.isNotEmpty ? place.cityName : 'Resort City',
+    });
+  }
+
+  CategoryModel? _findCategoryById(List<CategoryModel> tree, String id) {
+    for (final c in tree) {
+      if (c.id == id) return c;
+      final inChildren = _findCategoryById(c.children, id);
+      if (inChildren != null) return inChildren;
+    }
+    return null;
+  }
+
+  CategoryModel _categoryForPlace(PlaceModel place) {
+    if (place.categoryLinks.isEmpty) {
+      return const CategoryModel(
+          id: '',
+          name: '',
+          slug: '',
+          isActive: false,
+          children: [],
+          sortOrder: 0);
+    }
+    final link = place.categoryLinks.first;
+    return _findCategoryById(_cachedCategories, link.categoryId) ??
+        CategoryModel(
+          id: link.categoryId,
+          name: link.categoryName,
+          slug: link.categorySlug,
+          isActive: true,
+          children: const [],
+          sortOrder: 0,
+        );
+  }
+
+  void _goToFeaturedPlace(PlaceModel place) {
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, anim, __) => PlaceDetailsScreen(
+          city: _cityForPlace(place),
+          category: _categoryForPlace(place),
+          place: place,
+        ),
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 350),
+      ),
+    );
+  }
+
   // ── Categories overlay ────────────────────────────────────────────────────
   void _openCategoriesOverlay() {
     Navigator.push(
@@ -806,6 +917,7 @@ class _LandingPageState extends State<LandingPage>
             controller: _scrollCtrl,
             slivers: [
               SliverToBoxAdapter(child: _hero(w)),
+              SliverToBoxAdapter(child: _featuredPlacesSection(w)),
               SliverToBoxAdapter(child: _citiesSection(w)),
               SliverToBoxAdapter(child: _blogSection(w)),
               SliverToBoxAdapter(child: _statsSection(w)),
@@ -1613,6 +1725,66 @@ class _LandingPageState extends State<LandingPage>
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.4)),
       );
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // FEATURED PLACES SECTION — admin-promoted businesses (PlaceModel.isFeatured)
+  // ─────────────────────────────────────────────────────────────────────────
+  Widget _featuredPlacesSection(double w) {
+    if (_featuredPlaces.isEmpty) return const SizedBox.shrink();
+
+    final isMobile = w < 600;
+    final hPad = isMobile ? 20.0 : 48.0;
+    const cardW = 260.0;
+    const cardH = 300.0;
+
+    return Container(
+      color: RC.deepBlue,
+      padding: EdgeInsets.fromLTRB(hPad, 56, hPad, 56),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1400),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _sectionLabel('HANDPICKED', RC.gold),
+              const SizedBox(height: 12),
+              Text(
+                'Featured Places',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: isMobile ? 26 : 34,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.3,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Promoted stays, dining and experiences our admins are '
+                'highlighting right now.',
+                style: TextStyle(color: RC.textSec, fontSize: 15, height: 1.6),
+              ),
+              const SizedBox(height: 28),
+              SizedBox(
+                height: cardH,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _featuredPlaces.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 18),
+                  itemBuilder: (_, i) => SizedBox(
+                    width: cardW,
+                    child: _FeaturedPlaceCard(
+                      place: _featuredPlaces[i],
+                      onTap: () => _goToFeaturedPlace(_featuredPlaces[i]),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   // RESORT CITIES SECTION
@@ -3464,6 +3636,168 @@ class _RootCategoryTile extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // _CityCard
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Featured place card — compact horizontal-strip card for _featuredPlacesSection
+// ─────────────────────────────────────────────────────────────────────────────
+class _FeaturedPlaceCard extends StatefulWidget {
+  final PlaceModel place;
+  final VoidCallback onTap;
+  const _FeaturedPlaceCard({required this.place, required this.onTap});
+
+  @override
+  State<_FeaturedPlaceCard> createState() => _FeaturedPlaceCardState();
+}
+
+class _FeaturedPlaceCardState extends State<_FeaturedPlaceCard> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.place;
+    final categoryName =
+        p.categoryLinks.isNotEmpty ? p.categoryLinks.first.categoryName : null;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: _hovered
+                    ? RC.gold.withValues(alpha: 0.20)
+                    : Colors.black.withValues(alpha: 0.35),
+                blurRadius: _hovered ? 24 : 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: (p.coverImage ?? '').isNotEmpty
+                      ? Image.network(p.coverImage!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _placeFallback())
+                      : _placeFallback(),
+                ),
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.55),
+                          Colors.black.withValues(alpha: 0.90),
+                        ],
+                        stops: const [0.30, 0.65, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 12,
+                  left: 12,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: RC.gold.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.star_rounded, size: 12, color: Colors.black87),
+                      SizedBox(width: 3),
+                      Text('Featured',
+                          style: TextStyle(
+                              color: Colors.black87,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700)),
+                    ]),
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(p.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold)),
+                        if (p.cityName.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Row(children: [
+                            const Icon(Icons.location_on_outlined,
+                                size: 11, color: RC.teal),
+                            const SizedBox(width: 3),
+                            Expanded(
+                              child: Text(p.cityName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      color: RC.textSec, fontSize: 11.5)),
+                            ),
+                          ]),
+                        ],
+                        if (categoryName != null) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 9, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(categoryName,
+                                style: const TextStyle(
+                                    color: Colors.white70, fontSize: 10.5)),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _placeFallback() => Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [RC.tealDark, RC.navy],
+          ),
+        ),
+        child: Center(
+          child: Icon(Icons.storefront_rounded,
+              size: 56, color: RC.teal.withValues(alpha: 0.25)),
+        ),
+      );
+}
+
 class _CityCard extends StatefulWidget {
   final CityModel city;
   final VoidCallback onTap;

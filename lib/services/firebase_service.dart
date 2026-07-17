@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:logger/logger.dart';
 import 'package:palmnazi/services/firebase_email_link_service.dart';
+import 'package:palmnazi/services/rbac_service.dart';
 
 final Logger _fbLog = Logger(
   printer: PrettyPrinter(
@@ -16,15 +17,15 @@ final Logger _fbLog = Logger(
 );
 
 class _FS {
-  static const collection  = 'Users';
-  static const email       = 'email';
-  static const role        = 'role';
+  static const collection = 'Users';
+  static const email = 'email';
+  static const role = 'role';
   static const defaultRole = 'Tourist';
-  static const createdAt   = 'createdAt';
-  static const lastLogin   = 'lastLoginAt';
-  static const provider    = 'provider';
+  static const createdAt = 'createdAt';
+  static const lastLogin = 'lastLoginAt';
+  static const provider = 'provider';
   static const displayName = 'displayName';
-  static const photoUrl    = 'photoUrl';
+  static const photoUrl = 'photoUrl';
 }
 
 class FirebaseService {
@@ -117,7 +118,8 @@ class FirebaseService {
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found') {
         _fbLog.w('⚠️ Firebase user missing — creating retroactively');
-        await _createMissingFirebaseAccount(email: email.trim(), password: password);
+        await _createMissingFirebaseAccount(
+            email: email.trim(), password: password);
       }
       return null;
     } catch (e, st) {
@@ -246,7 +248,8 @@ class FirebaseService {
         _updateLastLogin(uid: uid);
       }
     } catch (e, st) {
-      _fbLog.w('❌ _writeUserDocument failed (non-critical)', error: e, stackTrace: st);
+      _fbLog.w('❌ _writeUserDocument failed (non-critical)',
+          error: e, stackTrace: st);
     }
   }
 
@@ -279,7 +282,8 @@ class FirebaseService {
       final uid = _auth.currentUser?.uid;
       if (uid == null) return _FS.defaultRole;
       final doc = await _store.collection(_FS.collection).doc(uid).get();
-      return (doc.data()?[_FS.role] as String?) ?? _FS.defaultRole;
+      return RbacService.normalizeRole(
+          (doc.data()?[_FS.role] as String?) ?? _FS.defaultRole);
     } catch (e) {
       _fbLog.e('❌ readCurrentUserRole: $e');
       return _FS.defaultRole;

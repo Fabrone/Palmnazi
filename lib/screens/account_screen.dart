@@ -238,8 +238,7 @@ class _AccountScreenState extends State<AccountScreen> {
   // so that any stale or mismatched API value never overrides the Firestore truth.
   String get _effectiveRole => _firestoreRole ?? 'Tourist';
   bool get _isTourist => _effectiveRole == 'Tourist';
-  bool get _isAdmin =>
-      _effectiveRole == 'Admin' || _effectiveRole == 'MainAdmin';
+  bool get _isAdmin => RbacService.isAdminRole(_effectiveRole);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Admin Role Request
@@ -1365,7 +1364,7 @@ class _AccountScreenState extends State<AccountScreen> {
                 ),
               ),
             ),
-            if (_effectiveRole == 'Admin') ...[
+            if (RbacService.isPlaceScopedRole(_effectiveRole)) ...[
               const SizedBox(height: 10),
               Container(
                 decoration: _cardDecoration(),
@@ -1394,7 +1393,7 @@ class _AccountScreenState extends State<AccountScreen> {
                 ),
               ),
             ],
-            if (_effectiveRole == 'MainAdmin') ...[
+            if (_effectiveRole == RbacService.roleMainAdmin) ...[
               const SizedBox(height: 10),
               Container(
                 decoration: _cardDecoration(),
@@ -1579,7 +1578,8 @@ class _AccountScreenState extends State<AccountScreen> {
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         leading: _iconCircle(Icons.verified_rounded, RC.emerald),
-        title: Text('${req.grantedRole ?? 'Admin'} Role Granted',
+        title: Text(
+            '${RbacService.roleLabel(req.grantedRole ?? RbacService.roleCityManager)} Role Granted',
             style: const TextStyle(
                 color: Colors.white,
                 fontSize: 14,
@@ -1766,7 +1766,7 @@ class _AccountScreenState extends State<AccountScreen> {
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: RC.gold.withValues(alpha: 0.30)),
         ),
-        child: Text(role.toUpperCase(),
+        child: Text(RbacService.roleLabel(role).toUpperCase(),
             style: const TextStyle(
                 color: RC.gold,
                 fontSize: 10,

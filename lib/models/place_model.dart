@@ -76,6 +76,11 @@ class PlaceModel {
   bool get hasCategories => categoryLinks.isNotEmpty;
   bool get hasDescription => description != null && description!.isNotEmpty;
 
+  // Admin-promoted flag — stored inside the freeform `attributes` bag (same
+  // pattern as rating/reviewCount) rather than as a top-level backend column,
+  // so no backend schema change is needed to support it.
+  bool get isFeatured => attributes['isFeatured'] == true;
+
   // Returns 0-100 progress of how complete the place setup is.
   //
   // SHORT-CIRCUIT: The backend's submit endpoint runs full validation before
@@ -133,7 +138,8 @@ class PlaceModel {
               json['bookingSettings'] as Map<String, dynamic>)
           : null,
       categoryLinks: (json['categoryLinks'] as List<dynamic>?)
-              ?.map((l) => PlaceCategoryLink.fromJson(l as Map<String, dynamic>))
+              ?.map(
+                  (l) => PlaceCategoryLink.fromJson(l as Map<String, dynamic>))
               .toList() ??
           [],
       status: json['status'] as String? ?? 'PENDING',
@@ -253,7 +259,8 @@ class PlaceBookingSettings {
         if (advanceNotice != null) 'advanceNotice': advanceNotice,
         if (minDuration != null) 'minDuration': minDuration,
         if (maxDuration != null) 'maxDuration': maxDuration,
-        if (cancellationPolicy != null) 'cancellationPolicy': cancellationPolicy,
+        if (cancellationPolicy != null)
+          'cancellationPolicy': cancellationPolicy,
       };
 }
 

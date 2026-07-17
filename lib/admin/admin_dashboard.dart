@@ -71,7 +71,7 @@ class _AdminDashboardState extends State<AdminDashboard>
   int _pendingRequestsCount = 0;
   StreamSubscription<int>? _pendingCountSub;
   StreamSubscription<String>? _roleSub;
-  String? _adminRole; // 'Admin' or 'MainAdmin'
+  String? _adminRole; // 'CityManager', 'ContentAdmin' or 'MainAdmin'
 
   // ── Place-scoped Admin — the place they're limited to (null = unassigned,
   // shown as an empty state rather than crashing) ───────────────────────────
@@ -130,19 +130,21 @@ class _AdminDashboardState extends State<AdminDashboard>
         .collection('Users')
         .doc(firebaseUid)
         .snapshots()
-        .map((snap) => (snap.data()?['role'] as String? ?? '').trim())
+        .map((snap) => RbacService.normalizeRole(
+            (snap.data()?['role'] as String? ?? '').trim()))
         .listen(
       (role) {
         if (!mounted) return;
 
-        // The Firestore snapshot is already mapped and trimmed above, but we
-        // trim again here as a permanent safety net.
+        // The Firestore snapshot is already mapped, trimmed and normalized
+        // above, but we trim again here as a permanent safety net.
         final cleanRole = role.trim();
 
-        // Only MainAdmin approves/denies other admins — a place-scoped Admin
-        // has no reason to see or be notified about role requests.
-        final wasMainAdmin = _adminRole == 'MainAdmin';
-        final isMainAdmin = cleanRole == 'MainAdmin';
+        // Only MainAdmin approves/denies other admins — a place-scoped
+        // City Manager / Content Admin has no reason to see or be notified
+        // about role requests.
+        final wasMainAdmin = _adminRole == RbacService.roleMainAdmin;
+        final isMainAdmin = cleanRole == RbacService.roleMainAdmin;
 
         setState(() => _adminRole = cleanRole);
 
@@ -168,7 +170,7 @@ class _AdminDashboardState extends State<AdminDashboard>
           setState(() => _pendingRequestsCount = 0);
         }
 
-        if (cleanRole == 'Admin') {
+        if (RbacService.isPlaceScopedRole(cleanRole)) {
           _loadManagedPlace(firebaseUid);
         } else {
           setState(() {
@@ -189,7 +191,7 @@ class _AdminDashboardState extends State<AdminDashboard>
     );
   }
 
-  // ── Fetch the place a plain 'Admin' is scoped to ──────────────────────────
+  // ── Fetch the place a City Manager / Content Admin is scoped to ──────────
   Future<void> _loadManagedPlace(String firebaseUid) async {
     setState(() => _managedPlaceLoading = true);
     final place = await RbacService.getManagedPlace(firebaseUid);
@@ -272,10 +274,12 @@ class _AdminDashboardState extends State<AdminDashboard>
     });
   }
 
-  // Only MainAdmin approves/denies other admins.
-  bool get _canManageRoleRequests => _adminRole == 'MainAdmin';
+  // Only MainAdmin approves/denies other admins — MainAdmin is the sole
+  // role that can assign or revoke any role in the system.
+  bool get _canManageRoleRequests => _adminRole == RbacService.roleMainAdmin;
 
-  // ── Whole-screen body for a place-scoped Admin — no sidebar/nav at all ────
+  // ── Whole-screen body for a place-scoped City Manager / Content Admin —
+  // no sidebar/nav at all ────────────────────────────────────────────────
   Widget _buildPlaceScopedBody() {
     if (_managedPlaceLoading) {
       return const Scaffold(
@@ -330,9 +334,11 @@ class _AdminDashboardState extends State<AdminDashboard>
 
   @override
   Widget build(BuildContext context) {
-    // A plain 'Admin' has no system-wide console — the Place Admin Panel for
-    // their one assigned place IS the whole app for them.
-    if (_adminRole == 'Admin') {
+    // City Manager and Content Admin have no system-wide console — the
+    // Place Admin Panel for their one assigned place IS the whole app for
+    // them. They differ only in delete rights within that place
+    // (RbacService.canDeleteCoreData), not in which screens they can reach.
+    if (_adminRole != null && RbacService.isPlaceScopedRole(_adminRole!)) {
       return _buildPlaceScopedBody();
     }
 
@@ -358,8 +364,9 @@ class _AdminDashboardState extends State<AdminDashboard>
               pendingRequestsCount:
                   _canManageRoleRequests ? _pendingRequestsCount : 0,
               canManageRoleRequests: _canManageRoleRequests,
-              onOpenPlaceAdmin:
-                  _adminRole == 'MainAdmin' ? _openPlaceAdminPicker : null,
+              onOpenPlaceAdmin: _adminRole == RbacService.roleMainAdmin
+                  ? _openPlaceAdminPicker
+                  : null,
             ),
           Expanded(
             child: Column(
@@ -611,7 +618,7 @@ class _AdminDashboardState extends State<AdminDashboard>
                   },
                 );
               }),
-              if (_adminRole == 'MainAdmin') ...[
+              if (_adminRole == RbacService.roleMainAdmin) ...[
                 const Divider(color: Colors.white12, height: 1),
                 ListTile(
                   leading: const Icon(Icons.storefront_rounded,

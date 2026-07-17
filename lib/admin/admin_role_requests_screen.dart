@@ -35,9 +35,11 @@ const _kRed = Color(0xFFCF6679);
 // Visible only to MainAdmin (routing guard lives in AdminDashboard).
 // Streams the entire AdminRequests collection ordered by newest first.
 //
-// Actions (MainAdmin only):
-//   Approve — picks Admin | MainAdmin role; batch-writes to AdminRequests
-//             AND Users/{firebaseUid} in a single Firestore commit.
+// Actions (MainAdmin only — MainAdmin is the sole role that can assign or
+// revoke roles):
+//   Approve — picks CityManager | ContentAdmin | MainAdmin role; batch-writes
+//             to AdminRequests AND Users/{firebaseUid} in a single Firestore
+//             commit.
 //   Deny    — optional free-text reason; updates AdminRequests only.
 //   Revoke  — resets an already-accepted request back to denied and strips
 //             the role from Users/{firebaseUid}.
@@ -155,23 +157,28 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
         },
       );
 
-      // 2. Elevate the user's role in the Users collection. A plain 'Admin'
-      // is scoped to the place they requested; MainAdmin isn't scoped to any
-      // single place, so its managedPlaceId is cleared.
+      // 2. Elevate the user's role in the Users collection. City Manager and
+      // Content Admin are both scoped to the place they requested; MainAdmin
+      // isn't scoped to any single place, so its managedPlaceId is cleared.
+      final isPlaceScoped = RbacService.isPlaceScopedRole(role);
       batch.update(
         FirebaseFirestore.instance.collection('Users').doc(req.firebaseUid),
         {
           'role': role,
-          'managedPlaceId': role == 'Admin' ? req.placeId : '',
-          'managedPlaceName': role == 'Admin' ? req.placeName : '',
-          'managedCityId': role == 'Admin' ? req.cityId : '',
-          'managedCityName': role == 'Admin' ? req.cityName : '',
+          'managedPlaceId': isPlaceScoped ? req.placeId : '',
+          'managedPlaceName': isPlaceScoped ? req.placeName : '',
+          'managedCityId': isPlaceScoped ? req.cityId : '',
+          'managedCityName': isPlaceScoped ? req.cityName : '',
         },
       );
 
       await batch.commit();
-      _log.i('✅ [AdminRoleRequestsScreen] Approved ${req.userEmail} as $role');
-      if (mounted) _snack('${req.userEmail} approved as $role.', ok: true);
+      final roleLabel = RbacService.roleLabel(role);
+      _log.i(
+          '✅ [AdminRoleRequestsScreen] Approved ${req.userEmail} as $roleLabel');
+      if (mounted) {
+        _snack('${req.userEmail} approved as $roleLabel.', ok: true);
+      }
     } catch (e) {
       _log.e('❌ [AdminRoleRequestsScreen] Approve failed', error: e);
       if (mounted) _snack('Approval failed. Please try again.', ok: false);
@@ -221,9 +228,10 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
       icon: Icons.remove_moderator_rounded,
       iconColor: _kOrange,
       title: 'Revoke Admin Role?',
-      body: 'This will remove the ${req.grantedRole ?? "Admin"} role from '
-          '${req.userEmail} and reset their account to Tourist level. '
-          'They can re-apply at any time.',
+      body: 'This will remove the '
+          '${RbacService.roleLabel(req.grantedRole ?? RbacService.roleCityManager)} '
+          'role from ${req.userEmail} and reset their account to Tourist '
+          'level. They can re-apply at any time.',
       confirmLabel: 'Revoke',
       confirmColor: _kOrange,
     );
@@ -270,7 +278,7 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
     }
   }
 
-  // ── Reassign place (accepted Admin requests only) ──────────────────────────
+  // ── Reassign place (accepted City Manager / Content Admin requests only) ──
   Future<void> _onReassignPlace(AdminRequest req) async {
     if (req.firebaseUid.isEmpty) {
       _snack('Cannot reassign: user Firebase UID is missing.', ok: false);
@@ -365,7 +373,7 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
   // Approve Bottom Sheet — role selector
   // ─────────────────────────────────────────────────────────────────────────
   Future<String?> _showApproveSheet(AdminRequest req) {
-    String selected = 'Admin';
+    String selected = RbacService.roleCityManager;
 
     return showModalBottomSheet<String>(
       context: context,
@@ -438,18 +446,30 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
               const SizedBox(height: 12),
 
               _RoleOption(
-                role: 'Admin',
-                description: 'Can manage places, listings, blog, and content.',
-                isSelected: selected == 'Admin',
-                onTap: () => setS(() => selected = 'Admin'),
+                role: RbacService.roleCityManager,
+                description:
+                    'Manages one assigned place — bookings, queries, details. '
+                    'Can add/edit and delete within that place.',
+                isSelected: selected == RbacService.roleCityManager,
+                onTap: () => setS(() => selected = RbacService.roleCityManager),
               ),
               const SizedBox(height: 10),
               _RoleOption(
-                role: 'MainAdmin',
+                role: RbacService.roleContentAdmin,
                 description:
-                    'Full system access including user role management.',
-                isSelected: selected == 'MainAdmin',
-                onTap: () => setS(() => selected = 'MainAdmin'),
+                    'Same one-place scope as City Manager, but can add/edit '
+                    'content only — cannot delete core data.',
+                isSelected: selected == RbacService.roleContentAdmin,
+                onTap: () =>
+                    setS(() => selected = RbacService.roleContentAdmin),
+              ),
+              const SizedBox(height: 10),
+              _RoleOption(
+                role: RbacService.roleMainAdmin,
+                description: 'Full system access including assigning and '
+                    'revoking every role.',
+                isSelected: selected == RbacService.roleMainAdmin,
+                onTap: () => setS(() => selected = RbacService.roleMainAdmin),
               ),
 
               const SizedBox(height: 28),
@@ -457,7 +477,7 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   icon: const Icon(Icons.check_circle_rounded, size: 18),
-                  label: Text('Approve as $selected'),
+                  label: Text('Approve as ${RbacService.roleLabel(selected)}'),
                   onPressed: () => Navigator.pop(ctx, selected),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _kGreen,
@@ -928,7 +948,8 @@ class _RequestCard extends StatelessWidget {
                 _Meta(Icons.admin_panel_settings_rounded,
                     'By: ${request.respondedByEmail}'),
               if (request.grantedRole != null)
-                _Meta(Icons.badge_rounded, 'Role: ${request.grantedRole}'),
+                _Meta(Icons.badge_rounded,
+                    'Role: ${RbacService.roleLabel(request.grantedRole!)}'),
             ]),
 
             // ── Denial reason box ─────────────────────────────────────────
@@ -1013,7 +1034,8 @@ class _RequestCard extends StatelessWidget {
                   spacing: 10,
                   runSpacing: 8,
                   children: [
-                    if (request.grantedRole == 'Admin')
+                    if (RbacService.isPlaceScopedRole(
+                        request.grantedRole ?? ''))
                       OutlinedButton.icon(
                         icon: const Icon(Icons.edit_location_alt_rounded,
                             size: 14),
@@ -1145,7 +1167,7 @@ class _RoleOption extends StatelessWidget {
                 child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(role,
+                Text(RbacService.roleLabel(role),
                     style: TextStyle(
                         color: isSelected ? _kGreen : Colors.white,
                         fontSize: 13,

@@ -14,13 +14,13 @@ class NotificationService {
   NotificationService._();
 
   static final _plugin = FlutterLocalNotificationsPlugin();
-  static final _log    = Logger(
+  static final _log = Logger(
     printer: PrettyPrinter(
-      methodCount:      0,
+      methodCount: 0,
       errorMethodCount: 8,
-      lineLength:       100,
-      colors:           true,
-      printEmojis:      true,
+      lineLength: 100,
+      colors: true,
+      printEmojis: true,
     ),
   );
 
@@ -44,12 +44,12 @@ class NotificationService {
   );
 
   // ── Notification IDs ───────────────────────────────────────────────────────
-  static const int _idNewRequest  = 1001;
-  static const int _idDecision    = 1002;
+  static const int _idNewRequest = 1001;
+  static const int _idDecision = 1002;
 
   // ── Active Firestore stream subscriptions ─────────────────────────────────
   static StreamSubscription<List<AdminRequest>>? _adminRequestsSub;
-  static StreamSubscription<AdminRequest?>?      _userRequestSub;
+  static StreamSubscription<AdminRequest?>? _userRequestSub;
 
   static bool _adminListenerActive = false;
 
@@ -65,19 +65,20 @@ class NotificationService {
     _log.i('🔔 NotificationService.initialize');
 
     // Android init — uses the launcher icon as notification icon
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
 
     // iOS / macOS init — requests permission at first notification
     const darwinSettings = DarwinInitializationSettings(
-      requestAlertPermission:  true,
-      requestBadgePermission:  true,
-      requestSoundPermission:  true,
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
     );
 
     const initSettings = InitializationSettings(
       android: androidSettings,
-      iOS:     darwinSettings,
-      macOS:   darwinSettings,
+      iOS: darwinSettings,
+      macOS: darwinSettings,
     );
 
     await _plugin.initialize(
@@ -86,9 +87,8 @@ class NotificationService {
     );
 
     // Create Android notification channels
-    final androidPlugin =
-        _plugin.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
 
     await androidPlugin?.createNotificationChannel(_channelAdminRequests);
     await androidPlugin?.createNotificationChannel(_channelRequestDecisions);
@@ -104,7 +104,8 @@ class NotificationService {
   // ─────────────────────────────────────────────────────────────────────────
   static void startAdminRequestsListener() {
     if (_adminListenerActive) {
-      _log.d('🔔 NotificationService.startAdminRequestsListener: already active — skipping duplicate attach');
+      _log.d(
+          '🔔 NotificationService.startAdminRequestsListener: already active — skipping duplicate attach');
       return;
     }
     _adminListenerActive = true;
@@ -154,7 +155,7 @@ class NotificationService {
 
         if (isFirstDelivery) {
           _lastKnownStatus = request.status;
-          isFirstDelivery  = false;
+          isFirstDelivery = false;
           return;
         }
 
@@ -163,7 +164,8 @@ class NotificationService {
           _lastKnownStatus = request.status;
 
           if (request.isAccepted) {
-            _showRequestAcceptedNotification(request.grantedRole ?? 'Admin');
+            _showRequestAcceptedNotification(RbacService.roleLabel(
+                request.grantedRole ?? RbacService.roleCityManager));
           } else if (request.isDenied) {
             _showRequestDeniedNotification(
                 request.denialReason ?? 'No reason provided.');
@@ -181,11 +183,11 @@ class NotificationService {
   static Future<void> stopAllListeners() async {
     await _adminRequestsSub?.cancel();
     await _userRequestSub?.cancel();
-    _adminRequestsSub  = null;
-    _userRequestSub    = null;
+    _adminRequestsSub = null;
+    _userRequestSub = null;
     _adminListenerActive = false; // reset so the next sign-in can re-attach
     _seenRequestIds.clear();
-    _lastKnownStatus   = null;
+    _lastKnownStatus = null;
     _log.i('🔔 NotificationService.stopAllListeners: Stopped');
   }
 
@@ -199,17 +201,18 @@ class NotificationService {
       await _plugin.show(
         id: _idNewRequest,
         title: '📋 New Admin Role Request',
-        body: '${req.userEmail} has applied for an admin role (${req.facilityName}).',
+        body:
+            '${req.userEmail} has applied for an admin role (${req.facilityName}).',
         notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             _channelAdminRequests.id,
             _channelAdminRequests.name,
             channelDescription: _channelAdminRequests.description,
-            importance:         Importance.high,
-            priority:           Priority.high,
-            playSound:          true,
-            enableVibration:    true,
-            styleInformation:   BigTextStyleInformation(
+            importance: Importance.high,
+            priority: Priority.high,
+            playSound: true,
+            enableVibration: true,
+            styleInformation: BigTextStyleInformation(
               'User: ${req.userEmail}\nFacility: ${req.facilityName}\n'
               'Services: ${req.servicesOffered.join(', ')}',
               summaryText: 'Admin role request',
@@ -227,25 +230,26 @@ class NotificationService {
     }
   }
 
-  static Future<void> _showRequestAcceptedNotification(String grantedRole) async {
+  static Future<void> _showRequestAcceptedNotification(
+      String grantedRole) async {
     _log.i('🔔 NotificationService: Request accepted — role=$grantedRole');
     try {
       await _plugin.show(
         id: _idDecision,
         title: '🎉 Admin Role Granted!',
         body: 'Congratulations! Your request has been approved. '
-              'You have been assigned the $grantedRole role.',
+            'You have been assigned the $grantedRole role.',
         notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             _channelRequestDecisions.id,
             _channelRequestDecisions.name,
             channelDescription: _channelRequestDecisions.description,
-            importance:         Importance.high,
-            priority:           Priority.high,
-            playSound:          true,
-            enableVibration:    true,
-            color:              const Color(0xFF14FFEC),
-            styleInformation:   BigTextStyleInformation(
+            importance: Importance.high,
+            priority: Priority.high,
+            playSound: true,
+            enableVibration: true,
+            color: const Color(0xFF14FFEC),
+            styleInformation: BigTextStyleInformation(
               'Your admin role request has been reviewed and approved. '
               'You now have $grantedRole access. '
               'Please restart the app to apply your new permissions.',
@@ -276,11 +280,11 @@ class NotificationService {
             _channelRequestDecisions.id,
             _channelRequestDecisions.name,
             channelDescription: _channelRequestDecisions.description,
-            importance:         Importance.high,
-            priority:           Priority.high,
-            playSound:          true,
-            enableVibration:    true,
-            styleInformation:   BigTextStyleInformation(
+            importance: Importance.high,
+            priority: Priority.high,
+            playSound: true,
+            enableVibration: true,
+            styleInformation: BigTextStyleInformation(
               'Your admin role request has been reviewed and declined.\n\n'
               'Reason: $reason\n\n'
               'You may submit a new request from your Account screen.',

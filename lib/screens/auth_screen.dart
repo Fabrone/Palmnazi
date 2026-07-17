@@ -1,6 +1,7 @@
 import 'dart:async';
 // ignore: deprecated_member_use, avoid_web_libraries_in_flutter
-import 'dart:html' as html show window;// web-only: used for last-section storage
+import 'dart:html' as html
+    show window; // web-only: used for last-section storage
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/material.dart';
@@ -13,6 +14,7 @@ import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/services/firebase_email_link_service.dart';
 import 'package:palmnazi/services/firebase_mfa_service.dart';
 import 'package:palmnazi/services/firebase_service.dart';
+import 'package:palmnazi/services/rbac_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED LOGGER
@@ -42,11 +44,13 @@ class AppUser {
   final String email;
 
   /// Single role string — Firestore is the source of truth.
-  /// Possible values: 'Tourist' (default) | 'Admin' | 'MainAdmin'
+  /// Possible values: 'Tourist' (default) | 'CityManager' | 'ContentAdmin' |
+  /// 'MainAdmin'. Legacy 'Admin' values are normalized to 'CityManager' by
+  /// [RbacService.normalizeRole].
   final String role;
 
-  final bool   mfaEnabled;
-  final String provider;   // 'email' | 'google'
+  final bool mfaEnabled;
+  final String provider; // 'email' | 'google'
 
   AppUser({
     required this.firebaseUid,
@@ -54,27 +58,24 @@ class AppUser {
     required this.email,
     required this.role,
     this.mfaEnabled = false,
-    this.provider   = 'email',
+    this.provider = 'email',
   });
 
   /// Constructs from a Firebase UID plus the backend API response JSON.
   /// [roleOverride] should be supplied from Firestore whenever available —
   /// Firestore is the single source of truth for role.
   factory AppUser.fromApiJson({
-    required String              firebaseUid,
+    required String firebaseUid,
     required Map<String, dynamic> json,
-    String?                      roleOverride,
+    String? roleOverride,
   }) {
     return AppUser(
       firebaseUid: firebaseUid,
-      apiId:       json['_id']      as String?
-                ?? json['id']       as String? ?? '',
-      email:       json['email']    as String? ?? '',
-      role:        roleOverride
-                ?? json['role']     as String?
-                ?? 'Tourist',
-      mfaEnabled:  json['mfaEnabled'] as bool?   ?? false,
-      provider:    json['provider']   as String? ?? 'email',
+      apiId: json['_id'] as String? ?? json['id'] as String? ?? '',
+      email: json['email'] as String? ?? '',
+      role: roleOverride ?? json['role'] as String? ?? 'Tourist',
+      mfaEnabled: json['mfaEnabled'] as bool? ?? false,
+      provider: json['provider'] as String? ?? 'email',
     );
   }
 
@@ -84,9 +85,11 @@ class AppUser {
 
   String get primaryRole => role.isNotEmpty ? role : 'Tourist';
 
-  bool get isTourist   => role == 'Tourist';
-  bool get isAdmin     => role == 'Admin' || role == 'MainAdmin';
-  bool get isMainAdmin => role == 'MainAdmin';
+  bool get isTourist => role == 'Tourist';
+  bool get isAdmin => RbacService.isAdminRole(role);
+  bool get isMainAdmin => role == RbacService.roleMainAdmin;
+  bool get isCityManager => role == RbacService.roleCityManager;
+  bool get isContentAdmin => role == RbacService.roleContentAdmin;
 
   @override
   String toString() =>
@@ -117,12 +120,12 @@ class _UserStore {
     required String provider,
   }) =>
       _doc(firebaseUid).set({
-        'email':       email,
-        'provider':    provider,
-        'role':        'Tourist',                  // ← default, always
-        'apiId':       apiId,
-        'mfaEnabled':  false,
-        'createdAt':   FieldValue.serverTimestamp(),
+        'email': email,
+        'provider': provider,
+        'role': 'Tourist', // ← default, always
+        'apiId': apiId,
+        'mfaEnabled': false,
+        'createdAt': FieldValue.serverTimestamp(),
         'lastLoginAt': FieldValue.serverTimestamp(),
       });
 
@@ -135,22 +138,22 @@ class _UserStore {
     required String email,
     required String apiId,
   }) async {
-    final ref  = _doc(firebaseUid);
+    final ref = _doc(firebaseUid);
     final snap = await ref.get();
 
     if (!snap.exists) {
       await ref.set({
-        'email':       email,
-        'provider':    'google',
-        'role':        'Tourist',                  // ← default for new Google users
-        'apiId':       apiId,
-        'mfaEnabled':  false,
-        'createdAt':   FieldValue.serverTimestamp(),
+        'email': email,
+        'provider': 'google',
+        'role': 'Tourist', // ← default for new Google users
+        'apiId': apiId,
+        'mfaEnabled': false,
+        'createdAt': FieldValue.serverTimestamp(),
         'lastLoginAt': FieldValue.serverTimestamp(),
       });
     } else {
       await ref.update({
-        'apiId':       apiId,                      // keep in sync with backend
+        'apiId': apiId, // keep in sync with backend
         'lastLoginAt': FieldValue.serverTimestamp(),
       });
     }
@@ -162,13 +165,15 @@ class _UserStore {
     final ref = _doc(firebaseUid);
     await ref.update({'lastLoginAt': FieldValue.serverTimestamp()});
     final snap = await ref.get();
-    return snap.data()?['role'] as String? ?? 'Tourist';
+    return RbacService.normalizeRole(
+        snap.data()?['role'] as String? ?? 'Tourist');
   }
 
   // ── Role-only read (used after Google upsert) ─────────────────────────────
   static Future<String> getRole(String firebaseUid) async {
     final snap = await _doc(firebaseUid).get();
-    return snap.data()?['role'] as String? ?? 'Tourist';
+    return RbacService.normalizeRole(
+        snap.data()?['role'] as String? ?? 'Tourist');
   }
 }
 
@@ -176,8 +181,8 @@ class _UserStore {
 // AUTH RESULT MODEL
 // ─────────────────────────────────────────────────────────────────────────────
 class AuthResult {
-  final bool     isSuccess;
-  final String   message;
+  final bool isSuccess;
+  final String message;
   final AppUser? user;
 
   AuthResult._({required this.isSuccess, required this.message, this.user});
@@ -193,9 +198,9 @@ class AuthResult {
 // LOGIN RESULT MODEL
 // ─────────────────────────────────────────────────────────────────────────────
 class LoginResult {
-  final bool                    isSuccess;
-  final String                  message;
-  final AppUser?                user;
+  final bool isSuccess;
+  final String message;
+  final AppUser? user;
   final fb.MultiFactorResolver? mfaResolver;
 
   LoginResult._({
@@ -211,9 +216,9 @@ class LoginResult {
     fb.MultiFactorResolver? mfaResolver,
   }) =>
       LoginResult._(
-        isSuccess:   true,
-        message:     message,
-        user:        user,
+        isSuccess: true,
+        message: message,
+        user: user,
         mfaResolver: mfaResolver,
       );
 
@@ -239,11 +244,11 @@ class AuthService {
     // ── Step 1: Firebase — create auth user + send verification email ────────
     fb.User? firebaseUser;
     try {
-      final credential = await fb.FirebaseAuth.instance
-          .createUserWithEmailAndPassword(
-            email: email.trim(),
-            password: password,
-          );
+      final credential =
+          await fb.FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
       firebaseUser = credential.user;
       if (firebaseUser != null) {
         await firebaseUser.sendEmailVerification();
@@ -267,13 +272,14 @@ class AuthService {
       response = await ApiClient.post(
         ApiEndpoints.register,
         body: {
-          'email':    email.trim(),
+          'email': email.trim(),
           'password': password,
           'provider': 'email',
         },
       );
     } on Exception catch (e, st) {
-      _log.e('❌ AuthService.register: API network error', error: e, stackTrace: st);
+      _log.e('❌ AuthService.register: API network error',
+          error: e, stackTrace: st);
       // Roll back Firebase user so auth state stays consistent
       await firebaseUser.delete().catchError((_) {});
       return AuthResult.failure(ApiClient.friendlyNetworkError(e));
@@ -283,18 +289,23 @@ class AuthService {
     if (response.statusCode != 200 && response.statusCode != 201) {
       await firebaseUser.delete().catchError((_) {});
       switch (response.statusCode) {
-        case 400: return AuthResult.failure('Please fill in all required fields correctly.');
-        case 409: return AuthResult.failure('This email is already registered. Try logging in.');
-        case 500: return AuthResult.failure('Server error. Please try again later.');
-        default:  return AuthResult.failure('Something went wrong. Please try again.');
+        case 400:
+          return AuthResult.failure(
+              'Please fill in all required fields correctly.');
+        case 409:
+          return AuthResult.failure(
+              'This email is already registered. Try logging in.');
+        case 500:
+          return AuthResult.failure('Server error. Please try again later.');
+        default:
+          return AuthResult.failure('Something went wrong. Please try again.');
       }
     }
 
     // ── Step 3: Extract apiId from API response ──────────────────────────────
-    final body     = ApiClient.parseBody(response);
+    final body = ApiClient.parseBody(response);
     final userJson = body['user'] as Map<String, dynamic>? ?? {};
-    final apiId    = userJson['_id'] as String?
-                  ?? userJson['id']  as String? ?? '';
+    final apiId = userJson['_id'] as String? ?? userJson['id'] as String? ?? '';
 
     // ── Step 4: Firestore — create Users/{firebaseUid} document ─────────────
     // role is always 'Tourist' on registration.
@@ -302,34 +313,36 @@ class AuthService {
     try {
       await _UserStore.createUser(
         firebaseUid: firebaseUser.uid,
-        email:       email.trim(),
-        apiId:       apiId,
-        provider:    'email',
+        email: email.trim(),
+        apiId: apiId,
+        provider: 'email',
       );
-      _log.i('✅ Firestore Users/${firebaseUser.uid} created — role: Tourist | apiId: $apiId');
+      _log.i(
+          '✅ Firestore Users/${firebaseUser.uid} created — role: Tourist | apiId: $apiId');
     } catch (e) {
       _log.e('❌ Firestore write failed after registration', error: e);
       // Non-fatal — user can still log in; doc can be rebuilt on first login
     }
 
     // ── Step 5: Persist session if the API returned tokens ───────────────────
-    final accessToken  = body['accessToken']  as String?;
+    final accessToken = body['accessToken'] as String?;
     final refreshToken = body['refreshToken'] as String?;
     if (accessToken != null && refreshToken != null) {
       await ApiClient.saveSession(
-        firebaseUid:  firebaseUser.uid,
-        accessToken:  accessToken,
+        firebaseUid: firebaseUser.uid,
+        accessToken: accessToken,
         refreshToken: refreshToken,
-        apiId:        apiId,
-        email:        email.trim(),
-        roles:        ['Tourist'], userId: '',
+        apiId: apiId,
+        email: email.trim(),
+        roles: ['Tourist'],
+        userId: '',
       );
       _log.i('✅ Session persisted for uid: ${firebaseUser.uid}');
     }
 
     return AuthResult.success(
       message: 'Account created! A verification link has been sent to '
-               '$email — tap it to verify your address, then log in.',
+          '$email — tap it to verify your address, then log in.',
     );
   }
 
@@ -368,7 +381,8 @@ class AuthService {
         body: {'email': email.trim(), 'password': password},
       );
     } on Exception catch (e, st) {
-      _log.e('❌ AuthService.login: API network error', error: e, stackTrace: st);
+      _log.e('❌ AuthService.login: API network error',
+          error: e, stackTrace: st);
       await fb.FirebaseAuth.instance.signOut();
       return LoginResult.failure(ApiClient.friendlyNetworkError(e));
     }
@@ -378,18 +392,18 @@ class AuthService {
     switch (response.statusCode) {
       case 200:
       case 201:
-        final accessToken    = body['accessToken']    as String?;
-        final refreshToken   = body['refreshToken']   as String?;
+        final accessToken = body['accessToken'] as String?;
+        final refreshToken = body['refreshToken'] as String?;
         final refreshTokenId = body['refreshTokenId'] as String?;
-        final userJson       = body['user']           as Map<String, dynamic>?;
+        final userJson = body['user'] as Map<String, dynamic>?;
 
         if (accessToken == null || refreshToken == null || userJson == null) {
           await fb.FirebaseAuth.instance.signOut();
           return LoginResult.failure('Login failed. Please try again.');
         }
 
-        final apiId = userJson['_id'] as String?
-                   ?? userJson['id']  as String? ?? '';
+        final apiId =
+            userJson['_id'] as String? ?? userJson['id'] as String? ?? '';
 
         _lastRefreshTokenId = refreshTokenId;
 
@@ -405,19 +419,20 @@ class AuthService {
         }
 
         final user = AppUser.fromApiJson(
-          firebaseUid:  firebaseUid,
-          json:         userJson,
+          firebaseUid: firebaseUid,
+          json: userJson,
           roleOverride: role,
         );
 
         // ── Step 4: Persist full session ─────────────────────────────────────
         await ApiClient.saveSession(
-          firebaseUid:  firebaseUid,
-          accessToken:  accessToken,
+          firebaseUid: firebaseUid,
+          accessToken: accessToken,
           refreshToken: refreshToken,
-          apiId:        apiId,
-          email:        user.email,
-          roles:        user.roles, userId: '',
+          apiId: apiId,
+          email: user.email,
+          roles: user.roles,
+          userId: '',
         );
 
         return LoginResult.success(message: 'Welcome back!', user: user);
@@ -427,10 +442,12 @@ class AuthService {
         return LoginResult.failure('Please enter both email and password.');
       case 401:
         await fb.FirebaseAuth.instance.signOut();
-        return LoginResult.failure('Incorrect email or password. Please try again.');
+        return LoginResult.failure(
+            'Incorrect email or password. Please try again.');
       case 403:
         await fb.FirebaseAuth.instance.signOut();
-        return LoginResult.failure('Your account is inactive. Please contact support.');
+        return LoginResult.failure(
+            'Your account is inactive. Please contact support.');
       case 404:
         await fb.FirebaseAuth.instance.signOut();
         return LoginResult.failure('No account found with this email address.');
@@ -471,15 +488,18 @@ class AuthService {
       await gsi.initialize(serverClientId: AppConfig.googleWebClientId);
 
       if (!gsi.supportsAuthenticate()) {
-        return AuthResult.failure('Google Sign-In is not supported on this platform.');
+        return AuthResult.failure(
+            'Google Sign-In is not supported on this platform.');
       }
 
-      final GoogleSignInAccount  googleUser = await gsi.authenticate(scopeHint: ['email', 'profile']);
+      final GoogleSignInAccount googleUser =
+          await gsi.authenticate(scopeHint: ['email', 'profile']);
       final GoogleSignInAuthentication googleAuth = googleUser.authentication;
       final String? idToken = googleAuth.idToken;
 
       if (idToken == null) {
-        return AuthResult.failure('Could not retrieve Google credentials. Please try again.');
+        return AuthResult.failure(
+            'Could not retrieve Google credentials. Please try again.');
       }
 
       // ── Step 1: API Google auth — get JWT tokens + apiId ──────────────────
@@ -498,24 +518,26 @@ class AuthService {
       switch (response.statusCode) {
         case 200:
         case 201:
-          final accessToken  = body['accessToken']  as String?;
+          final accessToken = body['accessToken'] as String?;
           final refreshToken = body['refreshToken'] as String?;
-          final userJson     = body['user']         as Map<String, dynamic>?;
+          final userJson = body['user'] as Map<String, dynamic>?;
 
           if (accessToken == null || refreshToken == null || userJson == null) {
-            return AuthResult.failure('Google Sign-In failed. Please try again.');
+            return AuthResult.failure(
+                'Google Sign-In failed. Please try again.');
           }
 
-          final apiId = userJson['_id'] as String?
-                     ?? userJson['id']  as String? ?? '';
+          final apiId =
+              userJson['_id'] as String? ?? userJson['id'] as String? ?? '';
           final email = userJson['email'] as String? ?? '';
 
           // ── Step 2: Firebase — sign in with Google credential to get UID ──
           // Firebase UID is the Firestore document key — required for Firestore writes.
           String firebaseUid = '';
           try {
-            final fbCredential = fb.GoogleAuthProvider.credential(idToken: idToken);
-            final fbResult     = await fb.FirebaseAuth.instance
+            final fbCredential =
+                fb.GoogleAuthProvider.credential(idToken: idToken);
+            final fbResult = await fb.FirebaseAuth.instance
                 .signInWithCredential(fbCredential);
             firebaseUid = fbResult.user?.uid ?? '';
             _log.i('✅ Firebase Google sign-in OK (uid: $firebaseUid)');
@@ -533,8 +555,8 @@ class AuthService {
             try {
               await _UserStore.upsertGoogleUser(
                 firebaseUid: firebaseUid,
-                email:       email,
-                apiId:       apiId,
+                email: email,
+                apiId: apiId,
               );
               role = await _UserStore.getRole(firebaseUid);
               _log.i('✅ Firestore upsert OK — uid: $firebaseUid | role: $role');
@@ -544,35 +566,39 @@ class AuthService {
           }
 
           final user = AppUser.fromApiJson(
-            firebaseUid:  firebaseUid,
-            json:         userJson,
+            firebaseUid: firebaseUid,
+            json: userJson,
             roleOverride: role,
           );
 
           // ── Step 4: Persist session ────────────────────────────────────────
           await ApiClient.saveSession(
-            firebaseUid:  firebaseUid,
-            accessToken:  accessToken,
+            firebaseUid: firebaseUid,
+            accessToken: accessToken,
             refreshToken: refreshToken,
-            apiId:        apiId,
-            email:        user.email,
-            roles:        user.roles, userId: '',
+            apiId: apiId,
+            email: user.email,
+            roles: user.roles,
+            userId: '',
           );
 
           return AuthResult.success(
             message: 'Signed in with Google successfully!',
-            user:    user,
+            user: user,
           );
 
         case 400:
           return AuthResult.failure('Google Sign-In failed. Please try again.');
         case 401:
-          return AuthResult.failure('Google credentials are invalid. Please try again.');
+          return AuthResult.failure(
+              'Google credentials are invalid. Please try again.');
         case 402:
         case 403:
-          final errMsg = (body['error'] ?? body['message'] ?? '').toString().toLowerCase();
+          final errMsg =
+              (body['error'] ?? body['message'] ?? '').toString().toLowerCase();
           if (errMsg.contains('inactive')) {
-            return AuthResult.failure('Your account is inactive. Please contact support.');
+            return AuthResult.failure(
+                'Your account is inactive. Please contact support.');
           }
           return AuthResult.failure(
               'Google email not verified. Please verify your Google account first.');
@@ -608,7 +634,8 @@ class AuthService {
             body: {'refreshTokenId': tokenId},
           );
         } catch (e) {
-          _log.d('🚪 AuthService.logout: revoke token failed (non-blocking): $e');
+          _log.d(
+              '🚪 AuthService.logout: revoke token failed (non-blocking): $e');
         }
       }();
     }
@@ -645,18 +672,23 @@ class AuthService {
     if (response.statusCode == 200 || response.statusCode == 204) {
       return AuthResult.success(
         message: 'If that email is registered, a reset link has been sent. '
-                 'Check your inbox and spam folder.',
+            'Check your inbox and spam folder.',
       );
     }
 
     switch (response.statusCode) {
-      case 400: return AuthResult.failure('Please enter a valid email address.');
-      case 404: return AuthResult.success(
-        message: 'If that email is registered, a reset link has been sent.',
-      );
-      case 429: return AuthResult.failure(
-          'Too many attempts. Please wait a few minutes and try again.');
-      default:  return AuthResult.failure('Something went wrong. Please try again later.');
+      case 400:
+        return AuthResult.failure('Please enter a valid email address.');
+      case 404:
+        return AuthResult.success(
+          message: 'If that email is registered, a reset link has been sent.',
+        );
+      case 429:
+        return AuthResult.failure(
+            'Too many attempts. Please wait a few minutes and try again.');
+      default:
+        return AuthResult.failure(
+            'Something went wrong. Please try again later.');
     }
   }
 }
@@ -677,31 +709,31 @@ class _AuthScreenState extends State<AuthScreen>
   // ── Tab controller (0=Login, 1=Sign Up, 2=Passwordless) ──────────────────
   late TabController _tabController;
 
-  final _loginFormKey  = GlobalKey<FormState>();
+  final _loginFormKey = GlobalKey<FormState>();
   final _signUpFormKey = GlobalKey<FormState>();
 
-  final _loginEmailController            = TextEditingController();
-  final _loginPasswordController         = TextEditingController();
-  final _signUpEmailController           = TextEditingController();
-  final _signUpPasswordController        = TextEditingController();
+  final _loginEmailController = TextEditingController();
+  final _loginPasswordController = TextEditingController();
+  final _signUpEmailController = TextEditingController();
+  final _signUpPasswordController = TextEditingController();
   final _signUpConfirmPasswordController = TextEditingController();
 
   // ── Passwordless sign-in state ────────────────────────────────────────────
   final _magicEmailController = TextEditingController();
-  final _magicFormKey         = GlobalKey<FormState>();
-  bool  _magicLinkSent        = false;
+  final _magicFormKey = GlobalKey<FormState>();
+  bool _magicLinkSent = false;
 
-  bool _obscureLoginPassword   = true;
-  bool _obscureSignUpPassword  = true;
+  bool _obscureLoginPassword = true;
+  bool _obscureSignUpPassword = true;
   bool _obscureConfirmPassword = true;
-  bool _isLoading              = false;
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
     _log.i('🖥️ AuthScreen: ━━━ SCREEN INITIALIZED ━━━');
     _tabController = TabController(
-      length: 3,                              // ← was 2, now 3
+      length: 3, // ← was 2, now 3
       vsync: this,
       initialIndex: widget.isLogin ? 0 : 1,
     );
@@ -728,7 +760,7 @@ class _AuthScreenState extends State<AuthScreen>
     setState(() => _isLoading = true);
 
     final result = await AuthService.login(
-      email:    _loginEmailController.text.trim(),
+      email: _loginEmailController.text.trim(),
       password: _loginPasswordController.text,
     );
 
@@ -741,13 +773,17 @@ class _AuthScreenState extends State<AuthScreen>
     }
 
     if (result.mfaResolver != null) {
-      final verified = await _showMfaLoginChallenge(resolver: result.mfaResolver!);
+      final verified =
+          await _showMfaLoginChallenge(resolver: result.mfaResolver!);
       if (!mounted) return;
       if (verified) {
         _navigateToLanding();
       } else {
         await AuthService.logout();
-        if (mounted) _showMessage(AuthResult.failure('Sign in cancelled. Please try again.'));
+        if (mounted) {
+          _showMessage(
+              AuthResult.failure('Sign in cancelled. Please try again.'));
+        }
       }
     } else {
       _navigateToLanding();
@@ -763,7 +799,7 @@ class _AuthScreenState extends State<AuthScreen>
     setState(() => _isLoading = true);
 
     final result = await AuthService.register(
-      email:    _signUpEmailController.text.trim(),
+      email: _signUpEmailController.text.trim(),
       password: _signUpPasswordController.text,
     );
 
@@ -813,13 +849,13 @@ class _AuthScreenState extends State<AuthScreen>
     setState(() => _isLoading = true);
 
     final result = await FirebaseEmailLinkService.sendSignInLink(
-      email:   _magicEmailController.text.trim(),
+      email: _magicEmailController.text.trim(),
       purpose: EmailLinkPurpose.signIn,
     );
 
     if (!mounted) return;
     setState(() {
-      _isLoading    = false;
+      _isLoading = false;
       _magicLinkSent = result.isSuccess;
     });
 
@@ -877,10 +913,10 @@ class _AuthScreenState extends State<AuthScreen>
         : 'your phone';
 
     final otpController = TextEditingController();
-    final otpFormKey    = GlobalKey<FormState>();
-    bool  sheetLoading  = true;
-    bool  smsSent       = false;
-    bool  verified      = false;
+    final otpFormKey = GlobalKey<FormState>();
+    bool sheetLoading = true;
+    bool smsSent = false;
+    bool verified = false;
     String? sendErrorMsg;
     String? verificationId;
 
@@ -906,65 +942,98 @@ class _AuthScreenState extends State<AuthScreen>
                 resolver: resolver,
                 onCodeSent: (vId, _) {
                   verificationId = vId;
-                  if (sheetCtx.mounted) setS(() { sheetLoading = false; smsSent = true; });
+                  if (sheetCtx.mounted) {
+                    setS(() {
+                      sheetLoading = false;
+                      smsSent = true;
+                    });
+                  }
                 },
                 onFailed: (e) {
                   if (sheetCtx.mounted) {
                     setS(() {
-                    sheetLoading = false;
-                    sendErrorMsg = FirebaseMfaService.mapAuthErrorPublic(e);
-                  });
+                      sheetLoading = false;
+                      sendErrorMsg = FirebaseMfaService.mapAuthErrorPublic(e);
+                    });
                   }
                 },
               );
 
               if (!r.isSuccess && sheetCtx.mounted && sheetLoading) {
-                setS(() { sheetLoading = false; sendErrorMsg = r.message; });
+                setS(() {
+                  sheetLoading = false;
+                  sendErrorMsg = r.message;
+                });
               }
             });
 
             return Padding(
-              padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+              padding:
+                  EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
               child: Container(
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    begin: Alignment.topLeft, end: Alignment.bottomRight,
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                     colors: [Color(0xFF1E3A5F), Color(0xFF0A1128)],
                   ),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(28)),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.15)),
                 ),
                 padding: const EdgeInsets.fromLTRB(28, 20, 28, 36),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Center(child: Container(
-                      width: 44, height: 4,
-                      decoration: BoxDecoration(color: Colors.white30, borderRadius: BorderRadius.circular(2)),
+                    Center(
+                        child: Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                          color: Colors.white30,
+                          borderRadius: BorderRadius.circular(2)),
                     )),
                     const SizedBox(height: 24),
                     const Row(children: [
-                      Icon(Icons.phone_android_rounded, color: Color(0xFF14FFEC), size: 28),
+                      Icon(Icons.phone_android_rounded,
+                          color: Color(0xFF14FFEC), size: 28),
                       SizedBox(width: 12),
-                      Expanded(child: Text('Two-Factor Verification',
-                          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))),
+                      Expanded(
+                          child: Text('Two-Factor Verification',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold))),
                     ]),
                     const SizedBox(height: 8),
                     if (sheetLoading)
                       Row(children: [
-                        const SizedBox(width: 16, height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF14FFEC))),
+                        const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Color(0xFF14FFEC))),
                         const SizedBox(width: 10),
                         Text('Sending SMS to $maskedPhone…',
-                            style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 13)),
+                            style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.65),
+                                fontSize: 13)),
                       ])
                     else if (sendErrorMsg != null)
-                      Text('Could not send code: $sendErrorMsg\nTap "Resend code" below to try again.',
-                          style: const TextStyle(color: Color(0xFFCF6679), fontSize: 13, height: 1.4))
+                      Text(
+                          'Could not send code: $sendErrorMsg\nTap "Resend code" below to try again.',
+                          style: const TextStyle(
+                              color: Color(0xFFCF6679),
+                              fontSize: 13,
+                              height: 1.4))
                     else
                       Text('Enter the 6-digit code sent to $maskedPhone.',
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 13, height: 1.4)),
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.65),
+                              fontSize: 13,
+                              height: 1.4)),
                     const SizedBox(height: 24),
                     if (!sheetLoading) ...[
                       Form(
@@ -972,92 +1041,154 @@ class _AuthScreenState extends State<AuthScreen>
                         child: TextFormField(
                           controller: otpController,
                           keyboardType: TextInputType.number,
-                          maxLength: 6, autofocus: smsSent,
-                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                          style: const TextStyle(color: Colors.white, fontSize: 28, letterSpacing: 12),
+                          maxLength: 6,
+                          autofocus: smsSent,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly
+                          ],
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 28,
+                              letterSpacing: 12),
                           textAlign: TextAlign.center,
                           decoration: InputDecoration(
-                            counterText: '', hintText: '• • • • • •',
-                            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 20, letterSpacing: 8),
-                            filled: true, fillColor: Colors.white.withValues(alpha: 0.08),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3))),
-                            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                                borderSide: const BorderSide(color: Color(0xFF14FFEC), width: 2)),
-                            errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                                borderSide: const BorderSide(color: Color(0xFFCF6679), width: 1.5)),
-                            focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                                borderSide: const BorderSide(color: Color(0xFFCF6679), width: 2)),
-                            errorStyle: const TextStyle(color: Color(0xFFCF6679)),
+                            counterText: '',
+                            hintText: '• • • • • •',
+                            hintStyle: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.25),
+                                fontSize: 20,
+                                letterSpacing: 8),
+                            filled: true,
+                            fillColor: Colors.white.withValues(alpha: 0.08),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                    color:
+                                        Colors.white.withValues(alpha: 0.3))),
+                            focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(
+                                    color: Color(0xFF14FFEC), width: 2)),
+                            errorBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(
+                                    color: Color(0xFFCF6679), width: 1.5)),
+                            focusedErrorBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(
+                                    color: Color(0xFFCF6679), width: 2)),
+                            errorStyle:
+                                const TextStyle(color: Color(0xFFCF6679)),
                           ),
                           validator: (v) => (v == null || v.trim().length != 6)
-                              ? 'Please enter the full 6-digit code' : null,
+                              ? 'Please enter the full 6-digit code'
+                              : null,
                         ),
                       ),
                       const SizedBox(height: 20),
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: (!smsSent || verificationId == null) ? null : () async {
-                            if (!otpFormKey.currentState!.validate()) return;
-                            setS(() => sheetLoading = true);
-                            final vResult = await FirebaseMfaService.resolveSignIn(
-                              resolver: resolver, verificationId: verificationId!,
-                              smsCode: otpController.text.trim(),
-                            );
-                            if (!sheetCtx.mounted) return;
-                            if (vResult.isSuccess) {
-                              verified = true;
-                              Navigator.pop(sheetCtx);
-                            } else {
-                              setS(() => sheetLoading = false);
-                              if (mounted) _showMessage(AuthResult.failure(vResult.message));
-                            }
-                          },
+                          onPressed: (!smsSent || verificationId == null)
+                              ? null
+                              : () async {
+                                  if (!otpFormKey.currentState!.validate()) {
+                                    return;
+                                  }
+                                  setS(() => sheetLoading = true);
+                                  final vResult =
+                                      await FirebaseMfaService.resolveSignIn(
+                                    resolver: resolver,
+                                    verificationId: verificationId!,
+                                    smsCode: otpController.text.trim(),
+                                  );
+                                  if (!sheetCtx.mounted) return;
+                                  if (vResult.isSuccess) {
+                                    verified = true;
+                                    Navigator.pop(sheetCtx);
+                                  } else {
+                                    setS(() => sheetLoading = false);
+                                    if (mounted) {
+                                      _showMessage(
+                                          AuthResult.failure(vResult.message));
+                                    }
+                                  }
+                                },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF14FFEC),
                             foregroundColor: const Color(0xFF1E3A5F),
                             padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
                           ),
                           child: sheetLoading
-                              ? const SizedBox(height: 20, width: 20,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1E3A5F)))
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Color(0xFF1E3A5F)))
                               : const Text('Verify & Sign In',
-                                  style: TextStyle(fontWeight: FontWeight.w600)),
+                                  style:
+                                      TextStyle(fontWeight: FontWeight.w600)),
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Center(child: TextButton.icon(
-                        onPressed: sheetLoading ? null : () async {
-                          setS(() { sheetLoading = true; smsSent = false; sendErrorMsg = null; verificationId = null; });
-                          await FirebaseMfaService.startSignInChallenge(
-                            resolver: resolver,
-                            onCodeSent: (vId, _) {
-                              verificationId = vId;
-                              if (sheetCtx.mounted) setS(() { sheetLoading = false; smsSent = true; });
-                              if (mounted) _showMessage(AuthResult.success(message: 'A new code has been sent to $maskedPhone.'));
-                            },
-                            onFailed: (e) {
-                              if (sheetCtx.mounted) {
+                      Center(
+                          child: TextButton.icon(
+                        onPressed: sheetLoading
+                            ? null
+                            : () async {
                                 setS(() {
-                                sheetLoading = false;
-                                sendErrorMsg = FirebaseMfaService.mapAuthErrorPublic(e);
-                              });
-                              }
-                            },
-                          );
-                        },
-                        icon: const Icon(Icons.refresh_rounded, color: Color(0xFF14FFEC), size: 16),
-                        label: const Text('Resend code', style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+                                  sheetLoading = true;
+                                  smsSent = false;
+                                  sendErrorMsg = null;
+                                  verificationId = null;
+                                });
+                                await FirebaseMfaService.startSignInChallenge(
+                                  resolver: resolver,
+                                  onCodeSent: (vId, _) {
+                                    verificationId = vId;
+                                    if (sheetCtx.mounted) {
+                                      setS(() {
+                                        sheetLoading = false;
+                                        smsSent = true;
+                                      });
+                                    }
+                                    if (mounted) {
+                                      _showMessage(AuthResult.success(
+                                          message:
+                                              'A new code has been sent to $maskedPhone.'));
+                                    }
+                                  },
+                                  onFailed: (e) {
+                                    if (sheetCtx.mounted) {
+                                      setS(() {
+                                        sheetLoading = false;
+                                        sendErrorMsg = FirebaseMfaService
+                                            .mapAuthErrorPublic(e);
+                                      });
+                                    }
+                                  },
+                                );
+                              },
+                        icon: const Icon(Icons.refresh_rounded,
+                            color: Color(0xFF14FFEC), size: 16),
+                        label: const Text('Resend code',
+                            style: TextStyle(
+                                color: Color(0xFF14FFEC), fontSize: 13)),
                       )),
                     ],
                     const SizedBox(height: 16),
-                    Center(child: TextButton(
-                      onPressed: sheetLoading ? null : () => Navigator.pop(sheetCtx),
+                    Center(
+                        child: TextButton(
+                      onPressed:
+                          sheetLoading ? null : () => Navigator.pop(sheetCtx),
                       child: Text('Cancel Sign In',
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 13)),
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.45),
+                              fontSize: 13)),
                     )),
                   ],
                 ),
@@ -1087,17 +1218,24 @@ class _AuthScreenState extends State<AuthScreen>
           Icon(Icons.security_outlined, color: Color(0xFF14FFEC)),
           SizedBox(width: 10),
           Text('Secure Your Account',
-              style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold)),
         ]),
         content: Text(
           'Add phone two-factor authentication for extra security. '
           'Enable it any time from your account settings.',
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13, height: 1.5),
+          style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.75),
+              fontSize: 13,
+              height: 1.5),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Maybe Later', style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+            child: Text('Maybe Later',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -1107,9 +1245,11 @@ class _AuthScreenState extends State<AuthScreen>
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF14FFEC),
               foregroundColor: const Color(0xFF1E3A5F),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
             ),
-            child: const Text('Enable Now', style: TextStyle(fontWeight: FontWeight.w600)),
+            child: const Text('Enable Now',
+                style: TextStyle(fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -1131,12 +1271,12 @@ class _AuthScreenState extends State<AuthScreen>
       return;
     }
 
-    final phoneController  = TextEditingController();
-    final otpController    = TextEditingController();
-    final phoneFormKey     = GlobalKey<FormState>();
-    final otpFormKey       = GlobalKey<FormState>();
-    bool  sheetLoading     = false;
-    bool  smsSent          = false;
+    final phoneController = TextEditingController();
+    final otpController = TextEditingController();
+    final phoneFormKey = GlobalKey<FormState>();
+    final otpFormKey = GlobalKey<FormState>();
+    bool sheetLoading = false;
+    bool smsSent = false;
     String? verificationId;
 
     if (!mounted) return;
@@ -1147,14 +1287,17 @@ class _AuthScreenState extends State<AuthScreen>
       backgroundColor: Colors.transparent,
       builder: (sheetCtx) => StatefulBuilder(
         builder: (ctx, setSheetState) => Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          padding:
+              EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: Container(
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                begin: Alignment.topLeft, end: Alignment.bottomRight,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
                 colors: [Color(0xFF1E3A5F), Color(0xFF0A1128)],
               ),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(28)),
               border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
             ),
             padding: const EdgeInsets.fromLTRB(28, 20, 28, 36),
@@ -1162,23 +1305,37 @@ class _AuthScreenState extends State<AuthScreen>
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Center(child: Container(
-                  width: 44, height: 4,
-                  decoration: BoxDecoration(color: Colors.white30, borderRadius: BorderRadius.circular(2)),
+                Center(
+                    child: Container(
+                  width: 44,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: Colors.white30,
+                      borderRadius: BorderRadius.circular(2)),
                 )),
                 const SizedBox(height: 24),
                 Row(children: [
-                  const Icon(Icons.phone_android_rounded, color: Color(0xFF14FFEC), size: 28),
+                  const Icon(Icons.phone_android_rounded,
+                      color: Color(0xFF14FFEC), size: 28),
                   const SizedBox(width: 12),
-                  Text(smsSent ? 'Enter Verification Code' : 'Enable Phone Two-Factor Auth',
-                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text(
+                      smsSent
+                          ? 'Enter Verification Code'
+                          : 'Enable Phone Two-Factor Auth',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold)),
                 ]),
                 const SizedBox(height: 8),
                 Text(
                   smsSent
                       ? 'Enter the 6-digit code sent to ${_maskPhone(phoneController.text)}.'
                       : 'Enter your phone number with country code (e.g. +254 712 345 678).',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 13, height: 1.4),
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.65),
+                      fontSize: 13,
+                      height: 1.4),
                 ),
                 const SizedBox(height: 24),
 
@@ -1192,23 +1349,39 @@ class _AuthScreenState extends State<AuthScreen>
                       enabled: !sheetLoading,
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
-                        labelText: 'Phone Number', hintText: '+254 712 345 678',
-                        labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
-                        hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
-                        prefixIcon: const Icon(Icons.phone_outlined, color: Color(0xFF14FFEC)),
-                        filled: true, fillColor: Colors.white.withValues(alpha: 0.08),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3))),
-                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Color(0xFF14FFEC), width: 2)),
-                        errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Color(0xFFCF6679), width: 1.5)),
+                        labelText: 'Phone Number',
+                        hintText: '+254 712 345 678',
+                        labelStyle: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.7)),
+                        hintStyle: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.3)),
+                        prefixIcon: const Icon(Icons.phone_outlined,
+                            color: Color(0xFF14FFEC)),
+                        filled: true,
+                        fillColor: Colors.white.withValues(alpha: 0.08),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                                color: Colors.white.withValues(alpha: 0.3))),
+                        focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                                color: Color(0xFF14FFEC), width: 2)),
+                        errorBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                                color: Color(0xFFCF6679), width: 1.5)),
                         errorStyle: const TextStyle(color: Color(0xFFCF6679)),
                       ),
                       validator: (v) {
-                        if (v == null || v.trim().isEmpty) return 'Please enter your phone number';
-                        if (!v.trim().startsWith('+')) return 'Include country code (e.g. +254…)';
+                        if (v == null || v.trim().isEmpty) {
+                          return 'Please enter your phone number';
+                        }
+                        if (!v.trim().startsWith('+')) {
+                          return 'Include country code (e.g. +254…)';
+                        }
                         return null;
                       },
                     ),
@@ -1218,37 +1391,64 @@ class _AuthScreenState extends State<AuthScreen>
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       icon: sheetLoading
-                          ? const SizedBox(width: 18, height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1E3A5F)))
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Color(0xFF1E3A5F)))
                           : const Icon(Icons.send_rounded, size: 18),
                       label: Text(sheetLoading ? 'Sending…' : 'Send Code'),
-                      onPressed: sheetLoading ? null : () async {
-                        if (!phoneFormKey.currentState!.validate()) return;
-                        setSheetState(() => sheetLoading = true);
-                        final session = await FirebaseMfaService.getMultiFactorSession();
-                        if (session == null) {
-                          if (sheetCtx.mounted) { setSheetState(() => sheetLoading = false); Navigator.pop(sheetCtx); }
-                          if (mounted) _showMessage(AuthResult.failure('Session expired. Please sign in again.'));
-                          return;
-                        }
-                        await FirebaseMfaService.startEnrollment(
-                          phoneNumber: phoneController.text.trim(),
-                          session: session,
-                          onCodeSent: (vId, _) {
-                            verificationId = vId;
-                            if (sheetCtx.mounted) setSheetState(() { sheetLoading = false; smsSent = true; });
-                          },
-                          onFailed: (e) {
-                            if (sheetCtx.mounted) { setSheetState(() => sheetLoading = false); Navigator.pop(sheetCtx); }
-                            if (mounted) _showMessage(AuthResult.failure(FirebaseMfaService.mapAuthErrorPublic(e)));
-                          },
-                        );
-                      },
+                      onPressed: sheetLoading
+                          ? null
+                          : () async {
+                              if (!phoneFormKey.currentState!.validate()) {
+                                return;
+                              }
+                              setSheetState(() => sheetLoading = true);
+                              final session = await FirebaseMfaService
+                                  .getMultiFactorSession();
+                              if (session == null) {
+                                if (sheetCtx.mounted) {
+                                  setSheetState(() => sheetLoading = false);
+                                  Navigator.pop(sheetCtx);
+                                }
+                                if (mounted) {
+                                  _showMessage(AuthResult.failure(
+                                      'Session expired. Please sign in again.'));
+                                }
+                                return;
+                              }
+                              await FirebaseMfaService.startEnrollment(
+                                phoneNumber: phoneController.text.trim(),
+                                session: session,
+                                onCodeSent: (vId, _) {
+                                  verificationId = vId;
+                                  if (sheetCtx.mounted) {
+                                    setSheetState(() {
+                                      sheetLoading = false;
+                                      smsSent = true;
+                                    });
+                                  }
+                                },
+                                onFailed: (e) {
+                                  if (sheetCtx.mounted) {
+                                    setSheetState(() => sheetLoading = false);
+                                    Navigator.pop(sheetCtx);
+                                  }
+                                  if (mounted) {
+                                    _showMessage(AuthResult.failure(
+                                        FirebaseMfaService.mapAuthErrorPublic(
+                                            e)));
+                                  }
+                                },
+                              );
+                            },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF14FFEC),
                         foregroundColor: const Color(0xFF1E3A5F),
                         padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                     ),
                   ),
@@ -1261,72 +1461,109 @@ class _AuthScreenState extends State<AuthScreen>
                     child: TextFormField(
                       controller: otpController,
                       keyboardType: TextInputType.number,
-                      maxLength: 6, autofocus: true, enabled: !sheetLoading,
+                      maxLength: 6,
+                      autofocus: true,
+                      enabled: !sheetLoading,
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      style: const TextStyle(color: Colors.white, fontSize: 22, letterSpacing: 10),
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 22, letterSpacing: 10),
                       textAlign: TextAlign.center,
                       decoration: InputDecoration(
-                        counterText: '', hintText: '------',
-                        hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3), letterSpacing: 8),
-                        filled: true, fillColor: Colors.white.withValues(alpha: 0.08),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3))),
-                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Color(0xFF14FFEC), width: 2)),
-                        errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Color(0xFFCF6679), width: 1.5)),
+                        counterText: '',
+                        hintText: '------',
+                        hintStyle: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.3),
+                            letterSpacing: 8),
+                        filled: true,
+                        fillColor: Colors.white.withValues(alpha: 0.08),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                                color: Colors.white.withValues(alpha: 0.3))),
+                        focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                                color: Color(0xFF14FFEC), width: 2)),
+                        errorBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                                color: Color(0xFFCF6679), width: 1.5)),
                         errorStyle: const TextStyle(color: Color(0xFFCF6679)),
                       ),
                       validator: (v) => (v == null || v.trim().length != 6)
-                          ? 'Please enter the full 6-digit code' : null,
+                          ? 'Please enter the full 6-digit code'
+                          : null,
                     ),
                   ),
                   const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: (sheetLoading || verificationId == null) ? null : () async {
-                        if (!otpFormKey.currentState!.validate()) return;
-                        setSheetState(() => sheetLoading = true);
-                        final r = await FirebaseMfaService.completeEnrollment(
-                          verificationId: verificationId!, smsCode: otpController.text.trim(),
-                        );
-                        if (!sheetCtx.mounted) return;
-                        setSheetState(() => sheetLoading = false);
-                        Navigator.pop(sheetCtx);
-                        if (mounted) {
-                          _showMessage(r.isSuccess
-                            ? AuthResult.success(message: r.message)
-                            : AuthResult.failure(r.message));
-                        }
-                      },
+                      onPressed: (sheetLoading || verificationId == null)
+                          ? null
+                          : () async {
+                              if (!otpFormKey.currentState!.validate()) return;
+                              setSheetState(() => sheetLoading = true);
+                              final r =
+                                  await FirebaseMfaService.completeEnrollment(
+                                verificationId: verificationId!,
+                                smsCode: otpController.text.trim(),
+                              );
+                              if (!sheetCtx.mounted) return;
+                              setSheetState(() => sheetLoading = false);
+                              Navigator.pop(sheetCtx);
+                              if (mounted) {
+                                _showMessage(r.isSuccess
+                                    ? AuthResult.success(message: r.message)
+                                    : AuthResult.failure(r.message));
+                              }
+                            },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF14FFEC),
                         foregroundColor: const Color(0xFF1E3A5F),
                         padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                       child: sheetLoading
-                          ? const SizedBox(height: 20, width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1E3A5F)))
-                          : const Text('Confirm & Enable MFA', style: TextStyle(fontWeight: FontWeight.w600)),
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Color(0xFF1E3A5F)))
+                          : const Text('Confirm & Enable MFA',
+                              style: TextStyle(fontWeight: FontWeight.w600)),
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Center(child: TextButton.icon(
-                    onPressed: sheetLoading ? null : () => setSheetState(() {
-                      smsSent = false; verificationId = null; otpController.clear();
-                    }),
-                    icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF14FFEC), size: 16),
-                    label: const Text('Change phone number', style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+                  Center(
+                      child: TextButton.icon(
+                    onPressed: sheetLoading
+                        ? null
+                        : () => setSheetState(() {
+                              smsSent = false;
+                              verificationId = null;
+                              otpController.clear();
+                            }),
+                    icon: const Icon(Icons.arrow_back_rounded,
+                        color: Color(0xFF14FFEC), size: 16),
+                    label: const Text('Change phone number',
+                        style:
+                            TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
                   )),
                 ],
 
                 const SizedBox(height: 8),
-                Center(child: TextButton(
-                  onPressed: sheetLoading ? null : () => Navigator.pop(sheetCtx),
-                  child: Text('Skip for now', style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 13)),
+                Center(
+                    child: TextButton(
+                  onPressed:
+                      sheetLoading ? null : () => Navigator.pop(sheetCtx),
+                  child: Text('Skip for now',
+                      style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 13)),
                 )),
               ],
             ),
@@ -1364,78 +1601,114 @@ class _AuthScreenState extends State<AuthScreen>
       context: context,
       builder: (ctx) {
         bool sending = false;
-        bool sent    = false;
+        bool sent = false;
 
-        return StatefulBuilder(builder: (ctx2, setD) => AlertDialog(
-          backgroundColor: const Color(0xFF1E3A5F),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Row(children: [
-            Icon(Icons.mark_email_unread_outlined, color: Color(0xFF14FFEC)),
-            SizedBox(width: 10),
-            Expanded(child: Text('Verify Your Email First',
-                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))),
-          ]),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Phone two-factor authentication requires a verified email address. '
-                'Please verify $email before enabling MFA.',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13, height: 1.5),
-              ),
-              if (sent) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF14FFEC).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFF14FFEC).withValues(alpha: 0.3)),
-                  ),
-                  child: Row(children: [
-                    const Icon(Icons.check_circle_outline, color: Color(0xFF14FFEC), size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text('Verification link sent! Check your inbox and tap the link.',
-                        style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12, height: 1.4))),
+        return StatefulBuilder(
+            builder: (ctx2, setD) => AlertDialog(
+                  backgroundColor: const Color(0xFF1E3A5F),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20)),
+                  title: const Row(children: [
+                    Icon(Icons.mark_email_unread_outlined,
+                        color: Color(0xFF14FFEC)),
+                    SizedBox(width: 10),
+                    Expanded(
+                        child: Text('Verify Your Email First',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold))),
                   ]),
-                ),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx2),
-              child: Text('Close', style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
-            ),
-            if (!sent)
-              ElevatedButton.icon(
-                icon: sending
-                    ? const SizedBox(width: 14, height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1E3A5F)))
-                    : const Icon(Icons.send_rounded, size: 16),
-                label: Text(sending ? 'Sending…' : 'Resend Verification Link'),
-                onPressed: sending ? null : () async {
-                  setD(() => sending = true);
-                  // Pass the email explicitly — Firebase currentUser is null
-                  // with Persistence.NONE and API-only auth.
-                  final ok = await FirebaseService.sendEmailVerificationLink(
-                    emailOverride: email,
-                  );
-                  setD(() { sending = false; sent = ok; });
-                  if (!ok && ctx2.mounted) {
-                    Navigator.pop(ctx2);
-                    if (mounted) _showMessage(AuthResult.failure('Could not send verification link. Please try again.'));
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF14FFEC),
-                  foregroundColor: const Color(0xFF1E3A5F),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-              ),
-          ],
-        ));
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Phone two-factor authentication requires a verified email address. '
+                        'Please verify $email before enabling MFA.',
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.75),
+                            fontSize: 13,
+                            height: 1.5),
+                      ),
+                      if (sent) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color:
+                                const Color(0xFF14FFEC).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color: const Color(0xFF14FFEC)
+                                    .withValues(alpha: 0.3)),
+                          ),
+                          child: Row(children: [
+                            const Icon(Icons.check_circle_outline,
+                                color: Color(0xFF14FFEC), size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(
+                                child: Text(
+                                    'Verification link sent! Check your inbox and tap the link.',
+                                    style: TextStyle(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.85),
+                                        fontSize: 12,
+                                        height: 1.4))),
+                          ]),
+                        ),
+                      ],
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx2),
+                      child: Text('Close',
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6))),
+                    ),
+                    if (!sent)
+                      ElevatedButton.icon(
+                        icon: sending
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Color(0xFF1E3A5F)))
+                            : const Icon(Icons.send_rounded, size: 16),
+                        label: Text(
+                            sending ? 'Sending…' : 'Resend Verification Link'),
+                        onPressed: sending
+                            ? null
+                            : () async {
+                                setD(() => sending = true);
+                                // Pass the email explicitly — Firebase currentUser is null
+                                // with Persistence.NONE and API-only auth.
+                                final ok = await FirebaseService
+                                    .sendEmailVerificationLink(
+                                  emailOverride: email,
+                                );
+                                setD(() {
+                                  sending = false;
+                                  sent = ok;
+                                });
+                                if (!ok && ctx2.mounted) {
+                                  Navigator.pop(ctx2);
+                                  if (mounted) {
+                                    _showMessage(AuthResult.failure(
+                                        'Could not send verification link. Please try again.'));
+                                  }
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF14FFEC),
+                          foregroundColor: const Color(0xFF1E3A5F),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                  ],
+                ));
       },
     );
   }
@@ -1445,13 +1718,20 @@ class _AuthScreenState extends State<AuthScreen>
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Row(children: [
-        Icon(result.isSuccess ? Icons.check_circle_outline : Icons.error_outline,
-            color: Colors.white, size: 20),
+        Icon(
+            result.isSuccess ? Icons.check_circle_outline : Icons.error_outline,
+            color: Colors.white,
+            size: 20),
         const SizedBox(width: 10),
-        Expanded(child: Text(result.message,
-            style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500))),
+        Expanded(
+            child: Text(result.message,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500))),
       ]),
-      backgroundColor: result.isSuccess ? const Color(0xFF0D7377) : const Color(0xFFB00020),
+      backgroundColor:
+          result.isSuccess ? const Color(0xFF0D7377) : const Color(0xFFB00020),
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       margin: const EdgeInsets.all(16),
@@ -1468,20 +1748,24 @@ class _AuthScreenState extends State<AuthScreen>
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                begin: Alignment.topLeft, end: Alignment.bottomRight,
-                colors: [Color(0xFF0A1128), Color(0xFF1E3A5F), Color(0xFF0D7377)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF0A1128),
+                  Color(0xFF1E3A5F),
+                  Color(0xFF0D7377)
+                ],
               ),
             ),
           ),
-
           if (_isLoading)
             Container(
               color: Colors.black.withValues(alpha: 0.45),
               child: const Center(
-                child: CircularProgressIndicator(color: Color(0xFF14FFEC), strokeWidth: 3),
+                child: CircularProgressIndicator(
+                    color: Color(0xFF14FFEC), strokeWidth: 3),
               ),
             ),
-
           SafeArea(
             child: Column(
               children: [
@@ -1489,12 +1773,12 @@ class _AuthScreenState extends State<AuthScreen>
                   padding: const EdgeInsets.all(16),
                   child: Row(children: [
                     IconButton(
-                      onPressed: _isLoading ? null : () => Navigator.pop(context),
+                      onPressed:
+                          _isLoading ? null : () => Navigator.pop(context),
                       icon: const Icon(Icons.arrow_back, color: Colors.white),
                     ),
                   ]),
                 ),
-
                 Expanded(
                   child: Center(
                     child: SingleChildScrollView(
@@ -1505,39 +1789,69 @@ class _AuthScreenState extends State<AuthScreen>
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                          boxShadow: [BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.3), blurRadius: 30, spreadRadius: 5)],
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.2)),
+                          boxShadow: [
+                            BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                blurRadius: 30,
+                                spreadRadius: 5)
+                          ],
                         ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             // Logo
                             Container(
-                              width: 80, height: 80,
-                              decoration: BoxDecoration(shape: BoxShape.circle,
-                                boxShadow: [BoxShadow(
-                                    color: const Color(0xFF14FFEC).withValues(alpha: 0.5),
-                                    blurRadius: 20, spreadRadius: 5)]),
-                              child: ClipOval(child: Image.asset('assets/images/logo.png',
-                                width: 80, height: 80, fit: BoxFit.cover,
+                              width: 80,
+                              height: 80,
+                              decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                        color: const Color(0xFF14FFEC)
+                                            .withValues(alpha: 0.5),
+                                        blurRadius: 20,
+                                        spreadRadius: 5)
+                                  ]),
+                              child: ClipOval(
+                                  child: Image.asset(
+                                'assets/images/logo.png',
+                                width: 80,
+                                height: 80,
+                                fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => Container(
-                                  width: 80, height: 80,
+                                  width: 80,
+                                  height: 80,
                                   decoration: const BoxDecoration(
-                                      gradient: LinearGradient(colors: [Color(0xFF14FFEC), Color(0xFF0D7377)]),
+                                      gradient: LinearGradient(colors: [
+                                        Color(0xFF14FFEC),
+                                        Color(0xFF0D7377)
+                                      ]),
                                       shape: BoxShape.circle),
-                                  child: const Icon(Icons.travel_explore_rounded, size: 40, color: Colors.white),
+                                  child: const Icon(
+                                      Icons.travel_explore_rounded,
+                                      size: 40,
+                                      color: Colors.white),
                                 ),
                               )),
                             ),
                             const SizedBox(height: 24),
                             Text('PALMNAZI RC',
-                                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                    fontSize: 30, fontWeight: FontWeight.bold,
-                                    letterSpacing: 2, color: Colors.white)),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineMedium
+                                    ?.copyWith(
+                                        fontSize: 30,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 2,
+                                        color: Colors.white)),
                             const SizedBox(height: 8),
                             Text('Resort Cities',
-                                style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 14, letterSpacing: 3)),
+                                style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.7),
+                                    fontSize: 14,
+                                    letterSpacing: 3)),
                             const SizedBox(height: 32),
 
                             // ── Tab bar: Login | Sign Up | Magic Link ──────
@@ -1548,18 +1862,23 @@ class _AuthScreenState extends State<AuthScreen>
                               child: TabBar(
                                 controller: _tabController,
                                 indicator: BoxDecoration(
-                                    gradient: const LinearGradient(
-                                        colors: [Color(0xFF14FFEC), Color(0xFF0D7377)]),
+                                    gradient: const LinearGradient(colors: [
+                                      Color(0xFF14FFEC),
+                                      Color(0xFF0D7377)
+                                    ]),
                                     borderRadius: BorderRadius.circular(30)),
                                 indicatorSize: TabBarIndicatorSize.tab,
                                 dividerColor: Colors.transparent,
                                 labelColor: Colors.white,
                                 unselectedLabelColor: Colors.white70,
-                                labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                labelStyle: const TextStyle(
+                                    fontSize: 12, fontWeight: FontWeight.w600),
                                 tabs: const [
                                   Tab(text: 'Login'),
                                   Tab(text: 'Sign Up'),
-                                  Tab(icon: Icon(Icons.link_rounded, size: 18), text: 'Magic Link'),
+                                  Tab(
+                                      icon: Icon(Icons.link_rounded, size: 18),
+                                      text: 'Magic Link'),
                                 ],
                               ),
                             ),
@@ -1573,7 +1892,7 @@ class _AuthScreenState extends State<AuthScreen>
                                 children: [
                                   _buildLoginForm(),
                                   _buildSignUpForm(),
-                                  _buildMagicLinkForm(),   // ← NEW
+                                  _buildMagicLinkForm(), // ← NEW
                                 ],
                               ),
                             ),
@@ -1598,19 +1917,28 @@ class _AuthScreenState extends State<AuthScreen>
       child: Column(
         children: [
           _buildTextField(
-            controller: _loginEmailController, label: 'Email',
-            icon: Icons.email_outlined, keyboardType: TextInputType.emailAddress,
+            controller: _loginEmailController,
+            label: 'Email',
+            icon: Icons.email_outlined,
+            keyboardType: TextInputType.emailAddress,
             validator: _emailValidator,
           ),
           const SizedBox(height: 16),
           _buildTextField(
-            controller: _loginPasswordController, label: 'Password',
-            icon: Icons.lock_outlined, obscureText: _obscureLoginPassword,
-            validator: (v) => (v == null || v.isEmpty) ? 'Please enter your password' : null,
+            controller: _loginPasswordController,
+            label: 'Password',
+            icon: Icons.lock_outlined,
+            obscureText: _obscureLoginPassword,
+            validator: (v) =>
+                (v == null || v.isEmpty) ? 'Please enter your password' : null,
             suffixIcon: IconButton(
-              icon: Icon(_obscureLoginPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+              icon: Icon(
+                  _obscureLoginPassword
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
                   color: Colors.white70),
-              onPressed: () => setState(() => _obscureLoginPassword = !_obscureLoginPassword),
+              onPressed: () => setState(
+                  () => _obscureLoginPassword = !_obscureLoginPassword),
             ),
           ),
           const SizedBox(height: 24),
@@ -1619,15 +1947,19 @@ class _AuthScreenState extends State<AuthScreen>
           TextButton(
             onPressed: _isLoading ? null : _showForgotPasswordSheet,
             child: Text('Forgot Password?',
-                style: TextStyle(color: const Color(0xFF14FFEC).withValues(alpha: 0.9))),
+                style: TextStyle(
+                    color: const Color(0xFF14FFEC).withValues(alpha: 0.9))),
           ),
           TextButton(
             onPressed: _isLoading
                 ? null
-                : () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const ResetPasswordScreen())),
+                : () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const ResetPasswordScreen())),
             child: Text('Have a reset code? Set new password →',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12)),
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55), fontSize: 12)),
           ),
           const SizedBox(height: 4),
           _buildDivider(),
@@ -1646,38 +1978,57 @@ class _AuthScreenState extends State<AuthScreen>
         child: Column(
           children: [
             _buildTextField(
-              controller: _signUpEmailController, label: 'Email',
-              icon: Icons.email_outlined, keyboardType: TextInputType.emailAddress,
+              controller: _signUpEmailController,
+              label: 'Email',
+              icon: Icons.email_outlined,
+              keyboardType: TextInputType.emailAddress,
               validator: _emailValidator,
             ),
             const SizedBox(height: 16),
             _buildTextField(
-              controller: _signUpPasswordController, label: 'Password',
-              icon: Icons.lock_outlined, obscureText: _obscureSignUpPassword,
+              controller: _signUpPasswordController,
+              label: 'Password',
+              icon: Icons.lock_outlined,
+              obscureText: _obscureSignUpPassword,
               validator: _passwordValidator,
               suffixIcon: IconButton(
-                icon: Icon(_obscureSignUpPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                icon: Icon(
+                    _obscureSignUpPassword
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
                     color: Colors.white70),
-                onPressed: () => setState(() => _obscureSignUpPassword = !_obscureSignUpPassword),
+                onPressed: () => setState(
+                    () => _obscureSignUpPassword = !_obscureSignUpPassword),
               ),
             ),
             const SizedBox(height: 16),
             _buildTextField(
-              controller: _signUpConfirmPasswordController, label: 'Confirm Password',
-              icon: Icons.lock_outlined, obscureText: _obscureConfirmPassword,
+              controller: _signUpConfirmPasswordController,
+              label: 'Confirm Password',
+              icon: Icons.lock_outlined,
+              obscureText: _obscureConfirmPassword,
               validator: (v) {
-                if (v == null || v.isEmpty) return 'Please confirm your password';
-                if (v != _signUpPasswordController.text) return 'Passwords do not match';
+                if (v == null || v.isEmpty) {
+                  return 'Please confirm your password';
+                }
+                if (v != _signUpPasswordController.text) {
+                  return 'Passwords do not match';
+                }
                 return null;
               },
               suffixIcon: IconButton(
-                icon: Icon(_obscureConfirmPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                icon: Icon(
+                    _obscureConfirmPassword
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
                     color: Colors.white70),
-                onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                onPressed: () => setState(
+                    () => _obscureConfirmPassword = !_obscureConfirmPassword),
               ),
             ),
             const SizedBox(height: 24),
-            _buildPrimaryButton(label: 'Create Account', onPressed: _handleRegister),
+            _buildPrimaryButton(
+                label: 'Create Account', onPressed: _handleRegister),
             const SizedBox(height: 16),
             _buildDivider(),
             const SizedBox(height: 16),
@@ -1701,15 +2052,21 @@ class _AuthScreenState extends State<AuthScreen>
             decoration: BoxDecoration(
               color: const Color(0xFF14FFEC).withValues(alpha: 0.07),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFF14FFEC).withValues(alpha: 0.25)),
+              border: Border.all(
+                  color: const Color(0xFF14FFEC).withValues(alpha: 0.25)),
             ),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Icon(Icons.auto_awesome_rounded, color: Color(0xFF14FFEC), size: 18),
+              const Icon(Icons.auto_awesome_rounded,
+                  color: Color(0xFF14FFEC), size: 18),
               const SizedBox(width: 10),
-              Expanded(child: Text(
+              Expanded(
+                  child: Text(
                 'No password needed. Enter your email and we\'ll send a '
                 'one-tap sign-in link. Tapping it also verifies your email address.',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12, height: 1.5),
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontSize: 12,
+                    height: 1.5),
               )),
             ]),
           ),
@@ -1719,8 +2076,10 @@ class _AuthScreenState extends State<AuthScreen>
             Form(
               key: _magicFormKey,
               child: _buildTextField(
-                controller: _magicEmailController, label: 'Email Address',
-                icon: Icons.email_outlined, keyboardType: TextInputType.emailAddress,
+                controller: _magicEmailController,
+                label: 'Email Address',
+                icon: Icons.email_outlined,
+                keyboardType: TextInputType.emailAddress,
                 validator: _emailValidator,
               ),
             ),
@@ -1737,21 +2096,28 @@ class _AuthScreenState extends State<AuthScreen>
               decoration: BoxDecoration(
                 color: const Color(0xFF0D7377).withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFF0D7377).withValues(alpha: 0.4)),
+                border: Border.all(
+                    color: const Color(0xFF0D7377).withValues(alpha: 0.4)),
               ),
               child: Column(
                 children: [
-                  const Icon(Icons.mark_email_read_outlined, color: Color(0xFF14FFEC), size: 40),
+                  const Icon(Icons.mark_email_read_outlined,
+                      color: Color(0xFF14FFEC), size: 40),
                   const SizedBox(height: 12),
-                  const Text('Link sent!', style: TextStyle(color: Colors.white,
-                      fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Text('Link sent!',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   Text(
                     'Check your inbox for ${_magicEmailController.text.trim()}. '
                     'Tap the link in the email to sign in — no password needed.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.7),
-                        fontSize: 13, height: 1.5),
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 13,
+                        height: 1.5),
                   ),
                   const SizedBox(height: 16),
                   Container(
@@ -1761,12 +2127,17 @@ class _AuthScreenState extends State<AuthScreen>
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Row(children: [
-                      const Icon(Icons.info_outline, color: Color(0xFF14FFEC), size: 14),
+                      const Icon(Icons.info_outline,
+                          color: Color(0xFF14FFEC), size: 14),
                       const SizedBox(width: 8),
-                      Expanded(child: Text(
+                      Expanded(
+                          child: Text(
                         'The link opens this app directly. If it asks for your email, '
                         'enter ${_magicEmailController.text.trim()}.',
-                        style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11, height: 1.4),
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.55),
+                            fontSize: 11,
+                            height: 1.4),
                       )),
                     ]),
                   ),
@@ -1780,14 +2151,17 @@ class _AuthScreenState extends State<AuthScreen>
               child: OutlinedButton.icon(
                 icon: const Icon(Icons.refresh_rounded, size: 16),
                 label: const Text('Resend Link'),
-                onPressed: _isLoading ? null : () {
-                  setState(() => _magicLinkSent = false);
-                },
+                onPressed: _isLoading
+                    ? null
+                    : () {
+                        setState(() => _magicLinkSent = false);
+                      },
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF14FFEC),
                   side: const BorderSide(color: Color(0xFF14FFEC)),
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ),
@@ -1802,7 +2176,9 @@ class _AuthScreenState extends State<AuthScreen>
             child: TextButton(
               onPressed: () => _tabController.animateTo(0),
               child: Text('Use password instead →',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.5),
+                      fontSize: 12)),
             ),
           ),
         ],
@@ -1824,16 +2200,25 @@ class _AuthScreenState extends State<AuthScreen>
           backgroundColor: const Color(0xFF14FFEC),
           foregroundColor: const Color(0xFF1E3A5F),
           padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         child: _isLoading
-            ? const SizedBox(height: 20, width: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1E3A5F)))
+            ? const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Color(0xFF1E3A5F)))
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (icon != null) ...[Icon(icon, size: 18), const SizedBox(width: 8)],
-                  Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  if (icon != null) ...[
+                    Icon(icon, size: 18),
+                    const SizedBox(width: 8)
+                  ],
+                  Text(label,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w600)),
                 ],
               ),
       ),
@@ -1849,9 +2234,11 @@ class _AuthScreenState extends State<AuthScreen>
         label: Text(label),
         style: OutlinedButton.styleFrom(
           foregroundColor: Colors.white,
-          side: BorderSide(color: Colors.white.withValues(alpha: 0.5), width: 2),
+          side:
+              BorderSide(color: Colors.white.withValues(alpha: 0.5), width: 2),
           padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
     );
@@ -1860,8 +2247,10 @@ class _AuthScreenState extends State<AuthScreen>
   Widget _buildDivider() {
     return Row(children: [
       Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.3))),
-      Padding(padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text('OR', style: TextStyle(color: Colors.white.withValues(alpha: 0.6)))),
+      Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text('OR',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.6)))),
       Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.3))),
     ]);
   }
@@ -1876,50 +2265,66 @@ class _AuthScreenState extends State<AuthScreen>
     String? Function(String?)? validator,
   }) {
     return TextFormField(
-      controller: controller, obscureText: obscureText,
-      keyboardType: keyboardType, enabled: !_isLoading,
+      controller: controller,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      enabled: !_isLoading,
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         labelText: label,
         labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
         prefixIcon: Icon(icon, color: const Color(0xFF14FFEC)),
-        suffixIcon: suffixIcon, filled: true,
+        suffixIcon: suffixIcon,
+        filled: true,
         fillColor: Colors.white.withValues(alpha: 0.08),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3))),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3))),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
             borderSide: const BorderSide(color: Color(0xFF14FFEC), width: 2)),
-        errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+        errorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
             borderSide: const BorderSide(color: Color(0xFFCF6679), width: 1.5)),
-        focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+        focusedErrorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
             borderSide: const BorderSide(color: Color(0xFFCF6679), width: 2)),
         errorStyle: const TextStyle(color: Color(0xFFCF6679)),
       ),
-      validator: validator ?? (value) {
-        if (value == null || value.isEmpty) return 'Please enter $label';
-        return null;
-      },
+      validator: validator ??
+          (value) {
+            if (value == null || value.isEmpty) return 'Please enter $label';
+            return null;
+          },
     );
   }
 
   // ── Forgot Password Sheet ─────────────────────────────────────────────────
   void _showForgotPasswordSheet() {
-    final forgotEmailController = TextEditingController(text: _loginEmailController.text.trim());
+    final forgotEmailController =
+        TextEditingController(text: _loginEmailController.text.trim());
     final forgotFormKey = GlobalKey<FormState>();
     bool sheetLoading = false;
 
     showModalBottomSheet(
-      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (sheetCtx) => StatefulBuilder(
         builder: (ctx, setSheetState) => Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          padding:
+              EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: Container(
             decoration: BoxDecoration(
-              gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+              gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                   colors: [Color(0xFF1E3A5F), Color(0xFF0A1128)]),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(28)),
               border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
             ),
             padding: const EdgeInsets.fromLTRB(28, 20, 28, 36),
@@ -1929,45 +2334,76 @@ class _AuthScreenState extends State<AuthScreen>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Center(child: Container(width: 44, height: 4,
-                      decoration: BoxDecoration(color: Colors.white30, borderRadius: BorderRadius.circular(2)))),
+                  Center(
+                      child: Container(
+                          width: 44,
+                          height: 4,
+                          decoration: BoxDecoration(
+                              color: Colors.white30,
+                              borderRadius: BorderRadius.circular(2)))),
                   const SizedBox(height: 24),
                   Row(children: [
                     Container(
-                      width: 48, height: 48,
-                      decoration: const BoxDecoration(shape: BoxShape.circle,
-                          gradient: LinearGradient(colors: [Color(0xFF14FFEC), Color(0xFF0D7377)])),
-                      child: const Icon(Icons.lock_reset_rounded, color: Colors.white, size: 24),
+                      width: 48,
+                      height: 48,
+                      decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                              colors: [Color(0xFF14FFEC), Color(0xFF0D7377)])),
+                      child: const Icon(Icons.lock_reset_rounded,
+                          color: Colors.white, size: 24),
                     ),
                     const SizedBox(width: 16),
-                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const Text('Reset Password',
-                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                      Text("We'll send a reset link to your email",
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13)),
-                    ]),
+                    Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Reset Password',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold)),
+                          Text("We'll send a reset link to your email",
+                              style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.6),
+                                  fontSize: 13)),
+                        ]),
                   ]),
                   const SizedBox(height: 28),
                   TextFormField(
-                    controller: forgotEmailController, keyboardType: TextInputType.emailAddress,
-                    style: const TextStyle(color: Colors.white), enabled: !sheetLoading,
+                    controller: forgotEmailController,
+                    keyboardType: TextInputType.emailAddress,
+                    style: const TextStyle(color: Colors.white),
+                    enabled: !sheetLoading,
                     decoration: InputDecoration(
                       labelText: 'Email Address',
-                      labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
-                      prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFF14FFEC)),
-                      filled: true, fillColor: Colors.white.withValues(alpha: 0.08),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3))),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFF14FFEC), width: 2)),
-                      errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFCF6679), width: 1.5)),
+                      labelStyle:
+                          TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+                      prefixIcon: const Icon(Icons.email_outlined,
+                          color: Color(0xFF14FFEC)),
+                      filled: true,
+                      fillColor: Colors.white.withValues(alpha: 0.08),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.3))),
+                      focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                              color: Color(0xFF14FFEC), width: 2)),
+                      errorBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                              color: Color(0xFFCF6679), width: 1.5)),
                       errorStyle: const TextStyle(color: Color(0xFFCF6679)),
                     ),
                     validator: (v) {
-                      if (v == null || v.isEmpty) return 'Please enter your email';
-                      if (!RegExp(r'^[\w\-\.]+@([\w\-]+\.)+[\w\-]{2,4}$').hasMatch(v.trim())) {
+                      if (v == null || v.isEmpty) {
+                        return 'Please enter your email';
+                      }
+                      if (!RegExp(r'^[\w\-\.]+@([\w\-]+\.)+[\w\-]{2,4}$')
+                          .hasMatch(v.trim())) {
                         return 'Please enter a valid email';
                       }
                       return null;
@@ -1975,43 +2411,66 @@ class _AuthScreenState extends State<AuthScreen>
                   ),
                   const SizedBox(height: 28),
                   Row(children: [
-                    Expanded(child: OutlinedButton(
-                      onPressed: sheetLoading ? null : () => Navigator.pop(sheetCtx),
+                    Expanded(
+                        child: OutlinedButton(
+                      onPressed:
+                          sheetLoading ? null : () => Navigator.pop(sheetCtx),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.white70,
-                        side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
+                        side: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.3)),
                         padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                       child: const Text('Cancel'),
                     )),
                     const SizedBox(width: 12),
-                    Expanded(flex: 2, child: ElevatedButton(
-                      onPressed: sheetLoading ? null : () async {
-                        if (!forgotFormKey.currentState!.validate()) return;
-                        setSheetState(() => sheetLoading = true);
-                        final result = await AuthService.forgotPassword(email: forgotEmailController.text.trim());
-                        setSheetState(() => sheetLoading = false);
-                        if (!sheetCtx.mounted) return;
-                        Navigator.pop(sheetCtx);
-                        if (!mounted) return;
-                        _showMessage(result);
-                        if (result.isSuccess) {
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const ResetPasswordScreen()));
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF14FFEC),
-                        foregroundColor: const Color(0xFF1E3A5F),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      child: sheetLoading
-                          ? const SizedBox(height: 20, width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1E3A5F)))
-                          : const Text('Send Reset Link',
-                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                    )),
+                    Expanded(
+                        flex: 2,
+                        child: ElevatedButton(
+                          onPressed: sheetLoading
+                              ? null
+                              : () async {
+                                  if (!forgotFormKey.currentState!.validate()) {
+                                    return;
+                                  }
+                                  setSheetState(() => sheetLoading = true);
+                                  final result =
+                                      await AuthService.forgotPassword(
+                                          email: forgotEmailController.text
+                                              .trim());
+                                  setSheetState(() => sheetLoading = false);
+                                  if (!sheetCtx.mounted) return;
+                                  Navigator.pop(sheetCtx);
+                                  if (!mounted) return;
+                                  _showMessage(result);
+                                  if (result.isSuccess) {
+                                    Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                            builder: (_) =>
+                                                const ResetPasswordScreen()));
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF14FFEC),
+                            foregroundColor: const Color(0xFF1E3A5F),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: sheetLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Color(0xFF1E3A5F)))
+                              : const Text('Send Reset Link',
+                                  style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600)),
+                        )),
                   ]),
                 ],
               ),
@@ -2025,7 +2484,8 @@ class _AuthScreenState extends State<AuthScreen>
   // ── Validators ────────────────────────────────────────────────────────────
   String? _emailValidator(String? value) {
     if (value == null || value.isEmpty) return 'Please enter your email';
-    if (!RegExp(r'^[\w\-\.]+@([\w\-]+\.)+[\w\-]{2,4}$').hasMatch(value.trim())) {
+    if (!RegExp(r'^[\w\-\.]+@([\w\-]+\.)+[\w\-]{2,4}$')
+        .hasMatch(value.trim())) {
       return 'Please enter a valid email address';
     }
     return null;

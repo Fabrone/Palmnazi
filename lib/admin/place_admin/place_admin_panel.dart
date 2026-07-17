@@ -18,9 +18,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // PlaceAdminPanel
 //
-// The place-scoped counterpart to AdminDashboard. A plain 'Admin' is limited
-// to exactly one place (Users/{uid}.managedPlaceId — see rbac_service.dart);
-// this panel is everything they can see and do:
+// The place-scoped counterpart to AdminDashboard. A City Manager or Content
+// Admin is limited to exactly one place (Users/{uid}.managedPlaceId — see
+// rbac_service.dart); this panel is everything they can see and do:
 //   Overview  — booking stats for this place only
 //   Bookings  — AdminBookingsScreen(placeId: …), reusing the existing screen
 //   Details   — AdminPlaceWizardScreen(existingPlace: …) in edit mode
@@ -28,9 +28,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 //               methods this place accepts (Place_details.paymentMethods)
 //   Queries   — tourist questions about this place (see place_queries later)
 //
-// admin_dashboard.dart embeds this directly (full-bleed, no back button) when
-// role == 'Admin', and pushes it as its own route (with a back button) when
-// MainAdmin opens "Place Admin" for a place they've chosen to inspect.
+// admin_dashboard.dart embeds this directly (full-bleed, no back button) for
+// City Manager / Content Admin roles, and pushes it as its own route (with a
+// back button) when MainAdmin opens "Place Admin" for a place they've chosen
+// to inspect.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class PlaceAdminPanel extends StatefulWidget {
@@ -39,8 +40,9 @@ class PlaceAdminPanel extends StatefulWidget {
   final String cityName;
 
   /// True when pushed as its own route by MainAdmin (shows a back button);
-  /// false when it IS the whole app for a place-scoped Admin (shows
-  /// "Back to App" instead, matching AdminDashboard's sidebar convention).
+  /// false when it IS the whole app for a place-scoped City Manager /
+  /// Content Admin (shows "Back to App" instead, matching AdminDashboard's
+  /// sidebar convention).
   final bool isMainAdminView;
 
   const PlaceAdminPanel({

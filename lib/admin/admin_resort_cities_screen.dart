@@ -2,8 +2,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:logger/logger.dart';
 import 'package:palmnazi/admin/admin_api_service.dart';
+import 'package:palmnazi/admin/admin_place_map_picker.dart';
 import 'package:palmnazi/models/city_details_model.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/services/city_details_service.dart';
@@ -1580,6 +1582,44 @@ class _CityFormDialogState extends State<_CityFormDialog> {
 
                         _sectionHeader('Location Coordinates'),
 
+                        // ── Map picker launch button ───────────────────────
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _openMapPicker,
+                            icon: const Icon(Icons.map_rounded, size: 16),
+                            label: const Text('Pick on Map',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w600, fontSize: 13)),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF14FFEC),
+                              side: BorderSide(
+                                  color: const Color(0xFF14FFEC)
+                                      .withValues(alpha: 0.4)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(9)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Row(children: [
+                          Icon(Icons.lightbulb_outline_rounded,
+                              color: Colors.white38, size: 12),
+                          SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Search by name, tap the map, or drag the pin — '
+                              'or enter coordinates manually below.',
+                              style: TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: 11,
+                                  height: 1.4),
+                            ),
+                          ),
+                        ]),
+                        const SizedBox(height: 14),
+
                         // Lat + Lng — stack on narrow screens
                         LayoutBuilder(builder: (_, c) {
                           if (c.maxWidth < 340) {
@@ -1802,6 +1842,27 @@ class _CityFormDialogState extends State<_CityFormDialog> {
     if (d == null) return 'Must be a number';
     if (d < -180 || d > 180) return 'Between -180 and 180';
     return null;
+  }
+
+  Future<void> _openMapPicker() async {
+    final existingLat = double.tryParse(_latitude.text.trim());
+    final existingLng = double.tryParse(_longitude.text.trim());
+
+    final result = await Navigator.of(context).push<PlaceLocationResult>(
+      MaterialPageRoute(
+        builder: (_) => AdminPlaceMapPicker(
+          initialSelectedLocation: existingLat != null && existingLng != null
+              ? LatLng(existingLat, existingLng)
+              : null,
+        ),
+      ),
+    );
+    if (result == null || !mounted) return;
+
+    setState(() {
+      _latitude.text = result.latitude.toStringAsFixed(7);
+      _longitude.text = result.longitude.toStringAsFixed(7);
+    });
   }
 
   Widget _sectionHeader(String title) => Padding(

@@ -154,13 +154,15 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
   }
 
   Future<void> _loadAll() async {
-    debugPrint('🔄 [PlacesScreen] _loadAll — cityId=${_cityFilter?.id}  categoryId=${_categoryFilter?.id}  status=$_statusFilter');
+    debugPrint(
+        '🔄 [PlacesScreen] _loadAll — cityId=${_cityFilter?.id}  categoryId=${_categoryFilter?.id}  status=$_statusFilter');
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      debugPrint('   ↳ Firing 3 parallel requests: cities, categoryTree, places');
+      debugPrint(
+          '   ↳ Firing 3 parallel requests: cities, categoryTree, places');
       final results = await Future.wait([
         widget.apiService.getCities(),
         widget.apiService.getCategoryTree(),
@@ -177,16 +179,16 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
         final freshCities = results[0] as List<CityModel>;
         final freshCategories = results[1] as List<CategoryModel>;
         final freshPlaces = results[2] as List<PlaceModel>;
-        debugPrint('✅ [PlacesScreen] _loadAll complete — cities=${freshCities.length}  categories=${freshCategories.length}  places=${freshPlaces.length}');
+        debugPrint(
+            '✅ [PlacesScreen] _loadAll complete — cities=${freshCities.length}  categories=${freshCategories.length}  places=${freshPlaces.length}');
         setState(() {
           _cities = freshCities;
           _categories = freshCategories;
           _places = freshPlaces;
           // Reconcile filter objects by id so DropdownButton doesn't throw
           if (_cityFilter != null) {
-            _cityFilter = freshCities
-                .where((c) => c.id == _cityFilter!.id)
-                .firstOrNull;
+            _cityFilter =
+                freshCities.where((c) => c.id == _cityFilter!.id).firstOrNull;
           }
           if (_categoryFilter != null) {
             _categoryFilter = freshCategories
@@ -208,7 +210,8 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
   }
 
   Future<void> _fetchPlaces() async {
-    debugPrint('🔄 [PlacesScreen] _fetchPlaces — cityId=${_cityFilter?.id}  categoryId=${_categoryFilter?.id}  status=$_statusFilter  search="$_search"');
+    debugPrint(
+        '🔄 [PlacesScreen] _fetchPlaces — cityId=${_cityFilter?.id}  categoryId=${_categoryFilter?.id}  status=$_statusFilter  search="$_search"');
     setState(() {
       _loading = true;
       _error = null;
@@ -223,15 +226,26 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
         includeAttributes: true,
       );
       debugPrint('✅ [PlacesScreen] _fetchPlaces — got ${list.length} place(s)');
-      if (mounted) setState(() { _places = list; _loading = false; });
+      if (mounted) {
+        setState(() {
+          _places = list;
+          _loading = false;
+        });
+      }
     } catch (e, st) {
       debugPrint('❌ [PlacesScreen] _fetchPlaces failed: $e\n$st');
-      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
     }
   }
 
   Future<void> _delete(PlaceModel place) async {
-    debugPrint('🗑️ [PlacesScreen] Delete requested — placeId=${place.id}  name="${place.name}"  isActive=${place.isActive}');
+    debugPrint(
+        '🗑️ [PlacesScreen] Delete requested — placeId=${place.id}  name="${place.name}"  isActive=${place.isActive}');
     final confirmed = await adminConfirm(
       context,
       'Delete "${place.name}"?',
@@ -247,15 +261,45 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
     try {
       debugPrint('   ↳ Sending DELETE /api/places/${place.id}');
       await widget.apiService.deletePlaceById(place.id);
-      debugPrint('✅ [PlacesScreen] Deleted place "${place.name}" (${place.id})');
+      debugPrint(
+          '✅ [PlacesScreen] Deleted place "${place.name}" (${place.id})');
       _snack('Deleted ${place.name}', isError: false);
       _fetchPlaces();
     } on AdminApiException catch (e) {
-      debugPrint('❌ [PlacesScreen] deletePlaceById AdminApiException: ${e.statusCode} ${e.message}');
+      debugPrint(
+          '❌ [PlacesScreen] deletePlaceById AdminApiException: ${e.statusCode} ${e.message}');
       _snack(e.message, isError: true);
     } catch (e, st) {
       debugPrint('💥 [PlacesScreen] deletePlaceById unexpected error: $e\n$st');
       _snack('Delete failed: $e', isError: true);
+    }
+  }
+
+  Future<void> _toggleFeature(PlaceModel place) async {
+    final next = !place.isFeatured;
+    debugPrint(
+        '⭐ [PlacesScreen] Toggle feature — placeId=${place.id}  next=$next');
+    try {
+      // PATCH replaces the whole attributes map, so merge rather than
+      // overwrite — this list endpoint's attributes may be a lean subset,
+      // but we only ever add/flip the isFeatured key on top of what's here.
+      await widget.apiService.updatePlaceAttributes(
+        place.id,
+        {...place.attributes, 'isFeatured': next},
+      );
+      _snack(
+        next ? '${place.name} is now featured' : '${place.name} unfeatured',
+        isError: false,
+      );
+      _fetchPlaces();
+    } on AdminApiException catch (e) {
+      debugPrint(
+          '❌ [PlacesScreen] updatePlaceAttributes AdminApiException: ${e.statusCode} ${e.message}');
+      _snack(e.message, isError: true);
+    } catch (e, st) {
+      debugPrint(
+          '💥 [PlacesScreen] updatePlaceAttributes unexpected error: $e\n$st');
+      _snack('Could not update: $e', isError: true);
     }
   }
 
@@ -271,9 +315,11 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
   // GET /api/places/:id before opening the wizard.  That endpoint returns the
   // complete model including the attributes blob, so every field is pre-filled.
   void _openWizard({PlaceModel? existing}) async {
-    debugPrint('🧙 [PlacesScreen] _openWizard — mode=${existing == null ? "CREATE" : "EDIT(${existing.id})"}');
+    debugPrint(
+        '🧙 [PlacesScreen] _openWizard — mode=${existing == null ? "CREATE" : "EDIT(${existing.id})"}');
     if (_cities.isEmpty || _categories.isEmpty) {
-      debugPrint('   ↳ Cities/categories not loaded yet — running _loadAll first');
+      debugPrint(
+          '   ↳ Cities/categories not loaded yet — running _loadAll first');
       _snack('Loading data…', isError: false);
       await _loadAll();
     }
@@ -282,19 +328,23 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
     // In edit mode fetch the full place (includes attributes) before opening.
     PlaceModel? fullPlace = existing;
     if (existing != null) {
-      debugPrint('🔍 [PlacesScreen] Fetching full place detail — id=${existing.id}');
+      debugPrint(
+          '🔍 [PlacesScreen] Fetching full place detail — id=${existing.id}');
       try {
         fullPlace = await widget.apiService.getPlaceById(existing.id);
-        debugPrint('✅ [PlacesScreen] Full place loaded — attributeKeys=${fullPlace.attributes.keys.toList()}');
+        debugPrint(
+            '✅ [PlacesScreen] Full place loaded — attributeKeys=${fullPlace.attributes.keys.toList()}');
       } catch (e, st) {
         // Non-fatal: wizard still opens with whatever data we have.
-        debugPrint('⚠️ [PlacesScreen] Could not fetch full place detail, falling back to list model: $e\n$st');
+        debugPrint(
+            '⚠️ [PlacesScreen] Could not fetch full place detail, falling back to list model: $e\n$st');
         fullPlace = existing;
       }
       if (!mounted) return;
     }
 
-    debugPrint('   ↳ Pushing AdminPlaceWizardScreen — attributesPresent=${fullPlace?.attributes.isNotEmpty}');
+    debugPrint(
+        '   ↳ Pushing AdminPlaceWizardScreen — attributesPresent=${fullPlace?.attributes.isNotEmpty}');
     final refreshed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         fullscreenDialog: true,
@@ -315,8 +365,7 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg),
-      backgroundColor:
-          isError ? Colors.red.shade700 : const Color(0xFF9C27B0),
+      backgroundColor: isError ? Colors.red.shade700 : const Color(0xFF9C27B0),
       behavior: SnackBarBehavior.floating,
     ));
   }
@@ -417,8 +466,7 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
               hintText: isNarrow
                   ? 'Search places…'
                   : 'Search by name, city, or address…',
-              hintStyle:
-                  const TextStyle(color: Colors.white24, fontSize: 13),
+              hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
               prefixIcon: const Icon(Icons.search_rounded,
                   color: Colors.white38, size: 18),
               suffixIcon: _search.isNotEmpty
@@ -443,8 +491,7 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
                   borderSide: const BorderSide(color: Colors.white12)),
               focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: Color(0xFF9C27B0))),
+                  borderSide: const BorderSide(color: Color(0xFF9C27B0))),
               contentPadding: const EdgeInsets.symmetric(vertical: 0),
             ),
           ),
@@ -483,9 +530,7 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
         const Text(
           'Places',
           style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold),
+              color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
         ),
         Text(
           _buildSubtitle(),
@@ -540,6 +585,7 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
               place: filtered[i],
               onEdit: () => _openWizard(existing: filtered[i]),
               onDelete: () => _delete(filtered[i]),
+              onToggleFeature: () => _toggleFeature(filtered[i]),
             ),
           );
         }
@@ -562,6 +608,7 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
             place: filtered[i],
             onEdit: () => _openWizard(existing: filtered[i]),
             onDelete: () => _delete(filtered[i]),
+            onToggleFeature: () => _toggleFeature(filtered[i]),
           ),
         );
       }),
@@ -638,9 +685,7 @@ class _RemovableChip extends StatelessWidget {
           const SizedBox(width: 5),
           Text(label,
               style: TextStyle(
-                  color: color,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600)),
+                  color: color, fontSize: 11, fontWeight: FontWeight.w600)),
           const SizedBox(width: 4),
           GestureDetector(
             onTap: onRemove,
@@ -705,8 +750,7 @@ class _FilterRow extends StatelessWidget {
                     const SizedBox(width: 6),
                   ],
                   Flexible(
-                      child: Text(c.name,
-                          overflow: TextOverflow.ellipsis)),
+                      child: Text(c.name, overflow: TextOverflow.ellipsis)),
                 ]),
               ))
           .toList(),
@@ -770,22 +814,19 @@ class _FilterDropdown<T> extends StatelessWidget {
         value: safeValue,
         isExpanded: true,
         dropdownColor: const Color(0xFF1F2937),
-        style:
-            const TextStyle(color: Colors.white70, fontSize: 13),
+        style: const TextStyle(color: Colors.white70, fontSize: 13),
         underline: const SizedBox.shrink(),
         hint: Row(children: [
           Icon(icon, size: 13, color: Colors.white38),
           const SizedBox(width: 6),
           Text(hint,
-              style: const TextStyle(
-                  color: Colors.white24, fontSize: 13)),
+              style: const TextStyle(color: Colors.white24, fontSize: 13)),
         ]),
         onChanged: onChanged,
         items: [
           DropdownMenuItem<T>(
             value: null,
-            child: Text(hint,
-                style: const TextStyle(color: Colors.white54)),
+            child: Text(hint, style: const TextStyle(color: Colors.white54)),
           ),
           ...items,
         ],
@@ -803,9 +844,7 @@ class _StatusTab extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
   const _StatusTab(
-      {required this.label,
-      required this.selected,
-      required this.onTap});
+      {required this.label, required this.selected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -814,25 +853,19 @@ class _StatusTab extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: selected
-              ? accent.withValues(alpha: 0.15)
-              : Colors.transparent,
+          color: selected ? accent.withValues(alpha: 0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-              color: selected
-                  ? accent.withValues(alpha: 0.5)
-                  : Colors.white12),
+              color: selected ? accent.withValues(alpha: 0.5) : Colors.white12),
         ),
         child: Text(
           label,
           style: TextStyle(
             fontSize: 12,
             color: selected ? accent : Colors.white38,
-            fontWeight:
-                selected ? FontWeight.w600 : FontWeight.normal,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
       ),
@@ -859,11 +892,13 @@ class _PlaceCard extends StatefulWidget {
   final PlaceModel place;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onToggleFeature;
 
   const _PlaceCard({
     required this.place,
     required this.onEdit,
     required this.onDelete,
+    required this.onToggleFeature,
   });
 
   @override
@@ -887,16 +922,13 @@ class _PlaceCardState extends State<_PlaceCard> {
           color: const Color(0xFF111827),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: _hovering
-                ? accent.withValues(alpha: 0.5)
-                : Colors.white12,
+            color: _hovering ? accent.withValues(alpha: 0.5) : Colors.white12,
             width: _hovering ? 1.5 : 1,
           ),
           boxShadow: _hovering
               ? [
                   BoxShadow(
-                      color: accent.withValues(alpha: 0.15),
-                      blurRadius: 16)
+                      color: accent.withValues(alpha: 0.15), blurRadius: 16)
                 ]
               : [],
         ),
@@ -957,8 +989,7 @@ class _PlaceCardState extends State<_PlaceCard> {
                       // Name + city — Expanded prevents overflow
                       Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               p.name,
@@ -967,9 +998,8 @@ class _PlaceCardState extends State<_PlaceCard> {
                               style: TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w600,
-                                  fontSize: (13 * scale)
-                                      .clamp(11, 15)
-                                      .toDouble()),
+                                  fontSize:
+                                      (13 * scale).clamp(11, 15).toDouble()),
                             ),
                             if (p.cityName.isNotEmpty)
                               Text(
@@ -978,15 +1008,19 @@ class _PlaceCardState extends State<_PlaceCard> {
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                     color: Colors.white38,
-                                    fontSize: (10 * scale)
-                                        .clamp(9, 12)
-                                        .toDouble()),
+                                    fontSize:
+                                        (10 * scale).clamp(9, 12).toDouble()),
                               ),
                           ],
                         ),
                       ),
 
                       const SizedBox(width: 4),
+                      if (p.isFeatured) ...[
+                        const Icon(Icons.star_rounded,
+                            color: Color(0xFFFFC107), size: 15),
+                        const SizedBox(width: 4),
+                      ],
                       // Status badge — compact
                       AdminStatusBadge(status: p.status),
                       // Menu
@@ -1000,18 +1034,27 @@ class _PlaceCardState extends State<_PlaceCard> {
                           padding: EdgeInsets.zero,
                           color: const Color(0xFF1F2937),
                           shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(10)),
+                              borderRadius: BorderRadius.circular(10)),
                           onSelected: (v) {
                             if (v == 'edit') widget.onEdit();
+                            if (v == 'feature') widget.onToggleFeature();
                             if (v == 'delete') widget.onDelete();
                           },
                           itemBuilder: (_) => [
                             const PopupMenuItem(
                                 value: 'edit',
                                 child: AdminPopItem(
-                                    Icons.edit_rounded,
-                                    'Edit / Continue')),
+                                    Icons.edit_rounded, 'Edit / Continue')),
+                            PopupMenuItem(
+                                value: 'feature',
+                                child: AdminPopItem(
+                                    p.isFeatured
+                                        ? Icons.star_rounded
+                                        : Icons.star_border_rounded,
+                                    p.isFeatured
+                                        ? 'Unfeature'
+                                        : 'Feature on homepage/category',
+                                    color: const Color(0xFFFFC107))),
                             const PopupMenuItem(
                                 value: 'delete',
                                 child: AdminPopItem(
@@ -1034,9 +1077,7 @@ class _PlaceCardState extends State<_PlaceCard> {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                           color: Colors.white38,
-                          fontSize: (10 * scale)
-                              .clamp(9, 12)
-                              .toDouble(),
+                          fontSize: (10 * scale).clamp(9, 12).toDouble(),
                           height: 1.4),
                     ),
 
@@ -1050,17 +1091,13 @@ class _PlaceCardState extends State<_PlaceCard> {
                       children: p.categoryLinks
                           .take(3)
                           .map((link) => Container(
-                                padding:
-                                    const EdgeInsets.symmetric(
-                                        horizontal: 5, vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 5, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color:
-                                      accent.withValues(alpha: 0.08),
-                                  borderRadius:
-                                      BorderRadius.circular(4),
+                                  color: accent.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(4),
                                   border: Border.all(
-                                      color: accent
-                                          .withValues(alpha: 0.2)),
+                                      color: accent.withValues(alpha: 0.2)),
                                 ),
                                 child: Text(
                                   link.parentName != null
@@ -1068,9 +1105,8 @@ class _PlaceCardState extends State<_PlaceCard> {
                                       : link.categoryName,
                                   style: TextStyle(
                                       color: Colors.white38,
-                                      fontSize: (9 * scale)
-                                          .clamp(8, 10)
-                                          .toDouble()),
+                                      fontSize:
+                                          (9 * scale).clamp(8, 10).toDouble()),
                                 ),
                               ))
                           .toList(),
@@ -1086,36 +1122,31 @@ class _PlaceCardState extends State<_PlaceCard> {
                       // Progress bar + % label
                       Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(children: [
                               Text(
                                 '${p.completionPercent}% complete',
                                 style: TextStyle(
                                     color: Colors.white38,
-                                    fontSize: (9 * scale)
-                                        .clamp(8, 11)
-                                        .toDouble()),
+                                    fontSize:
+                                        (9 * scale).clamp(8, 11).toDouble()),
                               ),
                               if (p.isDraft) ...[
                                 const SizedBox(width: 5),
                                 Container(
-                                  padding:
-                                      const EdgeInsets.symmetric(
-                                          horizontal: 4, vertical: 1),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 4, vertical: 1),
                                   decoration: BoxDecoration(
                                     color: Colors.blueAccent
                                         .withValues(alpha: 0.15),
-                                    borderRadius:
-                                        BorderRadius.circular(3),
+                                    borderRadius: BorderRadius.circular(3),
                                   ),
                                   child: const Text('DRAFT',
                                       style: TextStyle(
                                           color: Colors.blueAccent,
                                           fontSize: 9,
-                                          fontWeight:
-                                              FontWeight.bold)),
+                                          fontWeight: FontWeight.bold)),
                                 ),
                               ],
                             ]),
@@ -1136,50 +1167,39 @@ class _PlaceCardState extends State<_PlaceCard> {
                           ],
                         ),
                       ),
-                      SizedBox(
-                          width:
-                              (8 * scale).clamp(6, 10).toDouble()),
+                      SizedBox(width: (8 * scale).clamp(6, 10).toDouble()),
 
                       // Edit/Continue button — intrinsic width, never pushed
                       GestureDetector(
                         onTap: widget.onEdit,
                         child: Container(
                           padding: EdgeInsets.symmetric(
-                              horizontal:
-                                  (10 * scale).clamp(7, 12).toDouble(),
-                              vertical:
-                                  (5 * scale).clamp(4, 7).toDouble()),
+                              horizontal: (10 * scale).clamp(7, 12).toDouble(),
+                              vertical: (5 * scale).clamp(4, 7).toDouble()),
                           decoration: BoxDecoration(
                             color: accent.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
                                 color: accent.withValues(alpha: 0.3)),
                           ),
-                          child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  p.isDraft
-                                      ? Icons.arrow_forward_rounded
-                                      : Icons.edit_rounded,
-                                  size:
-                                      (11 * scale).clamp(10, 13).toDouble(),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(
+                              p.isDraft
+                                  ? Icons.arrow_forward_rounded
+                                  : Icons.edit_rounded,
+                              size: (11 * scale).clamp(10, 13).toDouble(),
+                              color: accent,
+                            ),
+                            SizedBox(width: (3 * scale).clamp(2, 5).toDouble()),
+                            Text(
+                              p.isDraft ? 'Continue' : 'Edit',
+                              style: TextStyle(
                                   color: accent,
-                                ),
-                                SizedBox(
-                                    width: (3 * scale)
-                                        .clamp(2, 5)
-                                        .toDouble()),
-                                Text(
-                                  p.isDraft ? 'Continue' : 'Edit',
-                                  style: TextStyle(
-                                      color: accent,
-                                      fontSize: (10 * scale)
-                                          .clamp(9, 12)
-                                          .toDouble(),
-                                      fontWeight: FontWeight.w600),
-                                ),
-                              ]),
+                                  fontSize:
+                                      (10 * scale).clamp(9, 12).toDouble(),
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ]),
                         ),
                       ),
                     ],

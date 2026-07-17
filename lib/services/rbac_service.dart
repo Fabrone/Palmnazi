@@ -17,6 +17,56 @@ class RbacResult {
 class RbacService {
   RbacService._();
 
+  // ── Role identifiers ──────────────────────────────────────────────────────
+  // Firestore is the single source of truth for the 'role' field. The three
+  // admin-side roles form a hierarchy:
+  //   MainAdmin    — full system control; the ONLY role that can assign or
+  //                  revoke other users' roles (see acceptRequest/denyRequest).
+  //   CityManager  — scoped to one managedPlaceId (via getManagedPlace); can
+  //                  add/edit content within that scope. Formerly called
+  //                  'Admin' — see [normalizeRole] for the legacy alias.
+  //   ContentAdmin — same managedPlaceId scoping as CityManager, but may not
+  //                  delete core data (see [canDeleteCoreData]).
+  static const String roleMainAdmin = 'MainAdmin';
+  static const String roleCityManager = 'CityManager';
+  static const String roleContentAdmin = 'ContentAdmin';
+  static const String roleTourist = 'Tourist';
+
+  // Legacy alias: accounts granted the role before the City Manager /
+  // Content Admin split were stored as plain 'Admin'. Treat that as
+  // CityManager everywhere a role is read, so existing accounts keep working
+  // without a manual Firestore migration.
+  static String normalizeRole(String role) =>
+      role == 'Admin' ? roleCityManager : role;
+
+  /// True for any role scoped to a single managedPlaceId (City Manager or
+  /// Content Admin), as opposed to MainAdmin (system-wide) or Tourist (none).
+  static bool isPlaceScopedRole(String role) =>
+      role == roleCityManager || role == roleContentAdmin;
+
+  /// True for any of the three admin-side roles.
+  static bool isAdminRole(String role) =>
+      role == roleMainAdmin || isPlaceScopedRole(role);
+
+  /// Content Admin can add/edit within its managed place but never delete
+  /// core data; MainAdmin and City Manager can.
+  static bool canDeleteCoreData(String role) =>
+      role == roleMainAdmin || role == roleCityManager;
+
+  /// Human-readable label for UI display (badges, pickers, notifications).
+  static String roleLabel(String role) {
+    switch (normalizeRole(role)) {
+      case roleMainAdmin:
+        return 'Main Admin/SuperAdmin';
+      case roleCityManager:
+        return 'City Manager';
+      case roleContentAdmin:
+        return 'Content Admin';
+      default:
+        return roleTourist;
+    }
+  }
+
   static final _db = FirebaseFirestore.instance;
   static final _log = Logger(
     printer: PrettyPrinter(
@@ -160,10 +210,10 @@ class RbacService {
     required String respondedBy,
     required String respondedByEmail,
     // The place this request was submitted against — copied onto the user's
-    // Users doc as managedPlaceId so a plain 'Admin' is scoped to exactly one
-    // place everywhere else in the app (Bookings, Place_details, the new
-    // Place Admin Panel). Pass empty strings for a MainAdmin grant, since
-    // MainAdmin isn't scoped to any single place.
+    // Users doc as managedPlaceId so a City Manager / Content Admin is scoped
+    // to exactly one place everywhere else in the app (Bookings,
+    // Place_details, the new Place Admin Panel). Pass empty strings for a
+    // MainAdmin grant, since MainAdmin isn't scoped to any single place.
     String placeId = '',
     String placeName = '',
     String cityId = '',
@@ -268,10 +318,10 @@ class RbacService {
   // ─────────────────────────────────────────────────────────────────────────
   static Stream<String> userRoleStream(String firebaseUid) {
     return _userDoc(firebaseUid).snapshots().map((snap) {
-      if (!snap.exists) return 'Tourist';
+      if (!snap.exists) return roleTourist;
 
       // .trim() strips any accidental whitespace / newline
-      final raw = (snap.data()?['role'] as String?) ?? 'Tourist';
+      final raw = (snap.data()?['role'] as String?) ?? roleTourist;
       final cleaned = raw.trim();
 
       // Log a warning if the stored value is not already clean so the
@@ -285,7 +335,7 @@ class RbacService {
         );
       }
 
-      return cleaned;
+      return normalizeRole(cleaned);
     });
   }
 
@@ -296,19 +346,21 @@ class RbacService {
   static Future<String> getUserRole(String firebaseUid) async {
     try {
       final snap = await _userDoc(firebaseUid).get();
-      if (!snap.exists) return 'Tourist';
-      return ((snap.data()?['role'] as String?) ?? 'Tourist').trim();
+      if (!snap.exists) return roleTourist;
+      return normalizeRole(
+          ((snap.data()?['role'] as String?) ?? roleTourist).trim());
     } catch (e) {
       _log.w('⚠️ RbacService.getUserRole: $e');
-      return 'Tourist';
+      return roleTourist;
     }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // SHARED: One-shot fetch of the place a plain 'Admin' is scoped to. Returns
-  // null when unset (e.g. a MainAdmin, or an Admin predating this feature who
-  // hasn't been reassigned yet — admin_dashboard.dart shows an empty state
-  // in that case rather than crashing).
+  // SHARED: One-shot fetch of the place a City Manager / Content Admin is
+  // scoped to. Returns null when unset (e.g. a MainAdmin, or a place-scoped
+  // admin predating this feature who hasn't been reassigned yet —
+  // admin_dashboard.dart shows an empty state in that case rather than
+  // crashing).
   // ─────────────────────────────────────────────────────────────────────────
   static Future<
           ({String placeId, String placeName, String cityId, String cityName})?>

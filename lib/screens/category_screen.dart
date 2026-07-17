@@ -49,9 +49,12 @@ abstract final class _P {
 class _CategoryApi {
   static const _timeout = Duration(seconds: 15);
 
-  /// GET /api/places?cityId=…&categoryId=…&status=ACTIVE
+  /// GET /api/places?cityId=…&categoryId=…&status=ACTIVE&includeAttributes=true
   ///
-  /// Returns all active places that belong to [cityId] and [categoryId].
+  /// Returns all active places that belong to [cityId] and [categoryId],
+  /// featured places first (see [PlaceModel.isFeatured] — an admin-promoted
+  /// flag stored in `attributes`, which is why includeAttributes=true is
+  /// required here; the plain list endpoint omits it for payload size).
   /// Returns an empty list on any non-200 response or parse failure so the
   /// UI degrades gracefully to an empty state instead of throwing.
   static Future<List<PlaceModel>> fetchPlaces({
@@ -60,7 +63,8 @@ class _CategoryApi {
   }) async {
     final uri = Uri.parse(
       ApiEndpoints.url(
-        '/api/places?cityId=$cityId&categoryId=$categoryId&status=ACTIVE',
+        '/api/places?cityId=$cityId&categoryId=$categoryId&status=ACTIVE'
+        '&includeAttributes=true',
       ),
     );
     final resp = await http.get(uri).timeout(_timeout);
@@ -81,10 +85,18 @@ class _CategoryApi {
       raw = [];
     }
 
-    return raw
-        .whereType<Map<String, dynamic>>()
-        .map(PlaceModel.fromJson)
-        .toList();
+    final places =
+        raw.whereType<Map<String, dynamic>>().map(PlaceModel.fromJson).toList();
+
+    // Featured places surface first; original order preserved within each
+    // group (List.sort isn't guaranteed stable, so index is a tiebreaker).
+    final indexed = places.asMap().entries.toList()
+      ..sort((a, b) {
+        final featuredCmp =
+            (b.value.isFeatured ? 1 : 0).compareTo(a.value.isFeatured ? 1 : 0);
+        return featuredCmp != 0 ? featuredCmp : a.key.compareTo(b.key);
+      });
+    return indexed.map((e) => e.value).toList();
   }
 }
 
