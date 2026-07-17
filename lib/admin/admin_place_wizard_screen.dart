@@ -3275,64 +3275,67 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                       ? const Color(0xFF2196F3).withValues(alpha: 0.4)
                       : Colors.white12),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Root category toggle
-                Row(children: [
-                  if (root.icon != null)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Text(root.icon!,
-                          style: const TextStyle(fontSize: 16)),
+            child: Material(
+              color: Colors.transparent,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Root category toggle
+                  Row(children: [
+                    if (root.icon != null)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Text(root.icon!,
+                            style: const TextStyle(fontSize: 16)),
+                      ),
+                    Expanded(
+                      child: Text(root.name,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14)),
                     ),
-                  Expanded(
-                    child: Text(root.name,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14)),
-                  ),
-                  Checkbox(
-                    value: _selectedCategoryIds.contains(root.id),
-                    activeColor: const Color(0xFF2196F3),
-                    checkColor: Colors.white,
-                    onChanged: (v) => setState(() {
-                      if (v == true) {
-                        _selectedCategoryIds.add(root.id);
-                      } else {
-                        _selectedCategoryIds.remove(root.id);
-                      }
-                    }),
-                  ),
-                ]),
-                // Child categories
-                if (childrenOfRoot.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  ...childrenOfRoot.map((child) => Row(children: [
-                        const SizedBox(width: 24),
-                        const Icon(Icons.subdirectory_arrow_right_rounded,
-                            color: Colors.white24, size: 14),
-                        const SizedBox(width: 4),
-                        Expanded(
-                            child: Text(child.name,
-                                style: const TextStyle(
-                                    color: Colors.white54, fontSize: 13))),
-                        Checkbox(
-                          value: _selectedCategoryIds.contains(child.id),
-                          activeColor: const Color(0xFF2196F3),
-                          checkColor: Colors.white,
-                          onChanged: (v) => setState(() {
-                            if (v == true) {
-                              _selectedCategoryIds.add(child.id);
-                            } else {
-                              _selectedCategoryIds.remove(child.id);
-                            }
-                          }),
-                        ),
-                      ])),
+                    Checkbox(
+                      value: _selectedCategoryIds.contains(root.id),
+                      activeColor: const Color(0xFF2196F3),
+                      checkColor: Colors.white,
+                      onChanged: (v) => setState(() {
+                        if (v == true) {
+                          _selectedCategoryIds.add(root.id);
+                        } else {
+                          _selectedCategoryIds.remove(root.id);
+                        }
+                      }),
+                    ),
+                  ]),
+                  // Child categories
+                  if (childrenOfRoot.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    ...childrenOfRoot.map((child) => Row(children: [
+                          const SizedBox(width: 24),
+                          const Icon(Icons.subdirectory_arrow_right_rounded,
+                              color: Colors.white24, size: 14),
+                          const SizedBox(width: 4),
+                          Expanded(
+                              child: Text(child.name,
+                                  style: const TextStyle(
+                                      color: Colors.white54, fontSize: 13))),
+                          Checkbox(
+                            value: _selectedCategoryIds.contains(child.id),
+                            activeColor: const Color(0xFF2196F3),
+                            checkColor: Colors.white,
+                            onChanged: (v) => setState(() {
+                              if (v == true) {
+                                _selectedCategoryIds.add(child.id);
+                              } else {
+                                _selectedCategoryIds.remove(child.id);
+                              }
+                            }),
+                          ),
+                        ])),
+                  ],
                 ],
-              ],
+              ),
             ),
           );
         }),

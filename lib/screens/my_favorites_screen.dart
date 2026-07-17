@@ -162,55 +162,60 @@ class _FavoriteCardState extends State<_FavoriteCard> {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _P.aquaBright.withValues(alpha: 0.25)),
       ),
-      child: InkWell(
-        onTap: _open,
+      child: Material(
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(14),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: (f.placeCoverImage ?? '').isNotEmpty
-                  ? Image.network(
-                      f.placeCoverImage!,
-                      width: 64,
-                      height: 64,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _placeholderThumb(),
-                    )
-                  : _placeholderThumb(),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(f.placeName,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  Text(f.cityName,
-                      style:
-                          const TextStyle(color: Colors.white54, fontSize: 12)),
-                ],
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: _open,
+          borderRadius: BorderRadius.circular(14),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: (f.placeCoverImage ?? '').isNotEmpty
+                    ? Image.network(
+                        f.placeCoverImage!,
+                        width: 64,
+                        height: 64,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _placeholderThumb(),
+                      )
+                    : _placeholderThumb(),
               ),
-            ),
-            if (_opening)
-              const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                    color: _P.aquaBright, strokeWidth: 2),
-              )
-            else
-              IconButton(
-                onPressed: _remove,
-                tooltip: 'Remove from favorites',
-                icon: const Icon(Icons.favorite,
-                    color: Color(0xFFFF6B6B), size: 22),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(f.placeName,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    Text(f.cityName,
+                        style: const TextStyle(
+                            color: Colors.white54, fontSize: 12)),
+                  ],
+                ),
               ),
-          ],
+              if (_opening)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      color: _P.aquaBright, strokeWidth: 2),
+                )
+              else
+                IconButton(
+                  onPressed: _remove,
+                  tooltip: 'Remove from favorites',
+                  icon: const Icon(Icons.favorite,
+                      color: Color(0xFFFF6B6B), size: 22),
+                ),
+            ],
+          ),
         ),
       ),
     );

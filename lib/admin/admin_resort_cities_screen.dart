@@ -193,7 +193,8 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF161B22),
-        title: const Text('Set Sort Order', style: TextStyle(color: Colors.white)),
+        title:
+            const Text('Set Sort Order', style: TextStyle(color: Colors.white)),
         content: TextField(
           controller: ctrl,
           keyboardType: TextInputType.number,
@@ -207,7 +208,8 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white38)),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white38)),
           ),
           ElevatedButton(
             onPressed: () =>
@@ -264,8 +266,7 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
   }
 
   Future<void> _toggleActive(CityModel city) async {
-    _screenLog
-        .i('Toggling isActive for "${city.name}" → ${!city.isActive}');
+    _screenLog.i('Toggling isActive for "${city.name}" → ${!city.isActive}');
     try {
       final updated = await widget.apiService
           .updateCity(city.id, {'isActive': !city.isActive});
@@ -368,9 +369,7 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
         const Text(
           'Resort Cities',
           style: TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.bold),
+              color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 4),
         Text(
@@ -461,12 +460,10 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
             ),
             IconButton(
               tooltip: 'Refresh',
-              icon:
-                  const Icon(Icons.refresh_rounded, color: Colors.white38),
+              icon: const Icon(Icons.refresh_rounded, color: Colors.white38),
               onPressed: _loading ? null : _fetch,
               padding: EdgeInsets.zero,
-              constraints:
-                  const BoxConstraints(minWidth: 36, minHeight: 36),
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             ),
           ],
         ),
@@ -540,8 +537,7 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF14FFEC),
               foregroundColor: Colors.black87,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
             ),
@@ -579,8 +575,12 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
               separatorBuilder: (_, __) => const SizedBox(height: 12),
               itemBuilder: (_, i) => _CityCard(
                 city: _filtered[i],
-                featured: (_cityDetails[_filtered[i].id] ?? CityDetailsModel.empty).featured,
-                sortOrder: (_cityDetails[_filtered[i].id] ?? CityDetailsModel.empty).sortOrder,
+                featured:
+                    (_cityDetails[_filtered[i].id] ?? CityDetailsModel.empty)
+                        .featured,
+                sortOrder:
+                    (_cityDetails[_filtered[i].id] ?? CityDetailsModel.empty)
+                        .sortOrder,
                 onEdit: () => _openForm(city: _filtered[i]),
                 onDelete: () => _delete(_filtered[i]),
                 onToggleActive: () => _toggleActive(_filtered[i]),
@@ -610,8 +610,12 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
             itemCount: _filtered.length,
             itemBuilder: (_, i) => _CityCard(
               city: _filtered[i],
-              featured: (_cityDetails[_filtered[i].id] ?? CityDetailsModel.empty).featured,
-              sortOrder: (_cityDetails[_filtered[i].id] ?? CityDetailsModel.empty).sortOrder,
+              featured:
+                  (_cityDetails[_filtered[i].id] ?? CityDetailsModel.empty)
+                      .featured,
+              sortOrder:
+                  (_cityDetails[_filtered[i].id] ?? CityDetailsModel.empty)
+                      .sortOrder,
               onEdit: () => _openForm(city: _filtered[i]),
               onDelete: () => _delete(_filtered[i]),
               onToggleActive: () => _toggleActive(_filtered[i]),
@@ -635,17 +639,14 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Row(children: [
         Icon(
-          isError
-              ? Icons.error_outline_rounded
-              : Icons.check_circle_rounded,
+          isError ? Icons.error_outline_rounded : Icons.check_circle_rounded,
           color: Colors.white,
           size: 18,
         ),
         const SizedBox(width: 10),
         Expanded(child: Text(msg)),
       ]),
-      backgroundColor:
-          isError ? Colors.red.shade700 : const Color(0xFF0D7377),
+      backgroundColor: isError ? Colors.red.shade700 : const Color(0xFF0D7377),
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ));
@@ -661,22 +662,20 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
           context: context,
           builder: (_) => AlertDialog(
             backgroundColor: const Color(0xFF111827),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: Row(children: [
               Icon(
                 isDestructive
                     ? Icons.warning_amber_rounded
                     : Icons.help_outline_rounded,
-                color:
-                    isDestructive ? Colors.redAccent : Colors.white54,
+                color: isDestructive ? Colors.redAccent : Colors.white54,
                 size: 22,
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(title,
-                    style: const TextStyle(
-                        color: Colors.white, fontSize: 16)),
+                    style: const TextStyle(color: Colors.white, fontSize: 16)),
               ),
             ]),
             content: Text(body,
@@ -812,8 +811,7 @@ class _CityCardState extends State<_CityCard> {
                           height: 44 * scale,
                           decoration: BoxDecoration(
                             color: _accentColor.withValues(alpha: 0.15),
-                            borderRadius:
-                                BorderRadius.circular(10 * scale),
+                            borderRadius: BorderRadius.circular(10 * scale),
                             border: Border.all(
                                 color: _accentColor.withValues(alpha: 0.3)),
                           ),
@@ -847,15 +845,13 @@ class _CityCardState extends State<_CityCard> {
                                 style: TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.bold,
-                                    fontSize: (15 * scale)
-                                        .clamp(11, 17)
-                                        .toDouble()),
+                                    fontSize:
+                                        (15 * scale).clamp(11, 17).toDouble()),
                               ),
                               const SizedBox(height: 2),
                               Row(children: [
                                 Icon(Icons.public_rounded,
-                                    size: 10 * scale,
-                                    color: Colors.white38),
+                                    size: 10 * scale, color: Colors.white38),
                                 SizedBox(width: 3 * scale),
                                 Flexible(
                                   child: Text(
@@ -932,12 +928,14 @@ class _CityCardState extends State<_CityCard> {
                                     widget.featured
                                         ? Icons.star_rounded
                                         : Icons.star_outline_rounded,
-                                    widget.featured ? 'Unfeature City' : 'Feature City',
+                                    widget.featured
+                                        ? 'Unfeature City'
+                                        : 'Feature City',
                                   )),
                               const PopupMenuItem(
                                   value: 'sortOrder',
-                                  child: _PopItem(
-                                      Icons.swap_vert_rounded, 'Set Sort Order')),
+                                  child: _PopItem(Icons.swap_vert_rounded,
+                                      'Set Sort Order')),
                               const PopupMenuItem(
                                   value: 'delete',
                                   child: _PopItem(
@@ -1027,12 +1025,10 @@ class _CityCardState extends State<_CityCard> {
                         label: Text(
                           'View Places',
                           style: TextStyle(
-                              fontSize:
-                                  (12 * scale).clamp(10, 13).toDouble()),
+                              fontSize: (12 * scale).clamp(10, 13).toDouble()),
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              _accentColor.withValues(alpha: 0.85),
+                          backgroundColor: _accentColor.withValues(alpha: 0.85),
                           foregroundColor: Colors.white,
                           padding: EdgeInsets.symmetric(
                               vertical: (8 * scale).clamp(6, 10).toDouble()),
@@ -1089,7 +1085,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
   Map<String, String> _fieldErrors = {};
 
   // ── Image upload state ─────────────────────────────────────────────────
-  Uint8List? _pickedImageBytes;   // bytes for local preview before/after upload
+  Uint8List? _pickedImageBytes; // bytes for local preview before/after upload
   bool _uploadingImage = false;
   double _uploadProgress = 0.0;
 
@@ -1175,8 +1171,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
     // lifecycle call, never wrapped in JS async machinery). See _storage field.
     final storage = _storage;
     if (storage == null) {
-      _screenLog.e(
-          'FirebaseStorage was not initialised — cannot upload image. '
+      _screenLog.e('FirebaseStorage was not initialised — cannot upload image. '
           'Ensure Firebase.initializeApp() completes before opening this dialog.');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1192,7 +1187,8 @@ class _CityFormDialogState extends State<_CityFormDialog> {
     // Use file_picker so this works on mobile, web AND desktop.
     final result = await FilePicker.pickFiles(
       type: FileType.image,
-      withData: true, // ensures bytes are available on all platforms (incl. web)
+      withData:
+          true, // ensures bytes are available on all platforms (incl. web)
     );
 
     if (result == null || result.files.isEmpty) return;
@@ -1240,8 +1236,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
       uploadTask.snapshotEvents.listen((snapshot) {
         if (mounted && snapshot.totalBytes > 0) {
           setState(() {
-            _uploadProgress =
-                snapshot.bytesTransferred / snapshot.totalBytes;
+            _uploadProgress = snapshot.bytesTransferred / snapshot.totalBytes;
           });
         }
       });
@@ -1408,8 +1403,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color:
-                        const Color(0xFF0D7377).withValues(alpha: 0.15),
+                    color: const Color(0xFF0D7377).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
@@ -1467,10 +1461,9 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                           controller: _name,
                           required: true,
                           apiError: _fieldErrors['name'],
-                          validator: (v) =>
-                              (v == null || v.trim().isEmpty)
-                                  ? 'City name is required'
-                                  : null,
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? 'City name is required'
+                              : null,
                         ),
 
                         // Country + Region — stack on narrow screens
@@ -1565,10 +1558,9 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                           maxLines: 3,
                           required: true,
                           apiError: _fieldErrors['description'],
-                          validator: (v) =>
-                              (v == null || v.trim().isEmpty)
-                                  ? 'Description is required'
-                                  : null,
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? 'Description is required'
+                              : null,
                         ),
 
                         _sectionHeader('Media'),
@@ -1681,50 +1673,52 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(color: Colors.white12),
                           ),
-                          child: Row(children: [
-                            Icon(
-                              _isActive
-                                  ? Icons.visibility_rounded
-                                  : Icons.visibility_off_rounded,
-                              color: _isActive
-                                  ? Colors.greenAccent
-                                  : Colors.white38,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                children: [
-                                  const Text('Active / Visible',
-                                      style: TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w500)),
-                                  Text(
-                                    _isActive
-                                        ? 'City is published and visible to browsing users.'
-                                        : 'City is hidden from browsing users.',
-                                    style: TextStyle(
-                                        color: _isActive
-                                            ? Colors.greenAccent
-                                                .withValues(alpha: 0.8)
-                                            : Colors.white38,
-                                        fontSize: 11),
-                                  ),
-                                ],
+                          child: Material(
+                            color: Colors.transparent,
+                            child: Row(children: [
+                              Icon(
+                                _isActive
+                                    ? Icons.visibility_rounded
+                                    : Icons.visibility_off_rounded,
+                                color: _isActive
+                                    ? Colors.greenAccent
+                                    : Colors.white38,
+                                size: 20,
                               ),
-                            ),
-                            Switch(
-                              value: _isActive,
-                              activeThumbColor: Colors.greenAccent,
-                              onChanged: (v) {
-                                _screenLog.d('isActive toggled → $v');
-                                setState(() => _isActive = v);
-                              },
-                            ),
-                          ]),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('Active / Visible',
+                                        style: TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w500)),
+                                    Text(
+                                      _isActive
+                                          ? 'City is published and visible to browsing users.'
+                                          : 'City is hidden from browsing users.',
+                                      style: TextStyle(
+                                          color: _isActive
+                                              ? Colors.greenAccent
+                                                  .withValues(alpha: 0.8)
+                                              : Colors.white38,
+                                          fontSize: 11),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Switch(
+                                value: _isActive,
+                                activeThumbColor: Colors.greenAccent,
+                                onChanged: (v) {
+                                  _screenLog.d('isActive toggled → $v');
+                                  setState(() => _isActive = v);
+                                },
+                              ),
+                            ]),
+                          ),
                         ),
                       ],
                     ),
@@ -1740,8 +1734,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
               Row(children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed:
-                        _saving ? null : () => Navigator.pop(context),
+                    onPressed: _saving ? null : () => Navigator.pop(context),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white54,
                       side: const BorderSide(color: Colors.white24),
@@ -1774,17 +1767,14 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(
-                                isEdit
-                                    ? Icons.save_rounded
-                                    : Icons.add_rounded,
+                                isEdit ? Icons.save_rounded : Icons.add_rounded,
                                 size: 18,
                               ),
                               const SizedBox(width: 8),
                               Text(
                                 isEdit ? 'Save Changes' : 'Create City',
                                 style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14),
+                                    fontWeight: FontWeight.bold, fontSize: 14),
                               ),
                             ],
                           ),
@@ -1818,8 +1808,8 @@ class _CityFormDialogState extends State<_CityFormDialog> {
         padding: const EdgeInsets.only(top: 6, bottom: 14),
         child: Row(children: [
           const Expanded(
-              child: Divider(
-                  color: Colors.white12, endIndent: 10, thickness: 1)),
+              child:
+                  Divider(color: Colors.white12, endIndent: 10, thickness: 1)),
           Text(title,
               style: const TextStyle(
                   color: Colors.white38,
@@ -1827,8 +1817,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                   letterSpacing: 1,
                   fontWeight: FontWeight.w500)),
           const Expanded(
-              child: Divider(
-                  color: Colors.white12, indent: 10, thickness: 1)),
+              child: Divider(color: Colors.white12, indent: 10, thickness: 1)),
         ]),
       );
 }
@@ -1865,8 +1854,7 @@ class _CoverImageUploadSection extends StatelessWidget {
     this.urlApiError,
   });
 
-  bool get _hasPreview =>
-      imageBytes != null || existingUrl.trim().isNotEmpty;
+  bool get _hasPreview => imageBytes != null || existingUrl.trim().isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -1920,8 +1908,8 @@ class _CoverImageUploadSection extends StatelessWidget {
                             value: uploadProgress,
                             minHeight: 5,
                             backgroundColor: Colors.white12,
-                            valueColor: const AlwaysStoppedAnimation(
-                                Color(0xFF14FFEC)),
+                            valueColor:
+                                const AlwaysStoppedAnimation(Color(0xFF14FFEC)),
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -2045,8 +2033,8 @@ class _CoverImageUploadSection extends StatelessWidget {
   Widget _brokenPlaceholder() => Container(
         color: Colors.white.withValues(alpha: 0.04),
         child: const Center(
-          child: Icon(Icons.broken_image_rounded,
-              color: Colors.white24, size: 40),
+          child:
+              Icon(Icons.broken_image_rounded, color: Colors.white24, size: 40),
         ),
       );
 }
@@ -2097,8 +2085,7 @@ class _FormField extends StatelessWidget {
                     fontWeight: FontWeight.w500)),
             if (required)
               const Text(' *',
-                  style:
-                      TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+                  style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
           ]),
           const SizedBox(height: 8),
           TextFormField(
@@ -2109,11 +2096,9 @@ class _FormField extends StatelessWidget {
             style: const TextStyle(color: Colors.white, fontSize: 14),
             decoration: InputDecoration(
               hintText: hint,
-              hintStyle:
-                  const TextStyle(color: Colors.white24, fontSize: 13),
+              hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
               helperText: apiError != null ? null : helperText,
-              helperStyle:
-                  const TextStyle(color: Colors.white38, fontSize: 11),
+              helperStyle: const TextStyle(color: Colors.white38, fontSize: 11),
               errorText: apiError,
               prefixIcon: prefixIcon != null
                   ? Icon(prefixIcon, size: 16, color: Colors.white38)
@@ -2146,8 +2131,8 @@ class _FormField extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
                 borderSide: const BorderSide(color: Colors.redAccent),
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 12),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
             validator: validator,
           ),
@@ -2206,8 +2191,7 @@ class _MetaChip extends StatelessWidget {
   final IconData icon;
   final String label;
   final double scale;
-  const _MetaChip(
-      {required this.icon, required this.label, this.scale = 1.0});
+  const _MetaChip({required this.icon, required this.label, this.scale = 1.0});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -2227,8 +2211,7 @@ class _MetaChip extends StatelessWidget {
           Text(label,
               style: TextStyle(
                   color: Colors.white54,
-                  fontSize:
-                      (10 * scale).clamp(9, 12).toDouble())),
+                  fontSize: (10 * scale).clamp(9, 12).toDouble())),
         ]),
       );
 }
@@ -2253,8 +2236,8 @@ class _StatPill extends StatelessWidget {
         decoration: BoxDecoration(
           color: const Color(0xFF0D7377).withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-              color: const Color(0xFF0D7377).withValues(alpha: 0.2)),
+          border:
+              Border.all(color: const Color(0xFF0D7377).withValues(alpha: 0.2)),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(icon,
@@ -2291,8 +2274,7 @@ class _FilterChip extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
-          color:
-              selected ? c.withValues(alpha: 0.15) : Colors.transparent,
+          color: selected ? c.withValues(alpha: 0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
             color: selected ? c.withValues(alpha: 0.5) : Colors.white12,
@@ -2322,7 +2304,6 @@ class _PopItem extends StatelessWidget {
         Icon(icon, size: 15, color: color ?? Colors.white54),
         const SizedBox(width: 10),
         Text(label,
-            style: TextStyle(
-                color: color ?? Colors.white70, fontSize: 13)),
+            style: TextStyle(color: color ?? Colors.white70, fontSize: 13)),
       ]);
 }
