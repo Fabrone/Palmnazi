@@ -9,6 +9,7 @@ import 'package:palmnazi/admin/admin_blog_list_screen.dart';
 import 'package:palmnazi/admin/admin_role_requests_screen.dart';
 import 'package:palmnazi/admin/admin_payment_methods_screen.dart';
 import 'package:palmnazi/admin/admin_bookings_screen.dart';
+import 'package:palmnazi/admin/admin_contact_messages_screen.dart';
 import 'package:palmnazi/admin/admin_reports_screen.dart';
 import 'package:palmnazi/admin/place_admin/place_admin_panel.dart';
 import 'package:palmnazi/models/city_model.dart';
@@ -89,6 +90,7 @@ class _AdminDashboardState extends State<AdminDashboard>
     _NavItem(Icons.payments_rounded, 'Payment Methods'),
     _NavItem(Icons.calendar_month_rounded, 'Bookings'),
     _NavItem(Icons.bar_chart_rounded, 'Reports'),
+    _NavItem(Icons.mail_outline_rounded, 'Messages'),
   ];
 
   @override
@@ -413,7 +415,8 @@ class _AdminDashboardState extends State<AdminDashboard>
       if (_canManageRoleRequests) 5,
       6,
       7,
-      8
+      8,
+      9
     ];
     final visualIndex = logicalIndices.contains(_selectedIndex)
         ? logicalIndices.indexOf(_selectedIndex)
@@ -454,6 +457,8 @@ class _AdminDashboardState extends State<AdminDashboard>
         return 'Bookings';
       case 8:
         return 'Reports';
+      case 9:
+        return 'Messages';
       default:
         return 'Admin';
     }
@@ -485,6 +490,8 @@ class _AdminDashboardState extends State<AdminDashboard>
         return 'Review and manage tourist booking requests';
       case 8:
         return 'System-wide bookings analytics';
+      case 9:
+        return 'Messages submitted through the landing page contact form';
       default:
         return '';
     }
@@ -537,6 +544,8 @@ class _AdminDashboardState extends State<AdminDashboard>
         return const AdminBookingsScreen();
       case 8:
         return const AdminReportsScreen();
+      case 9:
+        return const AdminContactMessagesScreen();
       default:
         return const SizedBox.shrink();
     }

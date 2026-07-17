@@ -14,9 +14,13 @@ import 'package:palmnazi/main.dart' show emailLinkResultNotifier;
 import 'package:palmnazi/models/city_details_model.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
+import 'package:palmnazi/screens/about_screen.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/account_screen.dart';
+import 'package:palmnazi/screens/careers_screen.dart';
+import 'package:palmnazi/screens/contact_screen.dart';
 import 'package:palmnazi/screens/resort_city_screen.dart';
+import 'package:palmnazi/screens/static_info_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/services/city_details_service.dart';
 import 'package:palmnazi/services/firebase_service.dart';
@@ -458,6 +462,10 @@ class _LandingPageState extends State<LandingPage>
   int _blogPage = 1;
   int _blogTotal = 0;
   String? _citiesError;
+
+  // ── Section filters — client-side, reuse data already fetched ────────────
+  String? _cityRegionFilter; // null = All
+  String? _blogCategoryFilter; // null = All
 
   // ── Scroll ────────────────────────────────────────────────────────────────
   final _scrollCtrl = ScrollController();
@@ -936,6 +944,136 @@ class _LandingPageState extends State<LandingPage>
     );
     if (mounted) _loadAuthState();
   }
+
+  // ── Footer: Company links ─────────────────────────────────────────────────
+  void _goToAbout() => Navigator.push(
+      context, MaterialPageRoute(builder: (_) => const AboutScreen()));
+
+  void _goToContact() => Navigator.push(
+      context, MaterialPageRoute(builder: (_) => const ContactScreen()));
+
+  void _goToCareers() => Navigator.push(
+      context, MaterialPageRoute(builder: (_) => const CareersScreen()));
+
+  // ── Footer: Legal links ────────────────────────────────────────────────────
+  void _goToPrivacyPolicy() => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const StaticInfoScreen(
+            title: 'Privacy Policy',
+            lastUpdated: 'July 2026',
+            sections: [
+              StaticInfoSection(
+                heading: 'What We Collect',
+                body:
+                    'When you create an account or make a booking, we collect the '
+                    'information you provide directly — name, email, phone number, '
+                    'and payment method details needed to process a booking. We '
+                    'also collect basic usage data (pages visited, searches made) '
+                    'to improve the platform.',
+              ),
+              StaticInfoSection(
+                heading: 'How We Use It',
+                body:
+                    'Your information is used to create and manage your bookings, '
+                    'communicate with you about your trips, and improve the places '
+                    'and experiences we surface to you. We do not sell your '
+                    'personal information to third parties.',
+              ),
+              StaticInfoSection(
+                heading: 'Sharing With Place Operators',
+                body:
+                    'When you make a booking, the relevant details (your name and '
+                    'contact information, booking dates) are shared with the '
+                    'place you booked so they can fulfil your reservation.',
+              ),
+              StaticInfoSection(
+                heading: 'Your Choices',
+                body:
+                    'You can review, update, or request deletion of your account '
+                    'information at any time from your Account page, or by '
+                    'contacting us directly.',
+              ),
+              StaticInfoSection(
+                heading: 'Contact',
+                body:
+                    'Questions about this policy can be sent through our Contact '
+                    'Us page.',
+              ),
+            ],
+          ),
+        ),
+      );
+
+  void _goToTermsOfService() => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const StaticInfoScreen(
+            title: 'Terms of Service',
+            lastUpdated: 'July 2026',
+            sections: [
+              StaticInfoSection(
+                heading: 'Using Palmnazi',
+                body: 'Palmnazi Resort Cities connects travellers with resort '
+                    'destinations, places, and experiences across Africa. By '
+                    'creating an account or making a booking, you agree to '
+                    'provide accurate information and use the platform lawfully.',
+              ),
+              StaticInfoSection(
+                heading: 'Bookings & Payments',
+                body: 'Bookings are requests sent to the relevant place — '
+                    'confirmation, pricing, and cancellation terms are set by '
+                    'that place and shown to you before you confirm. Payment '
+                    'methods available depend on what each place has enabled.',
+              ),
+              StaticInfoSection(
+                heading: 'Account Responsibility',
+                body:
+                    'You are responsible for keeping your account credentials '
+                    'secure and for all activity under your account.',
+              ),
+              StaticInfoSection(
+                heading: 'Changes to These Terms',
+                body: 'We may update these terms from time to time as the '
+                    'platform grows; continued use after an update means you '
+                    'accept the revised terms.',
+              ),
+            ],
+          ),
+        ),
+      );
+
+  void _goToCookiePolicy() => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const StaticInfoScreen(
+            title: 'Cookie Policy',
+            lastUpdated: 'July 2026',
+            sections: [
+              StaticInfoSection(
+                heading: 'What Cookies Are Used For',
+                body:
+                    'On the web, Palmnazi uses local browser storage to keep you '
+                    'signed in between visits and to remember where you left off '
+                    '(such as the resort city you were browsing) so you can '
+                    'resume smoothly after signing in.',
+              ),
+              StaticInfoSection(
+                heading: 'No Third-Party Ad Tracking',
+                body:
+                    "We don't use advertising or cross-site tracking cookies. "
+                    'Storage is used strictly to make the app work.',
+              ),
+              StaticInfoSection(
+                heading: 'Managing Storage',
+                body: 'You can clear your browser\'s local storage at any time '
+                    'from your browser settings; this will sign you out and '
+                    'reset any remembered navigation state.',
+              ),
+            ],
+          ),
+        ),
+      );
 
   // ── Last-section persistence helpers ─────────────────────────────────────
   static void _saveLastSection(String section,
@@ -1493,38 +1631,27 @@ class _LandingPageState extends State<LandingPage>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _sectionLabel('DESTINATIONS', RC.teal),
+              _sectionLabel('DESTINATIONS', RC.gold),
               const SizedBox(height: 12),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Explore Resort Cities',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: isMobile ? 28 : 38,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                  ),
-                  if (!isMobile)
-                    TextButton.icon(
-                      onPressed: () {},
-                      icon: const Icon(Icons.arrow_forward_rounded,
-                          color: RC.teal, size: 16),
-                      label: const Text('View All',
-                          style: TextStyle(color: RC.teal, fontSize: 13)),
-                    ),
-                ],
+              Text(
+                'Explore Resort Cities',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: isMobile ? 28 : 38,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.3,
+                ),
               ),
               const SizedBox(height: 10),
               const Text(
                 'Handpicked resort destinations for every kind of trip — leisure escapes, team retreats, and everything in between.',
                 style: TextStyle(color: RC.textSec, fontSize: 15, height: 1.6),
               ),
-              const SizedBox(height: 40),
+              if (_cities.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                _buildCityRegionFilter(),
+              ],
+              const SizedBox(height: 32),
               _buildCitiesBody(w, isMobile),
             ],
           ),
@@ -1560,6 +1687,23 @@ class _LandingPageState extends State<LandingPage>
       ]));
     }
 
+    final filtered = _filteredCities;
+    if (filtered.isEmpty) {
+      return Center(
+          child: Column(children: [
+        const Icon(Icons.filter_alt_off_outlined, color: RC.textMute, size: 48),
+        const SizedBox(height: 14),
+        Text('No resort cities in "$_cityRegionFilter" yet',
+            style: const TextStyle(color: RC.textSec, fontSize: 15)),
+        const SizedBox(height: 10),
+        TextButton(
+          onPressed: () => setState(() => _cityRegionFilter = null),
+          child:
+              const Text('Show all regions', style: TextStyle(color: RC.gold)),
+        ),
+      ]));
+    }
+
     return LayoutBuilder(builder: (_, constraints) {
       final cols = isMobile ? 1 : (w < 1024 ? 2 : 3);
       const gap = 22.0;
@@ -1568,17 +1712,54 @@ class _LandingPageState extends State<LandingPage>
         spacing: gap,
         runSpacing: gap,
         children: List.generate(
-            _cities.length,
+            filtered.length,
             (i) => SizedBox(
                   width: cardW,
                   child: FadeTransition(
                     opacity: _revealFade,
                     child: _CityCard(
-                        city: _cities[i], onTap: () => _goToCity(_cities[i])),
+                        city: filtered[i], onTap: () => _goToCity(filtered[i])),
                   ),
                 )),
       );
     });
+  }
+
+  List<CityModel> get _filteredCities => _cityRegionFilter == null
+      ? _cities
+      : _cities.where((c) => c.region == _cityRegionFilter).toList();
+
+  Widget _buildCityRegionFilter() {
+    final regions = _cities
+        .map((c) => c.region)
+        .where((r) => r.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    if (regions.isEmpty) return const SizedBox.shrink();
+
+    return SizedBox(
+      height: 38,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          _FilterChip(
+            label: 'All',
+            selected: _cityRegionFilter == null,
+            onTap: () => setState(() => _cityRegionFilter = null),
+          ),
+          const SizedBox(width: 8),
+          ...regions.map((r) => Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: _FilterChip(
+                  label: r,
+                  selected: _cityRegionFilter == r,
+                  onTap: () => setState(() => _cityRegionFilter = r),
+                ),
+              )),
+        ],
+      ),
+    );
   }
 
   Widget _citySkeletonGrid(double w, bool isMobile) {
@@ -1662,7 +1843,11 @@ class _LandingPageState extends State<LandingPage>
                   ],
                 ],
               ),
-              const SizedBox(height: 36),
+              if (_blogPosts.isNotEmpty) ...[
+                const SizedBox(height: 22),
+                _buildBlogCategoryFilter(),
+              ],
+              const SizedBox(height: 30),
               _buildBlogBody(w, isMobile),
               if (!_blogLoading && _blogPosts.isNotEmpty) ...[
                 const SizedBox(height: 28),
@@ -1733,6 +1918,22 @@ class _LandingPageState extends State<LandingPage>
             style: TextStyle(color: RC.textMute, fontSize: 13)),
       ]));
     }
+    final filtered = _filteredBlogPosts;
+    if (filtered.isEmpty) {
+      return Center(
+          child: Column(children: [
+        const Icon(Icons.filter_alt_off_outlined, color: RC.textMute, size: 44),
+        const SizedBox(height: 12),
+        Text('No articles tagged "$_blogCategoryFilter" yet',
+            style: const TextStyle(color: RC.textSec, fontSize: 14)),
+        const SizedBox(height: 8),
+        TextButton(
+          onPressed: () => setState(() => _blogCategoryFilter = null),
+          child:
+              const Text('Show all articles', style: TextStyle(color: RC.gold)),
+        ),
+      ]));
+    }
     return LayoutBuilder(builder: (_, constraints) {
       final cols = isMobile ? 1 : (w < 1024 ? 2 : 3);
       const gap = 20.0;
@@ -1740,7 +1941,7 @@ class _LandingPageState extends State<LandingPage>
       return Wrap(
         spacing: gap,
         runSpacing: gap,
-        children: _blogPosts
+        children: filtered
             .map((post) => SizedBox(
                   width: cardW,
                   child: _BlogCard(post: post),
@@ -1748,6 +1949,41 @@ class _LandingPageState extends State<LandingPage>
             .toList(),
       );
     });
+  }
+
+  List<BlogPost> get _filteredBlogPosts => _blogCategoryFilter == null
+      ? _blogPosts
+      : _blogPosts
+          .where((p) => p.categories.contains(_blogCategoryFilter))
+          .toList();
+
+  Widget _buildBlogCategoryFilter() {
+    final categories = _blogPosts.expand((p) => p.categories).toSet().toList()
+      ..sort();
+    if (categories.isEmpty) return const SizedBox.shrink();
+
+    return SizedBox(
+      height: 38,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          _FilterChip(
+            label: 'All',
+            selected: _blogCategoryFilter == null,
+            onTap: () => setState(() => _blogCategoryFilter = null),
+          ),
+          const SizedBox(width: 8),
+          ...categories.map((c) => Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: _FilterChip(
+                  label: c,
+                  selected: _blogCategoryFilter == c,
+                  onTap: () => setState(() => _blogCategoryFilter = c),
+                ),
+              )),
+        ],
+      ),
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1814,8 +2050,29 @@ class _LandingPageState extends State<LandingPage>
     final isMobile = w < 600;
     final hPad = isMobile ? 20.0 : 48.0;
 
+    final exploreLinks = [
+      ('Resort Cities', () => _scrollToKey(_citiesKey)),
+      (TourismLabels.categoryPlural, _openCategoriesOverlay),
+      ('All ${TourismLabels.placePlural}', _openCategoriesOverlay),
+      ('Blog', () => _scrollToKey(_blogKey)),
+    ];
+    final companyLinks = [
+      ('About Us', _goToAbout),
+      ('Contact Us', _goToContact),
+      ('Careers', _goToCareers),
+    ];
+    final legalLinksMobile = [
+      ('Privacy Policy', _goToPrivacyPolicy),
+      ('Terms of Service', _goToTermsOfService),
+    ];
+    final legalLinksDesktop = [
+      ('Privacy Policy', _goToPrivacyPolicy),
+      ('Terms of Service', _goToTermsOfService),
+      ('Cookie Policy', _goToCookiePolicy),
+    ];
+
     return Container(
-      color: const Color(0xFF010913),
+      color: const Color(0xFF0E1826),
       padding: EdgeInsets.fromLTRB(hPad, 52, hPad, 32),
       child: Center(
         child: ConstrainedBox(
@@ -1828,18 +2085,11 @@ class _LandingPageState extends State<LandingPage>
                       children: [
                           _footerBrand(),
                           const SizedBox(height: 32),
-                          _footerLinks('Explore', [
-                            'Resort Cities',
-                            TourismLabels.categoryPlural,
-                            'All ${TourismLabels.placePlural}',
-                            'Blog'
-                          ]),
+                          _footerLinks('Explore', exploreLinks),
                           const SizedBox(height: 28),
-                          _footerLinks(
-                              'Company', ['About Us', 'Contact Us', 'Careers']),
+                          _footerLinks('Company', companyLinks),
                           const SizedBox(height: 28),
-                          _footerLinks(
-                              'Legal', ['Privacy Policy', 'Terms of Service']),
+                          _footerLinks('Legal', legalLinksMobile),
                         ])
                   : Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1847,23 +2097,13 @@ class _LandingPageState extends State<LandingPage>
                           Expanded(flex: 2, child: _footerBrand()),
                           const SizedBox(width: 40),
                           Expanded(
-                              child: _footerLinks('Explore', [
-                            'Resort Cities',
-                            TourismLabels.categoryPlural,
-                            'All ${TourismLabels.placePlural}',
-                            'Blog'
-                          ])),
+                              child: _footerLinks('Explore', exploreLinks)),
                           const SizedBox(width: 24),
                           Expanded(
-                              child: _footerLinks('Company',
-                                  ['About Us', 'Contact Us', 'Careers'])),
+                              child: _footerLinks('Company', companyLinks)),
                           const SizedBox(width: 24),
                           Expanded(
-                              child: _footerLinks('Legal', [
-                            'Privacy Policy',
-                            'Terms of Service',
-                            'Cookie Policy'
-                          ])),
+                              child: _footerLinks('Legal', legalLinksDesktop)),
                         ]),
               const SizedBox(height: 40),
               Divider(color: Colors.white.withValues(alpha: 0.07)),
@@ -1916,7 +2156,8 @@ class _LandingPageState extends State<LandingPage>
         ],
       );
 
-  Widget _footerLinks(String heading, List<String> links) => Column(
+  Widget _footerLinks(String heading, List<(String, VoidCallback)> links) =>
+      Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(heading,
@@ -1927,11 +2168,7 @@ class _LandingPageState extends State<LandingPage>
           const SizedBox(height: 14),
           ...links.map((l) => Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: GestureDetector(
-                  onTap: () {},
-                  child: Text(l,
-                      style: const TextStyle(color: RC.textSec, fontSize: 13)),
-                ),
+                child: _FooterLink(label: l.$1, onTap: l.$2),
               )),
         ],
       );
@@ -2001,6 +2238,85 @@ class _NavLinkState extends State<_NavLink> {
               fontWeight: _hovered ? FontWeight.w600 : FontWeight.w400,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _FilterChip — shared "All"/value filter pill used by the Resort Cities
+// region filter and the Blog category filter.
+// ─────────────────────────────────────────────────────────────────────────────
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _FilterChip(
+      {required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? RC.gold.withValues(alpha: 0.16)
+              : Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected
+                ? RC.gold.withValues(alpha: 0.70)
+                : Colors.white.withValues(alpha: 0.15),
+            width: 1.2,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            color: selected ? RC.gold : RC.textSec,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _FooterLink — footer nav item with a gold hover shift (desktop feedback).
+// ─────────────────────────────────────────────────────────────────────────────
+class _FooterLink extends StatefulWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _FooterLink({required this.label, required this.onTap});
+
+  @override
+  State<_FooterLink> createState() => _FooterLinkState();
+}
+
+class _FooterLinkState extends State<_FooterLink> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 150),
+          style: TextStyle(
+            color: _hovered ? RC.gold : RC.textSec,
+            fontSize: 13,
+          ),
+          child: Text(widget.label),
         ),
       ),
     );
@@ -2169,6 +2485,76 @@ class _TypewriterTaglineState extends State<_TypewriterTagline> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// _CountUpNumber — animates from 0 up to the value's leading numeric portion
+// once when first built (e.g. "500+" counts up to 500 then shows "500+";
+// "4.9★" counts up with one decimal then shows "4.9★"). No extra dependency
+// (no visibility-detector) — relies on SliverToBoxAdapter children only being
+// built once the viewport is about to need them, which approximates
+// "animates in as you scroll to it" closely enough for a stat strip.
+// ─────────────────────────────────────────────────────────────────────────────
+class _CountUpNumber extends StatefulWidget {
+  final String value;
+  final Color color;
+  const _CountUpNumber({required this.value, required this.color});
+
+  @override
+  State<_CountUpNumber> createState() => _CountUpNumberState();
+}
+
+class _CountUpNumberState extends State<_CountUpNumber>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _anim;
+  double _target = 0;
+  String _suffix = '';
+  int _decimals = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final match = RegExp(r'^(\d+(\.\d+)?)').firstMatch(widget.value);
+    if (match != null) {
+      _target = double.tryParse(match.group(1)!) ?? 0;
+      _suffix = widget.value.substring(match.end);
+      _decimals = match.group(2) != null ? match.group(2)!.length - 1 : 0;
+    } else {
+      _suffix = widget.value;
+    }
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1300));
+    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic);
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (_, __) {
+        final current = _target * _anim.value;
+        final text = _decimals > 0
+            ? current.toStringAsFixed(_decimals)
+            : current.round().toString();
+        return Text(
+          '$text$_suffix',
+          style: TextStyle(
+              color: widget.color,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              height: 1.1),
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // _StatCard
 // ─────────────────────────────────────────────────────────────────────────────
 class _StatCard extends StatelessWidget {
@@ -2211,14 +2597,7 @@ class _StatCard extends StatelessWidget {
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
-            child: Text(
-              value,
-              style: TextStyle(
-                  color: color,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  height: 1.1),
-            ),
+            child: _CountUpNumber(value: value, color: color),
           ),
           const SizedBox(height: 3),
           Text(
@@ -3141,7 +3520,7 @@ class _CityCardState extends State<_CityCard>
               boxShadow: [
                 BoxShadow(
                   color: _hovered
-                      ? RC.teal.withValues(alpha: 0.20)
+                      ? RC.gold.withValues(alpha: 0.20)
                       : Colors.black.withValues(alpha: 0.35),
                   blurRadius: _hovered ? 28 : 20,
                   offset: const Offset(0, 8),

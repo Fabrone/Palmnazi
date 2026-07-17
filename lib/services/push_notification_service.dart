@@ -63,11 +63,32 @@ class PushNotificationService {
     enableVibration: true,
   );
 
+  static const _contactChannel = AndroidNotificationChannel(
+    'contact_messages',
+    'Contact Messages',
+    description: 'Notifications about new "Contact Us" submissions.',
+    importance: Importance.high,
+    playSound: true,
+    enableVibration: true,
+  );
+
+  static const _queryChannel = AndroidNotificationChannel(
+    'place_queries',
+    'Place Questions',
+    description: 'Notifications about new tourist questions on a place.',
+    importance: Importance.high,
+    playSound: true,
+    enableVibration: true,
+  );
+
   // ── PLACEHOLDER — requires configuration ──────────────────────────────────
   // Generate this in Firebase Console → Project Settings → Cloud Messaging →
   // Web configuration → "Web Push certificates". Only needed for web push;
-  // Android/iOS tokens don't use it.
-  static const String _webVapidKey = 'REPLACE_WITH_FIREBASE_CONSOLE_VAPID_KEY';
+  // Android/iOS tokens don't use it. This is the PUBLIC half of the pair —
+  // the private half is never given to client code; FCM's backend holds it
+  // and uses it to sign pushes, so it has no business being in this repo.
+  static const String _webVapidKey =
+      'BIvL8qaWozFv2zJSvFwU7xT1Zy3IF9CY8BBaYdgaGlEYs_1Fsqx5z09Hk9e-L1PD-Ci0lSh0-3rTgUJ0P2kY2Cw';
 
   static Future<void> initialize() async {
     if (_initialized) return;
@@ -91,6 +112,8 @@ class PushNotificationService {
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     await androidPlugin?.createNotificationChannel(_channel);
+    await androidPlugin?.createNotificationChannel(_contactChannel);
+    await androidPlugin?.createNotificationChannel(_queryChannel);
 
     try {
       await FirebaseMessaging.instance.requestPermission(
@@ -144,18 +167,29 @@ class PushNotificationService {
     );
   }
 
+  /// Picks the right Android channel based on the payload's `type` field
+  /// (set by the corresponding Cloud Functions trigger) — falls back to the
+  /// bookings channel for any unrecognized/legacy type.
+  static AndroidNotificationChannel _channelFor(Map<String, dynamic> data) {
+    final type = data['type'] as String?;
+    if (type == 'contact_message_created') return _contactChannel;
+    if (type == 'place_query_created') return _queryChannel;
+    return _channel;
+  }
+
   static void _showForegroundNotification(RemoteMessage message) {
     final notification = message.notification;
     if (notification == null) return;
+    final channel = _channelFor(message.data);
     _plugin.show(
       id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
       title: notification.title,
       body: notification.body,
       notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          _channel.id,
-          _channel.name,
-          channelDescription: _channel.description,
+          channel.id,
+          channel.name,
+          channelDescription: channel.description,
           importance: Importance.high,
           priority: Priority.high,
           playSound: true,

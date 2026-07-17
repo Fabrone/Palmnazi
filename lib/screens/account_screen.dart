@@ -1288,64 +1288,80 @@ class _AccountScreenState extends State<AccountScreen> {
             ),
             Container(
               decoration: _cardDecoration(),
-              child: ListTile(
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                leading: _iconCircle(Icons.calendar_month_rounded, RC.teal),
-                title: const Text('My Bookings',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500)),
-                subtitle: const Text('View and manage your booking requests',
-                    style: TextStyle(color: RC.textMute, fontSize: 12)),
-                trailing:
-                    const Icon(Icons.chevron_right_rounded, color: RC.textMute),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const MyBookingsScreen()),
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(20),
+                clipBehavior: Clip.antiAlias,
+                child: ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                  leading: _iconCircle(Icons.calendar_month_rounded, RC.teal),
+                  title: const Text('My Bookings',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500)),
+                  subtitle: const Text('View and manage your booking requests',
+                      style: TextStyle(color: RC.textMute, fontSize: 12)),
+                  trailing: const Icon(Icons.chevron_right_rounded,
+                      color: RC.textMute),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const MyBookingsScreen()),
+                  ),
                 ),
               ),
             ),
             const SizedBox(height: 10),
             Container(
               decoration: _cardDecoration(),
-              child: ListTile(
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                leading:
-                    _iconCircle(Icons.chat_bubble_outline_rounded, RC.teal),
-                title: const Text('My Questions',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500)),
-                subtitle: const Text('Questions you\'ve asked about places',
-                    style: TextStyle(color: RC.textMute, fontSize: 12)),
-                trailing:
-                    const Icon(Icons.chevron_right_rounded, color: RC.textMute),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const MyQueriesScreen()),
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(20),
+                clipBehavior: Clip.antiAlias,
+                child: ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                  leading:
+                      _iconCircle(Icons.chat_bubble_outline_rounded, RC.teal),
+                  title: const Text('My Questions',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500)),
+                  subtitle: const Text('Questions you\'ve asked about places',
+                      style: TextStyle(color: RC.textMute, fontSize: 12)),
+                  trailing: const Icon(Icons.chevron_right_rounded,
+                      color: RC.textMute),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const MyQueriesScreen()),
+                  ),
                 ),
               ),
             ),
             const SizedBox(height: 10),
             Container(
               decoration: _cardDecoration(),
-              child: ListTile(
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                leading: _iconCircle(Icons.favorite_border_rounded, RC.teal),
-                title: const Text('My Favorites',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500)),
-                subtitle: const Text('Places you\'ve saved',
-                    style: TextStyle(color: RC.textMute, fontSize: 12)),
-                trailing:
-                    const Icon(Icons.chevron_right_rounded, color: RC.textMute),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const MyFavoritesScreen()),
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(20),
+                clipBehavior: Clip.antiAlias,
+                child: ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                  leading: _iconCircle(Icons.favorite_border_rounded, RC.teal),
+                  title: const Text('My Favorites',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500)),
+                  subtitle: const Text('Places you\'ve saved',
+                      style: TextStyle(color: RC.textMute, fontSize: 12)),
+                  trailing: const Icon(Icons.chevron_right_rounded,
+                      color: RC.textMute),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const MyFavoritesScreen()),
+                  ),
                 ),
               ),
             ),
@@ -1353,22 +1369,27 @@ class _AccountScreenState extends State<AccountScreen> {
               const SizedBox(height: 10),
               Container(
                 decoration: _cardDecoration(),
-                child: ListTile(
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                  leading: _iconCircle(Icons.storefront_outlined, RC.teal),
-                  title: const Text('Place Admin Panel',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500)),
-                  subtitle: const Text(
-                      'Manage bookings, queries and details for your place',
-                      style: TextStyle(color: RC.textMute, fontSize: 12)),
-                  trailing: const Icon(Icons.chevron_right_rounded,
-                      color: RC.textMute),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const AdminDashboard()),
+                child: Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
+                  clipBehavior: Clip.antiAlias,
+                  child: ListTile(
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                    leading: _iconCircle(Icons.storefront_outlined, RC.teal),
+                    title: const Text('Place Admin Panel',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500)),
+                    subtitle: const Text(
+                        'Manage bookings, queries and details for your place',
+                        style: TextStyle(color: RC.textMute, fontSize: 12)),
+                    trailing: const Icon(Icons.chevron_right_rounded,
+                        color: RC.textMute),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const AdminDashboard()),
+                    ),
                   ),
                 ),
               ),
@@ -1377,23 +1398,28 @@ class _AccountScreenState extends State<AccountScreen> {
               const SizedBox(height: 10),
               Container(
                 decoration: _cardDecoration(),
-                child: ListTile(
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                  leading:
-                      _iconCircle(Icons.admin_panel_settings_outlined, RC.teal),
-                  title: const Text('Admin Console',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500)),
-                  subtitle: const Text(
-                      'Full system management — places, bookings, reports',
-                      style: TextStyle(color: RC.textMute, fontSize: 12)),
-                  trailing: const Icon(Icons.chevron_right_rounded,
-                      color: RC.textMute),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const AdminDashboard()),
+                child: Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
+                  clipBehavior: Clip.antiAlias,
+                  child: ListTile(
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                    leading: _iconCircle(
+                        Icons.admin_panel_settings_outlined, RC.teal),
+                    title: const Text('Admin Console',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500)),
+                    subtitle: const Text(
+                        'Full system management — places, bookings, reports',
+                        style: TextStyle(color: RC.textMute, fontSize: 12)),
+                    trailing: const Icon(Icons.chevron_right_rounded,
+                        color: RC.textMute),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const AdminDashboard()),
+                    ),
                   ),
                 ),
               ),
@@ -1421,7 +1447,12 @@ class _AccountScreenState extends State<AccountScreen> {
             ),
             Container(
               decoration: _cardDecoration(),
-              child: _phoneMfaTile(),
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(20),
+                clipBehavior: Clip.antiAlias,
+                child: _phoneMfaTile(),
+              ),
             ),
           ],
         ),
@@ -1477,7 +1508,14 @@ class _AccountScreenState extends State<AccountScreen> {
                       letterSpacing: 1.4)),
             ),
             Container(
-                decoration: _cardDecoration(), child: _adminRequestTile()),
+              decoration: _cardDecoration(),
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(20),
+                clipBehavior: Clip.antiAlias,
+                child: _adminRequestTile(),
+              ),
+            ),
           ],
         ),
       );

@@ -166,6 +166,38 @@ async function sendPushToAdmins(notification, data) {
   }
 }
 
+// ContactMessages are MainAdmin-only (see firestore.rules) — a place-scoped
+// Admin never sees them, so this deliberately excludes 'Admin' unlike
+// sendPushToAdmins above.
+async function sendPushToMainAdmins(notification, data) {
+  const snap = await db.collection('Users').where('role', '==', 'MainAdmin').get();
+  const tokens = snap.docs.map((d) => d.data().fcmToken).filter(Boolean);
+  if (tokens.length === 0) return;
+  try {
+    await admin.messaging().sendEachForMulticast({ tokens, notification, data });
+  } catch (err) {
+    console.error('sendPushToMainAdmins: failed —', err.code, err.message);
+  }
+}
+
+// A place query is relevant to the one Admin scoped to that place, plus any
+// MainAdmin (who can view every place's queries).
+async function sendPushForPlace(placeId, notification, data) {
+  const [placeAdminSnap, mainAdminSnap] = await Promise.all([
+    db.collection('Users').where('role', '==', 'Admin').where('managedPlaceId', '==', placeId).get(),
+    db.collection('Users').where('role', '==', 'MainAdmin').get(),
+  ]);
+  const tokens = [...placeAdminSnap.docs, ...mainAdminSnap.docs]
+    .map((d) => d.data().fcmToken)
+    .filter(Boolean);
+  if (tokens.length === 0) return;
+  try {
+    await admin.messaging().sendEachForMulticast({ tokens, notification, data });
+  } catch (err) {
+    console.error('sendPushForPlace: failed —', err.code, err.message);
+  }
+}
+
 // New booking → notify every Admin/MainAdmin with an fcmToken on file.
 exports.onBookingCreated = onDocumentCreated('Bookings/{bookingId}', async (event) => {
   const booking = event.data.data();
@@ -193,6 +225,34 @@ exports.onBookingStatusChanged = onDocumentUpdated('Bookings/{bookingId}', async
       body: `Your booking for "${after.placeName}" is now ${label.toLowerCase()}.`,
     },
     { type: 'booking_status_changed', bookingId: event.params.bookingId, status: after.status },
+  );
+});
+
+// New footer "Contact Us" submission → notify every MainAdmin with an
+// fcmToken on file (ContactMessages are MainAdmin-only, see firestore.rules).
+exports.onContactMessageCreated = onDocumentCreated('ContactMessages/{messageId}', async (event) => {
+  const msg = event.data.data();
+  const preview = (msg.message || '').slice(0, 80);
+  await sendPushToMainAdmins(
+    {
+      title: '✉️ New Contact Message',
+      body: `${msg.name || 'Someone'}: ${preview}`,
+    },
+    { type: 'contact_message_created', messageId: event.params.messageId },
+  );
+});
+
+// New tourist question on a place → notify that place's scoped Admin plus
+// any MainAdmin.
+exports.onPlaceQueryCreated = onDocumentCreated('PlaceQueries/{queryId}', async (event) => {
+  const q = event.data.data();
+  await sendPushForPlace(
+    q.placeId,
+    {
+      title: '💬 New Question',
+      body: `${q.userEmail || 'A tourist'} asked about "${q.placeName}".`,
+    },
+    { type: 'place_query_created', queryId: event.params.queryId, placeId: q.placeId },
   );
 });
 

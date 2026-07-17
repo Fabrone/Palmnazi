@@ -339,5 +339,33 @@ service cloud.firestore {
         if isAuth() && resource.data.firebaseUid == request.auth.uid;
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Collection: ContactMessages
+    // Document id = auto-generated. Fields: name, email, message, createdAt.
+    //
+    // Submitted from the landing page footer's "Contact Us" form — must work
+    // for a signed-out visitor, so create is public rather than gated on
+    // isAuth(). Field-shape + length validation stands in for auth here.
+    // Reading messages back is a future admin-panel feature; for now they
+    // just need to persist safely.
+    //
+    // READ/UPDATE/DELETE — MainAdmin only.
+    // CREATE            — anyone, provided the shape is a genuine message.
+    match /ContactMessages/{messageId} {
+
+      allow read, update, delete: if isMainAdmin();
+
+      allow create:
+        if request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.email is string
+        && request.resource.data.email.size() > 0
+        && request.resource.data.email.size() <= 200
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 4000;
+    }
+
   }
 }
