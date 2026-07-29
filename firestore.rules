@@ -20,9 +20,12 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/Users/$(request.auth.uid)).data.role;
     }
 
-    // True when the caller is an Admin or MainAdmin.
+    // True when the caller is an Admin or MainAdmin. 'Admin' is the legacy
+    // role name kept alongside 'CityManager' / 'ContentAdmin' (see
+    // RbacService.normalizeRole) so accounts granted before the split still
+    // pass this check.
     function isAdmin() {
-      return isAuth() && callerRole() in ['Admin', 'MainAdmin'];
+      return isAuth() && callerRole() in ['Admin', 'CityManager', 'ContentAdmin', 'MainAdmin'];
     }
 
     // True when the caller is a MainAdmin only.
@@ -36,12 +39,15 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/Users/$(request.auth.uid)).data.managedPlaceId;
     }
 
-    // True when the caller is a plain 'Admin' scoped to exactly this place.
+    // True when the caller is a place-scoped admin (legacy 'Admin',
+    // 'CityManager', or 'ContentAdmin') scoped to exactly this place.
     // MainAdmin is intentionally NOT included here — callers should combine
     // this with isMainAdmin() explicitly, since MainAdmin's access isn't
     // place-scoped at all.
     function isPlaceAdminFor(placeId) {
-      return isAuth() && callerRole() == 'Admin' && callerManagedPlaceId() == placeId;
+      return isAuth()
+        && callerRole() in ['Admin', 'CityManager', 'ContentAdmin']
+        && callerManagedPlaceId() == placeId;
     }
 
 
@@ -365,6 +371,23 @@ service cloud.firestore {
         && request.resource.data.message is string
         && request.resource.data.message.size() > 0
         && request.resource.data.message.size() <= 4000;
+    }
+
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Collection: AuditLog
+    // Document id = auto-generated. Append-only trail written by
+    // AuditLogService.log from every admin screen that mutates data
+    // (fields: adminUid, adminEmail, action, module, targetId, targetLabel,
+    // details, timestamp). Read by AdminAuditLogScreen (MainAdmin-only).
+    //
+    // READ         — MainAdmin only.
+    // CREATE       — any admin role (the log records their own actions).
+    // UPDATE/DELETE — never; the trail is append-only.
+    match /AuditLog/{entryId} {
+      allow read: if isMainAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false;
     }
 
   }
