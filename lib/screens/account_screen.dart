@@ -14,6 +14,8 @@ import 'package:palmnazi/screens/my_bookings_screen.dart';
 import 'package:palmnazi/screens/my_favorites_screen.dart';
 import 'package:palmnazi/screens/my_queries_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/services/app_settings_controller.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/firebase_mfa_service.dart';
 import 'package:palmnazi/services/firebase_service.dart';
 import 'package:palmnazi/services/notification_service.dart';
@@ -1109,6 +1111,7 @@ class _AccountScreenState extends State<AccountScreen> {
             SliverToBoxAdapter(child: _profileCard()),
             SliverToBoxAdapter(child: _bookingsSection()),
             SliverToBoxAdapter(child: _securitySection()),
+            SliverToBoxAdapter(child: _settingsSection()),
             if (_isTourist || (_adminRequest != null && !_isAdmin))
               SliverToBoxAdapter(child: _adminAccessSection()),
             SliverToBoxAdapter(child: _signOutBtn()),
@@ -1141,8 +1144,8 @@ class _AccountScreenState extends State<AccountScreen> {
         ],
         flexibleSpace: FlexibleSpaceBar(
           titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
-          title: const Text('My Account',
-              style: TextStyle(
+          title: Text(context.tr('my_account'),
+              style: const TextStyle(
                   color: Colors.white,
                   fontSize: 20,
                   fontWeight: FontWeight.bold)),
@@ -1276,10 +1279,10 @@ class _AccountScreenState extends State<AccountScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.only(left: 4, bottom: 14),
-              child: Text('BOOKINGS',
-                  style: TextStyle(
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 14),
+              child: Text(context.tr('account_bookings_section'),
+                  style: const TextStyle(
                       color: RC.textMute,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -1295,13 +1298,13 @@ class _AccountScreenState extends State<AccountScreen> {
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                   leading: _iconCircle(Icons.calendar_month_rounded, RC.teal),
-                  title: const Text('My Bookings',
-                      style: TextStyle(
+                  title: Text(context.tr('account_my_bookings'),
+                      style: const TextStyle(
                           color: Colors.white,
                           fontSize: 14,
                           fontWeight: FontWeight.w500)),
-                  subtitle: const Text('View and manage your booking requests',
-                      style: TextStyle(color: RC.textMute, fontSize: 12)),
+                  subtitle: Text(context.tr('account_my_bookings_sub'),
+                      style: const TextStyle(color: RC.textMute, fontSize: 12)),
                   trailing: const Icon(Icons.chevron_right_rounded,
                       color: RC.textMute),
                   onTap: () => Navigator.of(context).push(
@@ -1322,13 +1325,13 @@ class _AccountScreenState extends State<AccountScreen> {
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                   leading:
                       _iconCircle(Icons.chat_bubble_outline_rounded, RC.teal),
-                  title: const Text('My Questions',
-                      style: TextStyle(
+                  title: Text(context.tr('account_my_queries'),
+                      style: const TextStyle(
                           color: Colors.white,
                           fontSize: 14,
                           fontWeight: FontWeight.w500)),
-                  subtitle: const Text('Questions you\'ve asked about places',
-                      style: TextStyle(color: RC.textMute, fontSize: 12)),
+                  subtitle: Text(context.tr('account_my_queries_sub'),
+                      style: const TextStyle(color: RC.textMute, fontSize: 12)),
                   trailing: const Icon(Icons.chevron_right_rounded,
                       color: RC.textMute),
                   onTap: () => Navigator.of(context).push(
@@ -1348,13 +1351,13 @@ class _AccountScreenState extends State<AccountScreen> {
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                   leading: _iconCircle(Icons.favorite_border_rounded, RC.teal),
-                  title: const Text('My Favorites',
-                      style: TextStyle(
+                  title: Text(context.tr('account_my_favorites'),
+                      style: const TextStyle(
                           color: Colors.white,
                           fontSize: 14,
                           fontWeight: FontWeight.w500)),
-                  subtitle: const Text('Places you\'ve saved',
-                      style: TextStyle(color: RC.textMute, fontSize: 12)),
+                  subtitle: Text(context.tr('account_my_favorites_sub'),
+                      style: const TextStyle(color: RC.textMute, fontSize: 12)),
                   trailing: const Icon(Icons.chevron_right_rounded,
                       color: RC.textMute),
                   onTap: () => Navigator.of(context).push(
@@ -1376,14 +1379,14 @@ class _AccountScreenState extends State<AccountScreen> {
                     contentPadding:
                         const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                     leading: _iconCircle(Icons.storefront_outlined, RC.teal),
-                    title: const Text('Place Admin Panel',
-                        style: TextStyle(
+                    title: Text(context.tr('account_place_admin_panel'),
+                        style: const TextStyle(
                             color: Colors.white,
                             fontSize: 14,
                             fontWeight: FontWeight.w500)),
-                    subtitle: const Text(
-                        'Manage bookings, queries and details for your place',
-                        style: TextStyle(color: RC.textMute, fontSize: 12)),
+                    subtitle: Text(context.tr('account_place_admin_panel_sub'),
+                        style:
+                            const TextStyle(color: RC.textMute, fontSize: 12)),
                     trailing: const Icon(Icons.chevron_right_rounded,
                         color: RC.textMute),
                     onTap: () => Navigator.of(context).push(
@@ -1406,14 +1409,14 @@ class _AccountScreenState extends State<AccountScreen> {
                         const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                     leading: _iconCircle(
                         Icons.admin_panel_settings_outlined, RC.teal),
-                    title: const Text('Admin Console',
-                        style: TextStyle(
+                    title: Text(context.tr('account_admin_console'),
+                        style: const TextStyle(
                             color: Colors.white,
                             fontSize: 14,
                             fontWeight: FontWeight.w500)),
-                    subtitle: const Text(
-                        'Full system management — places, bookings, reports',
-                        style: TextStyle(color: RC.textMute, fontSize: 12)),
+                    subtitle: Text(context.tr('account_admin_console_sub'),
+                        style:
+                            const TextStyle(color: RC.textMute, fontSize: 12)),
                     trailing: const Icon(Icons.chevron_right_rounded,
                         color: RC.textMute),
                     onTap: () => Navigator.of(context).push(
@@ -1428,6 +1431,163 @@ class _AccountScreenState extends State<AccountScreen> {
       );
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Settings section — theme, font style, and app language
+  // ─────────────────────────────────────────────────────────────────────────
+  Widget _settingsSection() {
+    final settings = AppSettingsScope.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 14),
+            child: Text(context.tr('settings_title').toUpperCase(),
+                style: const TextStyle(
+                    color: RC.textMute,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.4)),
+          ),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: _cardDecoration(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(context.tr('settings_appearance'),
+                    style: const TextStyle(
+                        color: RC.textMute,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2)),
+                const SizedBox(height: 14),
+                Text(context.tr('settings_theme'),
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500)),
+                const SizedBox(height: 10),
+                Wrap(spacing: 10, runSpacing: 10, children: [
+                  _themeChip(
+                      settings,
+                      ThemeMode.dark,
+                      context.tr('settings_theme_dark'),
+                      Icons.dark_mode_rounded),
+                  _themeChip(
+                      settings,
+                      ThemeMode.light,
+                      context.tr('settings_theme_light'),
+                      Icons.light_mode_rounded),
+                  _themeChip(
+                      settings,
+                      ThemeMode.system,
+                      context.tr('settings_theme_system'),
+                      Icons.settings_suggest_rounded),
+                ]),
+                const SizedBox(height: 20),
+                const Divider(color: Color(0xFF1F2937), height: 1),
+                const SizedBox(height: 20),
+                Text(context.tr('settings_font'),
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500)),
+                const SizedBox(height: 4),
+                Text(context.tr('settings_font_subtitle'),
+                    style: const TextStyle(color: RC.textMute, fontSize: 12)),
+                const SizedBox(height: 12),
+                _fontPicker(settings),
+                const SizedBox(height: 20),
+                const Divider(color: Color(0xFF1F2937), height: 1),
+                const SizedBox(height: 20),
+                Text(context.tr('settings_language_label'),
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500)),
+                const SizedBox(height: 10),
+                Wrap(spacing: 10, runSpacing: 10, children: [
+                  _languageChip(settings, const Locale('en'),
+                      context.tr('settings_language_english')),
+                  _languageChip(settings, const Locale('sw'),
+                      context.tr('settings_language_swahili')),
+                ]),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _themeChip(AppSettingsController settings, ThemeMode mode,
+      String label, IconData icon) {
+    final selected = settings.themeMode == mode;
+    return ChoiceChip(
+      label: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon,
+            size: 14, color: selected ? const Color(0xFF0A1128) : RC.teal),
+        const SizedBox(width: 6),
+        Text(label),
+      ]),
+      selected: selected,
+      onSelected: (_) => settings.setThemeMode(mode),
+      selectedColor: RC.teal,
+      backgroundColor: Colors.white.withValues(alpha: 0.06),
+      labelStyle: TextStyle(
+          color: selected ? const Color(0xFF0A1128) : Colors.white70,
+          fontSize: 12,
+          fontWeight: FontWeight.w600),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: RC.teal.withValues(alpha: 0.4))),
+    );
+  }
+
+  Widget _languageChip(
+      AppSettingsController settings, Locale locale, String label) {
+    final selected = settings.locale.languageCode == locale.languageCode;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => settings.setLocale(locale),
+      selectedColor: RC.gold,
+      backgroundColor: Colors.white.withValues(alpha: 0.06),
+      labelStyle: TextStyle(
+          color: selected ? const Color(0xFF0A1128) : Colors.white70,
+          fontSize: 12,
+          fontWeight: FontWeight.w600),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: RC.gold.withValues(alpha: 0.4))),
+    );
+  }
+
+  Widget _fontPicker(AppSettingsController settings) => Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: AppFontChoice.values.map((f) {
+          final selected = settings.fontChoice == f;
+          return ChoiceChip(
+            label: Text(f.label,
+                style: f.previewTextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color:
+                        selected ? const Color(0xFF0A1128) : Colors.white70)),
+            selected: selected,
+            onSelected: (_) => settings.setFontChoice(f),
+            selectedColor: RC.teal,
+            backgroundColor: Colors.white.withValues(alpha: 0.06),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(color: RC.teal.withValues(alpha: 0.4))),
+          );
+        }).toList(),
+      );
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Security section
   // ─────────────────────────────────────────────────────────────────────────
   Widget _securitySection() => Padding(
@@ -1435,10 +1595,10 @@ class _AccountScreenState extends State<AccountScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.only(left: 4, bottom: 14),
-              child: Text('SECURITY',
-                  style: TextStyle(
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 14),
+              child: Text(context.tr('account_security_section'),
+                  style: const TextStyle(
                       color: RC.textMute,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -1461,15 +1621,15 @@ class _AccountScreenState extends State<AccountScreen> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
         leading: _iconCircle(
             Icons.phone_android_rounded, _mfaEnabled ? RC.emerald : RC.teal),
-        title: const Text('Phone Two-Factor Auth',
-            style: TextStyle(
+        title: Text(context.tr('account_phone_mfa'),
+            style: const TextStyle(
                 color: Colors.white,
                 fontSize: 14,
                 fontWeight: FontWeight.w500)),
         subtitle: Text(
           _mfaEnabled
-              ? 'Enabled — an SMS code is required at each sign-in'
-              : 'Disabled — adds a phone SMS verification step at sign-in',
+              ? context.tr('account_phone_mfa_enabled_sub')
+              : context.tr('account_phone_mfa_disabled_sub'),
           style: const TextStyle(color: RC.textMute, fontSize: 12),
         ),
         trailing: _actionLoading
@@ -1497,10 +1657,10 @@ class _AccountScreenState extends State<AccountScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.only(left: 4, bottom: 14),
-              child: Text('ADMIN ACCESS',
-                  style: TextStyle(
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 14),
+              child: Text(context.tr('account_admin_access_section'),
+                  style: const TextStyle(
                       color: RC.textMute,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -1647,8 +1807,9 @@ class _AccountScreenState extends State<AccountScreen> {
           width: double.infinity,
           child: OutlinedButton.icon(
             icon: const Icon(Icons.logout_rounded, size: 18),
-            label: const Text('Sign Out',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            label: Text(context.tr('account_sign_out'),
+                style:
+                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             onPressed: _handleSignOut,
             style: OutlinedButton.styleFrom(
               foregroundColor: RC.coral,
