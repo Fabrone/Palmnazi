@@ -290,6 +290,102 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
     }
   }
 
+  // ── Delete (denied requests only) ──────────────────────────────────────────
+  Future<void> _onDelete(AdminRequest req) async {
+    final confirm = await _confirmDialog(
+      icon: Icons.delete_outline_rounded,
+      iconColor: _kRed,
+      title: 'Delete Request?',
+      body: 'This will permanently remove the declined request from '
+          '${req.userEmail}. This cannot be undone.',
+      confirmLabel: 'Delete',
+      confirmColor: _kRed,
+    );
+    if (confirm != true || !mounted) return;
+
+    setState(() => _actioning.add(req.id));
+    try {
+      await FirebaseFirestore.instance
+          .collection('AdminRequests')
+          .doc(req.id)
+          .delete();
+      AuditLogService.log(
+          action: 'role_request_delete',
+          module: 'Role',
+          targetId: req.firebaseUid,
+          targetLabel: req.userEmail);
+      _log.i(
+          '✅ [AdminRoleRequestsScreen] Deleted denied request from ${req.userEmail}');
+      if (mounted) _snack('Request from ${req.userEmail} deleted.', ok: true);
+    } catch (e) {
+      _log.e('❌ [AdminRoleRequestsScreen] Delete failed', error: e);
+      if (mounted) _snack('Delete failed. Please try again.', ok: false);
+    } finally {
+      if (mounted) setState(() => _actioning.remove(req.id));
+    }
+  }
+
+  // ── Switch role (accepted requests only) ───────────────────────────────────
+  Future<void> _onSwitchRole(AdminRequest req) async {
+    if (req.firebaseUid.isEmpty) {
+      _snack('Cannot switch role: user Firebase UID is missing.', ok: false);
+      return;
+    }
+    final currentRole = req.grantedRole ?? RbacService.roleCityManager;
+    final newRole = await _showSwitchRoleSheet(req, currentRole);
+    if (newRole == null || !mounted || newRole == currentRole) return;
+
+    String placeId = req.placeId;
+    String placeName = req.placeName;
+    String cityId = req.cityId;
+    String cityName = req.cityName;
+
+    // Switching into a place-scoped role with no place on file yet (e.g. a
+    // MainAdmin being moved down to City Manager / Content Admin) requires
+    // picking one before we can write a valid scope.
+    if (RbacService.isPlaceScopedRole(newRole) && placeId.isEmpty) {
+      final picked = await showPlaceSearchPicker(context);
+      if (picked == null || !mounted) return;
+      placeId = picked.id;
+      placeName = picked.name;
+      cityId = picked.cityId;
+      cityName = picked.cityName;
+    }
+
+    setState(() => _actioning.add(req.id));
+    try {
+      final me = FirebaseAuth.instance.currentUser;
+      final result = await RbacService.switchGrantedRole(
+        requestId: req.id,
+        targetFirebaseUid: req.firebaseUid,
+        newRole: newRole,
+        respondedBy: me?.uid ?? '',
+        respondedByEmail: me?.email ?? '',
+        placeId: placeId,
+        placeName: placeName,
+        cityId: cityId,
+        cityName: cityName,
+      );
+      if (result.isSuccess) {
+        AuditLogService.log(
+            action: 'role_switch',
+            module: 'Role',
+            targetId: req.firebaseUid,
+            targetLabel: req.userEmail,
+            details:
+                'Switched from ${RbacService.roleLabel(currentRole)} to ${RbacService.roleLabel(newRole)}');
+        _log.i(
+            '✅ [AdminRoleRequestsScreen] Switched ${req.userEmail} to ${RbacService.roleLabel(newRole)}');
+      } else {
+        _log.e(
+            '❌ [AdminRoleRequestsScreen] Switch role failed: ${result.message}');
+      }
+      if (mounted) _snack(result.message, ok: result.isSuccess);
+    } finally {
+      if (mounted) setState(() => _actioning.remove(req.id));
+    }
+  }
+
   // ── Reassign place (accepted City Manager / Content Admin requests only) ──
   Future<void> _onReassignPlace(AdminRequest req) async {
     if (req.firebaseUid.isEmpty) {
@@ -377,6 +473,8 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
         onDeny: () => _onDeny(items[i]),
         onRevoke: () => _onRevoke(items[i]),
         onReassignPlace: () => _onReassignPlace(items[i]),
+        onSwitchRole: () => _onSwitchRole(items[i]),
+        onDelete: () => _onDelete(items[i]),
       ),
     );
   }
@@ -494,6 +592,150 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _kGreen,
                     foregroundColor: const Color(0xFF0A1128),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    textStyle: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: Text('Cancel',
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.4))),
+                  )),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Switch Role Bottom Sheet — role selector for an already-accepted user
+  // ─────────────────────────────────────────────────────────────────────────
+  Future<String?> _showSwitchRoleSheet(AdminRequest req, String currentRole) {
+    String selected = currentRole;
+
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => _sheetContainer(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _sheetHandle(),
+              const SizedBox(height: 24),
+
+              // Title
+              Row(children: [
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: _kTeal.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.swap_horiz_rounded,
+                      color: _kTeal, size: 24),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                    child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Switch Role',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold)),
+                    Text(req.userEmail,
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 12),
+                        overflow: TextOverflow.ellipsis),
+                  ],
+                )),
+              ]),
+              const SizedBox(height: 16),
+
+              // Info notice
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _kTeal.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _kTeal.withValues(alpha: 0.25)),
+                ),
+                child: Text(
+                  'Currently ${RbacService.roleLabel(currentRole)}. Switching '
+                  'will immediately update ${req.userEmail}\'s access across '
+                  'the platform. If the new role needs a place assignment '
+                  'and none is on file, you\'ll be asked to pick one next.',
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.75),
+                      fontSize: 12,
+                      height: 1.5),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              Text('Select New Role',
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
+              const SizedBox(height: 12),
+
+              _RoleOption(
+                role: RbacService.roleCityManager,
+                description:
+                    'Manages one assigned place — bookings, queries, details. '
+                    'Can add/edit and delete within that place.',
+                isSelected: selected == RbacService.roleCityManager,
+                onTap: () => setS(() => selected = RbacService.roleCityManager),
+              ),
+              const SizedBox(height: 10),
+              _RoleOption(
+                role: RbacService.roleContentAdmin,
+                description:
+                    'Same one-place scope as City Manager, but can add/edit '
+                    'content only — cannot delete core data.',
+                isSelected: selected == RbacService.roleContentAdmin,
+                onTap: () =>
+                    setS(() => selected = RbacService.roleContentAdmin),
+              ),
+              const SizedBox(height: 10),
+              _RoleOption(
+                role: RbacService.roleMainAdmin,
+                description: 'Full system access including assigning and '
+                    'revoking every role.',
+                isSelected: selected == RbacService.roleMainAdmin,
+                onTap: () => setS(() => selected = RbacService.roleMainAdmin),
+              ),
+
+              const SizedBox(height: 28),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+                  label: Text(selected == currentRole
+                      ? 'Select a different role'
+                      : 'Switch to ${RbacService.roleLabel(selected)}'),
+                  onPressed: selected == currentRole
+                      ? null
+                      : () => Navigator.pop(ctx, selected),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _kTeal,
+                    foregroundColor: const Color(0xFF0A1128),
+                    disabledBackgroundColor: _kTeal.withValues(alpha: 0.25),
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     textStyle: const TextStyle(
                         fontWeight: FontWeight.bold, fontSize: 14),
@@ -825,6 +1067,8 @@ class _RequestCard extends StatelessWidget {
   final VoidCallback onDeny;
   final VoidCallback onRevoke;
   final VoidCallback onReassignPlace;
+  final VoidCallback onSwitchRole;
+  final VoidCallback onDelete;
 
   const _RequestCard({
     required this.request,
@@ -833,6 +1077,8 @@ class _RequestCard extends StatelessWidget {
     required this.onDeny,
     required this.onRevoke,
     required this.onReassignPlace,
+    required this.onSwitchRole,
+    required this.onDelete,
   });
 
   // Status-driven theming
@@ -992,7 +1238,9 @@ class _RequestCard extends StatelessWidget {
             ],
 
             // ── Action buttons ────────────────────────────────────────────
-            if (request.isPending || request.isAccepted) ...[
+            if (request.isPending ||
+                request.isAccepted ||
+                request.isDenied) ...[
               const SizedBox(height: 14),
               const Divider(color: Color(0xFF1F2937), height: 1),
               const SizedBox(height: 12),
@@ -1041,49 +1289,108 @@ class _RequestCard extends StatelessWidget {
                   ),
                 ])
               else if (request.isAccepted)
-                Wrap(
-                  alignment: WrapAlignment.end,
-                  spacing: 10,
-                  runSpacing: 8,
+                Column(
                   children: [
                     if (RbacService.isPlaceScopedRole(
                         request.grantedRole ?? ''))
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.edit_location_alt_rounded,
-                            size: 14),
-                        label: const Text('Reassign Place'),
-                        onPressed: onReassignPlace,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _kTeal,
-                          side:
-                              BorderSide(color: _kTeal.withValues(alpha: 0.5)),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 8),
-                          textStyle: const TextStyle(
-                              fontSize: 12, fontWeight: FontWeight.w600),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10)),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.edit_location_alt_rounded,
+                                size: 14),
+                            label: const Text('Reassign Place'),
+                            onPressed: onReassignPlace,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _kTeal,
+                              side: BorderSide(
+                                  color: _kTeal.withValues(alpha: 0.5)),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              textStyle: const TextStyle(
+                                  fontSize: 12, fontWeight: FontWeight.w600),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
+                            ),
+                          ),
                         ),
                       ),
-                    OutlinedButton.icon(
-                      icon:
-                          const Icon(Icons.remove_moderator_rounded, size: 14),
-                      label: const Text('Revoke Role'),
-                      onPressed: onRevoke,
+                    Row(children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.swap_horiz_rounded, size: 14),
+                          label: const Text('Switch Role'),
+                          onPressed: onSwitchRole,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _kTeal,
+                            side: BorderSide(
+                                color: _kTeal.withValues(alpha: 0.5)),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            textStyle: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w600),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.remove_moderator_rounded,
+                              size: 14),
+                          label: const Text('Revoke Role'),
+                          onPressed: onRevoke,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _kOrange,
+                            side: BorderSide(
+                                color: _kOrange.withValues(alpha: 0.5)),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            textStyle: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w600),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      ),
+                    ]),
+                  ],
+                )
+              else if (request.isDenied)
+                Row(children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.delete_outline_rounded, size: 14),
+                      label: const Text('Delete'),
+                      onPressed: onDelete,
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: _kOrange,
-                        side:
-                            BorderSide(color: _kOrange.withValues(alpha: 0.5)),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
+                        foregroundColor: _kRed,
+                        side: BorderSide(color: _kRed.withValues(alpha: 0.5)),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
                         textStyle: const TextStyle(
                             fontSize: 12, fontWeight: FontWeight.w600),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10)),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.replay_rounded, size: 14),
+                      label: const Text('Re-approve'),
+                      onPressed: onApprove,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _kGreen,
+                        foregroundColor: const Color(0xFF0A1128),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        textStyle: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.bold),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ),
+                ]),
             ],
           ],
         ),

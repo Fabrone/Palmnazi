@@ -286,6 +286,59 @@ class RbacService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // MAIN ADMIN: Switch an already-accepted user to a different role —
+  // lets MainAdmin correct/change an assignment (e.g. CityManager →
+  // ContentAdmin, or either → MainAdmin) from the same screen used to grant
+  // it, without first revoking back to Tourist and re-approving.
+  // ─────────────────────────────────────────────────────────────────────────
+  static Future<RbacResult> switchGrantedRole({
+    required String requestId,
+    required String targetFirebaseUid,
+    required String newRole,
+    required String respondedBy,
+    required String respondedByEmail,
+    // The place the new role should be scoped to. Ignored (and cleared) when
+    // newRole is MainAdmin, since MainAdmin isn't scoped to any single place.
+    String placeId = '',
+    String placeName = '',
+    String cityId = '',
+    String cityName = '',
+  }) async {
+    try {
+      final cleanedRole = newRole.trim();
+      final isPlaceScoped = isPlaceScopedRole(cleanedRole);
+
+      _log.i('🔐 RbacService.switchGrantedRole: '
+          'requestId=$requestId targetFirebaseUid=$targetFirebaseUid newRole=$cleanedRole');
+
+      final batch = _db.batch();
+
+      batch.update(_requests.doc(requestId), {
+        'grantedRole': cleanedRole,
+        'respondedAt': Timestamp.now(),
+        'respondedBy': respondedBy,
+        'respondedByEmail': respondedByEmail,
+      });
+
+      batch.update(_userDoc(targetFirebaseUid), {
+        'role': cleanedRole,
+        'managedPlaceId': isPlaceScoped ? placeId : '',
+        'managedPlaceName': isPlaceScoped ? placeName : '',
+        'managedCityId': isPlaceScoped ? cityId : '',
+        'managedCityName': isPlaceScoped ? cityName : '',
+      });
+
+      await batch.commit();
+      _log.i(
+          '✅ RbacService.switchGrantedRole: $targetFirebaseUid switched to $cleanedRole');
+      return RbacResult.success('Role switched to ${roleLabel(cleanedRole)}.');
+    } catch (e, st) {
+      _log.e('❌ RbacService.switchGrantedRole', error: e, stackTrace: st);
+      return RbacResult.failure('Could not switch role: $e');
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // MAIN ADMIN: Deny a request
   // ─────────────────────────────────────────────────────────────────────────
   static Future<RbacResult> denyRequest({
