@@ -8,6 +8,7 @@ import 'package:palmnazi/admin/admin_api_service.dart';
 import 'package:palmnazi/admin/admin_place_map_picker.dart';
 import 'package:palmnazi/models/city_details_model.dart';
 import 'package:palmnazi/models/city_model.dart';
+import 'package:palmnazi/services/audit_log_service.dart';
 import 'package:palmnazi/services/city_details_service.dart';
 
 // File-scoped logger — same PrettyPrinter config as api_client.dart
@@ -256,6 +257,11 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
 
     try {
       await widget.apiService.deleteCity(city.id);
+      AuditLogService.log(
+          action: 'delete',
+          module: 'City',
+          targetId: city.id,
+          targetLabel: city.name);
       _snack('Deleted "${city.name}"', isError: false);
       _fetch();
     } on AdminApiException catch (e) {
@@ -272,6 +278,12 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
     try {
       final updated = await widget.apiService
           .updateCity(city.id, {'isActive': !city.isActive});
+      AuditLogService.log(
+          action: 'update',
+          module: 'City',
+          targetId: updated.id,
+          targetLabel: updated.name,
+          details: updated.isActive ? 'Set active' : 'Set inactive');
       _snack(
         '"${updated.name}" is now ${updated.isActive ? "active" : "inactive"}',
         isError: false,
@@ -296,10 +308,20 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
           try {
             if (city == null) {
               final created = await widget.apiService.createCity(payload);
+              AuditLogService.log(
+                  action: 'create',
+                  module: 'City',
+                  targetId: created.id,
+                  targetLabel: created.name);
               _snack('Created "${created.name}"!', isError: false);
             } else {
               final updated =
                   await widget.apiService.updateCity(city.id, payload);
+              AuditLogService.log(
+                  action: 'update',
+                  module: 'City',
+                  targetId: updated.id,
+                  targetLabel: updated.name);
               _snack('Updated "${updated.name}"!', isError: false);
             }
             _fetch();

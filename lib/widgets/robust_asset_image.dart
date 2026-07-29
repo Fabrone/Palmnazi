@@ -27,29 +27,29 @@ class RobustAssetImage extends StatelessWidget {
   String _getCorrectAssetPath(String path) {
     // Remove any leading slashes
     path = path.replaceFirst(RegExp(r'^/+'), '');
-    
+
     // If it already starts with 'assets/', use it as is
     if (path.startsWith('assets/')) {
       return path;
     }
-    
+
     // If it starts with 'images/', prepend 'assets/'
     if (path.startsWith('images/')) {
       return 'assets/$path';
     }
-    
+
     // If it starts with 'cities/', 'channels/', or 'places/', prepend 'assets/images/'
-    if (path.startsWith('cities/') || 
-        path.startsWith('channels/') || 
+    if (path.startsWith('cities/') ||
+        path.startsWith('channels/') ||
         path.startsWith('places/')) {
       return 'assets/images/$path';
     }
-    
+
     // For standalone files like 'logo.png', prepend 'assets/images/'
     if (!path.contains('/')) {
       return 'assets/images/$path';
     }
-    
+
     // Otherwise, assume it needs the full 'assets/images/' prefix
     return 'assets/images/$path';
   }
@@ -72,7 +72,7 @@ class RobustAssetImage extends StatelessWidget {
           opacity: frame == null ? 0 : 1,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
-          child: frame == null 
+          child: frame == null
               ? (loadingWidget ?? _buildLoadingWidget(context))
               : child,
         );
@@ -81,7 +81,7 @@ class RobustAssetImage extends StatelessWidget {
       errorBuilder: (context, error, stackTrace) {
         debugPrint('Error loading image: $assetPath');
         debugPrint('Error: $error');
-        
+
         return errorWidget ?? _buildErrorWidget(context);
       },
     );
@@ -91,7 +91,8 @@ class RobustAssetImage extends StatelessWidget {
     return Container(
       width: width,
       height: height,
-      color: fallbackColor?.withValues(alpha: 0.3) ?? Colors.grey.withValues(alpha: 0.2),
+      color: fallbackColor?.withValues(alpha: 0.3) ??
+          Colors.grey.withValues(alpha: 0.2),
       child: Center(
         child: CircularProgressIndicator(
           strokeWidth: 2,
@@ -120,7 +121,7 @@ class RobustAssetImage extends StatelessWidget {
       child: Center(
         child: Icon(
           fallbackIcon ?? Icons.image_not_supported_outlined,
-          size: (width != null && height != null) 
+          size: (width != null && height != null)
               ? (width! < height! ? width! * 0.3 : height! * 0.3)
               : 60,
           color: Colors.white.withValues(alpha: 0.5),
@@ -135,25 +136,25 @@ extension ImagePathExtension on String {
   /// Convert any image path to a proper asset path
   String toAssetPath() {
     String path = replaceFirst(RegExp(r'^/+'), '');
-    
+
     if (path.startsWith('assets/')) {
       return path;
     }
-    
+
     if (path.startsWith('images/')) {
       return 'assets/$path';
     }
-    
-    if (path.startsWith('cities/') || 
-        path.startsWith('channels/') || 
+
+    if (path.startsWith('cities/') ||
+        path.startsWith('channels/') ||
         path.startsWith('places/')) {
       return 'assets/images/$path';
     }
-    
+
     if (!path.contains('/')) {
       return 'assets/images/$path';
     }
-    
+
     return 'assets/images/$path';
   }
 }

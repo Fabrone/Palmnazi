@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:palmnazi/models/static_page_model.dart';
+import 'package:palmnazi/services/static_page_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AboutScreen — reached from the landing page footer's "About Us" link.
+//
+// Streams admin-edited copy from StaticPageService (slug: 'about') and falls
+// back to the hardcoded defaults below until an admin has edited the page —
+// see admin_static_pages_screen.dart.
 // ─────────────────────────────────────────────────────────────────────────────
 
 abstract final class _P {
@@ -14,7 +20,8 @@ abstract final class _P {
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
 
-  static const _paragraphs = [
+  static const _fallbackTagline = 'For Every Trip, Every Traveller';
+  static const _fallbackParagraphs = [
     "Palmnazi Resort Cities brings every part of planning a trip across Africa's "
         "finest destinations into one place — whether you're booking a leisure "
         "escape, organizing a team retreat, or arranging a business meeting venue.",
@@ -28,6 +35,23 @@ class AboutScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return StreamBuilder<StaticPageModel?>(
+      stream: StaticPageService.stream('about'),
+      builder: (context, snap) {
+        final page = snap.data;
+        final tagline = (page != null && page.subtitle.isNotEmpty)
+            ? page.subtitle
+            : _fallbackTagline;
+        final paragraphs = (page != null && page.sections.isNotEmpty)
+            ? page.sections.map((s) => s.body).toList()
+            : _fallbackParagraphs;
+        return _buildScaffold(context, tagline, paragraphs);
+      },
+    );
+  }
+
+  Widget _buildScaffold(
+      BuildContext context, String tagline, List<String> paragraphs) {
     return Scaffold(
       backgroundColor: _P.navy,
       appBar: AppBar(
@@ -64,13 +88,13 @@ class AboutScreen extends StatelessWidget {
                           letterSpacing: 1.5)),
                 ]),
                 const SizedBox(height: 28),
-                const Text('For Every Trip, Every Traveller',
-                    style: TextStyle(
+                Text(tagline,
+                    style: const TextStyle(
                         color: Colors.white,
                         fontSize: 26,
                         fontWeight: FontWeight.bold)),
                 const SizedBox(height: 20),
-                ..._paragraphs.map((p) => Padding(
+                ...paragraphs.map((p) => Padding(
                       padding: const EdgeInsets.only(bottom: 18),
                       child: Text(p,
                           style: const TextStyle(

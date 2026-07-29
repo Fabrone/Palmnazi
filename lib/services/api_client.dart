@@ -129,8 +129,7 @@ class ApiEndpoints {
 
   /// Create a channel inside a city.
   /// POST  Auth: Bearer + admin role required
-  static String createChannel(String cityId) =>
-      '/api/cities/$cityId/channels';
+  static String createChannel(String cityId) => '/api/cities/$cityId/channels';
 
   /// Update or delete a specific channel.
   /// PUT / DELETE  Auth: Bearer + admin role required
@@ -170,11 +169,11 @@ class StorageKeys {
   StorageKeys._();
 
   // ── Auth tokens ──────────────────────────────
-  static const String accessToken  = 'access_token';
+  static const String accessToken = 'access_token';
   static const String refreshToken = 'refresh_token';
 
   // ── User profile ─────────────────────────────
-  static const String userId    = 'user_id';
+  static const String userId = 'user_id';
   static const String userEmail = 'user_email';
 
   /// Roles stored as a comma-separated string.
@@ -210,7 +209,7 @@ class _SessionStore {
   }
 
   // ── Optional: call from main.dart before routing to pre-fill _mem ─────────
-  
+
   static Future<void> prime() async {
     try {
       final p = await _instance;
@@ -218,7 +217,8 @@ class _SessionStore {
         final v = p.getString(key);
         if (v != null) _mem[key] = v;
       }
-      _apiLog.d('💾 _SessionStore.prime: Cache warmed — ${_mem.length} key(s) loaded');
+      _apiLog.d(
+          '💾 _SessionStore.prime: Cache warmed — ${_mem.length} key(s) loaded');
     } catch (e) {
       _apiLog.w('⚠️ _SessionStore.prime: Could not warm cache: $e');
     }
@@ -258,7 +258,7 @@ class _SessionStore {
 
   // ── Delete one ────────────────────────────────────────────────────────────
 
- /* static Future<void> deleteOne(String key) async {
+  /* static Future<void> deleteOne(String key) async {
     _mem.remove(key);
     try {
       final p = await _instance;
@@ -299,16 +299,16 @@ class ApiClient {
 
   // ── Token / Session Accessors ────────────────────────────
 
-  static Future<String?> getAccessToken()  async =>
+  static Future<String?> getAccessToken() async =>
       _SessionStore.read(StorageKeys.accessToken);
 
   static Future<String?> getRefreshToken() async =>
       _SessionStore.read(StorageKeys.refreshToken);
 
-  static Future<String?> getUserId()       async =>
+  static Future<String?> getUserId() async =>
       _SessionStore.read(StorageKeys.userId);
 
-  static Future<String?> getUserEmail()    async =>
+  static Future<String?> getUserEmail() async =>
       _SessionStore.read(StorageKeys.userEmail);
 
   static Future<String?> getEmail() => getUserEmail();
@@ -323,8 +323,7 @@ class ApiClient {
   static Future<List<String>> getRoles() => getUserRoles();
 
   /// True when a valid access token is currently stored.
-  static Future<bool> get isLoggedIn async =>
-      (await getAccessToken()) != null;
+  static Future<bool> get isLoggedIn async => (await getAccessToken()) != null;
 
   // ── Session Persistence ───────────────────────────────────────────────────
 
@@ -333,16 +332,18 @@ class ApiClient {
     required String refreshToken,
     required String userId,
     required String email,
-    required List<String> roles, required String firebaseUid, required String apiId,
+    required List<String> roles,
+    required String firebaseUid,
+    required String apiId,
   }) async {
     _apiLog.d('💾 ApiClient.saveSession: Persisting session');
     try {
       await _SessionStore.writeAll({
-        StorageKeys.accessToken:  accessToken,
+        StorageKeys.accessToken: accessToken,
         StorageKeys.refreshToken: refreshToken,
-        StorageKeys.userId:       userId,
-        StorageKeys.userEmail:    email,
-        StorageKeys.userRoles:    roles.join(','),
+        StorageKeys.userId: userId,
+        StorageKeys.userEmail: email,
+        StorageKeys.userRoles: roles.join(','),
       });
       _apiLog.i(
         '💾 ApiClient.saveSession: ✓ Session saved\n'
@@ -416,7 +417,8 @@ class ApiClient {
       final refreshed = await refreshAccessToken();
 
       if (refreshed) {
-        _apiLog.i('🔄 ApiClient.authPost: Refresh succeeded — retrying $endpoint');
+        _apiLog
+            .i('🔄 ApiClient.authPost: Refresh succeeded — retrying $endpoint');
         response = await _doAuthPost(endpoint, body: body);
 
         if (response.statusCode == 401) {
@@ -452,7 +454,8 @@ class ApiClient {
       final refreshed = await refreshAccessToken();
 
       if (refreshed) {
-        _apiLog.i('🔄 ApiClient.authGet: Refresh succeeded — retrying $endpoint');
+        _apiLog
+            .i('🔄 ApiClient.authGet: Refresh succeeded — retrying $endpoint');
         response = await _doAuthGet(endpoint);
 
         if (response.statusCode == 401) {
@@ -492,7 +495,8 @@ class ApiClient {
       final refreshed = await refreshAccessToken();
 
       if (refreshed) {
-        _apiLog.i('🔄 ApiClient.authPut: Refresh succeeded — retrying $endpoint');
+        _apiLog
+            .i('🔄 ApiClient.authPut: Refresh succeeded — retrying $endpoint');
         response = await _doAuthPut(endpoint, body: body);
 
         if (response.statusCode == 401) {
@@ -532,7 +536,8 @@ class ApiClient {
       final refreshed = await refreshAccessToken();
 
       if (refreshed) {
-        _apiLog.i('🔄 ApiClient.authPatch: Refresh succeeded — retrying $endpoint');
+        _apiLog.i(
+            '🔄 ApiClient.authPatch: Refresh succeeded — retrying $endpoint');
         response = await _doAuthPatch(endpoint, body: body);
 
         if (response.statusCode == 401) {
@@ -622,11 +627,10 @@ class ApiClient {
       final refreshed = await refreshAccessToken();
 
       if (refreshed) {
-        _apiLog.i(
-            '🔄 ApiClient.authGetWithParams: Refresh succeeded — retrying');
+        _apiLog
+            .i('🔄 ApiClient.authGetWithParams: Refresh succeeded — retrying');
         final newHeaders = await _authHeaders;
-        response =
-            await http.get(uri, headers: newHeaders).timeout(_timeout);
+        response = await http.get(uri, headers: newHeaders).timeout(_timeout);
 
         if (response.statusCode == 401) {
           _apiLog.e(
@@ -652,7 +656,7 @@ class ApiClient {
   static Future<bool> refreshAccessToken() async {
     _apiLog.i('🔄 ApiClient.refreshAccessToken: ━━━ START ━━━');
 
-    final userId       = await getUserId();
+    final userId = await getUserId();
     final refreshToken = await getRefreshToken();
 
     if (userId == null || refreshToken == null) {
@@ -700,7 +704,7 @@ class ApiClient {
         }
 
         await _SessionStore.writeAll({
-          StorageKeys.accessToken:  newAccessToken,
+          StorageKeys.accessToken: newAccessToken,
           StorageKeys.refreshToken: newRefreshToken ?? refreshToken,
         });
 
@@ -771,8 +775,8 @@ class ApiClient {
           'Please contact support or try the mobile app.';
     }
 
-    if (msg.contains('socketexception')    ||
-        msg.contains('failed to fetch')    ||
+    if (msg.contains('socketexception') ||
+        msg.contains('failed to fetch') ||
         msg.contains('connection refused') ||
         msg.contains('clientexception')) {
       return 'Cannot connect to server. Check your internet connection.';
@@ -792,7 +796,7 @@ class ApiClient {
     String endpoint, {
     Map<String, dynamic>? body,
   }) async {
-    final uri     = Uri.parse(ApiEndpoints.url(endpoint));
+    final uri = Uri.parse(ApiEndpoints.url(endpoint));
     final headers = await _authHeaders;
     return http
         .post(
@@ -804,7 +808,7 @@ class ApiClient {
   }
 
   static Future<http.Response> _doAuthGet(String endpoint) async {
-    final uri     = Uri.parse(ApiEndpoints.url(endpoint));
+    final uri = Uri.parse(ApiEndpoints.url(endpoint));
     final headers = await _authHeaders;
     return http.get(uri, headers: headers).timeout(_timeout);
   }
@@ -813,7 +817,7 @@ class ApiClient {
     String endpoint, {
     Map<String, dynamic>? body,
   }) async {
-    final uri     = Uri.parse(ApiEndpoints.url(endpoint));
+    final uri = Uri.parse(ApiEndpoints.url(endpoint));
     final headers = await _authHeaders;
     return http
         .put(
@@ -828,7 +832,7 @@ class ApiClient {
     String endpoint, {
     Map<String, dynamic>? body,
   }) async {
-    final uri     = Uri.parse(ApiEndpoints.url(endpoint));
+    final uri = Uri.parse(ApiEndpoints.url(endpoint));
     final headers = await _authHeaders;
     return http
         .patch(
@@ -843,7 +847,7 @@ class ApiClient {
     String endpoint, {
     Map<String, dynamic>? body,
   }) async {
-    final uri     = Uri.parse(ApiEndpoints.url(endpoint));
+    final uri = Uri.parse(ApiEndpoints.url(endpoint));
     final headers = await _authHeaders;
     return http
         .delete(

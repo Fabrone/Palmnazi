@@ -3,7 +3,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:logger/logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 // ignore: deprecated_member_use, avoid_web_libraries_in_flutter
-import 'dart:html' as html show window; // web-only: cross-tab verification signal
+import 'dart:html' as html
+    show window; // web-only: cross-tab verification signal
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RESULT TYPE
@@ -73,12 +74,12 @@ class FirebaseEmailLinkService {
 
   // ── APP IDENTIFIERS ───────────────────────────────────────────────────────
   // Replace these before releasing to production.
-  static const String _iosBundleId    = 'com.palmnazi.app'; // ← replace
+  static const String _iosBundleId = 'com.palmnazi.app'; // ← replace
   static const String _androidPackage = 'com.palmnazi.app'; // ← replace
-  static const String _androidMinVer  = '21';
+  static const String _androidMinVer = '21';
 
   // SharedPreferences keys — scoped to avoid collisions with other packages.
-  static const String _kPendingEmail   = 'palmnazi_el_email';
+  static const String _kPendingEmail = 'palmnazi_el_email';
   static const String _kPendingPurpose = 'palmnazi_el_purpose';
 
   static final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -135,7 +136,7 @@ class FirebaseEmailLinkService {
   static Future<EmailLinkResult?> handleIncomingLink(String link) async {
     if (!isEmailLink(link)) return null;
 
-    final email   = await getPendingEmail();
+    final email = await getPendingEmail();
     final purpose = await getPendingPurpose();
     _log.i('📧 [EL] handleIncomingLink: purpose=${purpose?.name} email=$email');
 
@@ -165,8 +166,8 @@ class FirebaseEmailLinkService {
   }) async {
     _log.i('📧 [EL] completeSignIn: email=$email');
     try {
-      final cred    = await _auth.signInWithEmailLink(
-        email:     email.trim(),
+      final cred = await _auth.signInWithEmailLink(
+        email: email.trim(),
         emailLink: emailLink,
       );
       final idToken = await cred.user?.getIdToken();
@@ -198,7 +199,7 @@ class FirebaseEmailLinkService {
       final user = _auth.currentUser;
       if (user == null) return EmailLinkResult.failure('Not signed in.');
       final credential = EmailAuthProvider.credentialWithLink(
-        email:     email.trim(),
+        email: email.trim(),
         emailLink: link,
       );
       await user.linkWithCredential(credential);
@@ -209,7 +210,8 @@ class FirebaseEmailLinkService {
     } on FirebaseAuthException catch (e) {
       if (e.code == 'provider-already-linked') {
         await clearPendingData();
-        _notifyVerificationComplete(email.trim()); // already verified — still signal
+        _notifyVerificationComplete(
+            email.trim()); // already verified — still signal
         return EmailLinkResult.success(message: 'Email already verified.');
       }
       _log.e('📧 [EL] _linkCredential error: ${e.code}');
@@ -234,7 +236,7 @@ class FirebaseEmailLinkService {
 
   static Future<EmailLinkPurpose?> getPendingPurpose() async {
     try {
-      final p    = await SharedPreferences.getInstance();
+      final p = await SharedPreferences.getInstance();
       final name = p.getString(_kPendingPurpose);
       if (name == null) return null;
       return EmailLinkPurpose.values.firstWhere(
@@ -262,18 +264,18 @@ class FirebaseEmailLinkService {
   }) async {
     try {
       final p = await SharedPreferences.getInstance();
-      await p.setString(_kPendingEmail,   email);
+      await p.setString(_kPendingEmail, email);
       await p.setString(_kPendingPurpose, purpose.name);
     } catch (_) {}
   }
 
   static ActionCodeSettings _acs(EmailLinkPurpose purpose) =>
       ActionCodeSettings(
-        url: _buildContinueUrl(purpose),   // ← dynamic origin (see above)
-        handleCodeInApp:       true,
-        iOSBundleId:           _iosBundleId,
-        androidPackageName:    _androidPackage,
-        androidInstallApp:     true,
+        url: _buildContinueUrl(purpose), // ← dynamic origin (see above)
+        handleCodeInApp: true,
+        iOSBundleId: _iosBundleId,
+        androidPackageName: _androidPackage,
+        androidInstallApp: true,
         androidMinimumVersion: _androidMinVer,
       );
 
@@ -282,17 +284,19 @@ class FirebaseEmailLinkService {
   // ══════════════════════════════════════════════════════════════════════════
   // localStorage keys consumed by AccountScreen's onStorage listener.
   static const String kVerifiedEmail = 'pn_verified_email';
-  static const String kVerifiedAt    = 'pn_verified_at';
+  static const String kVerifiedAt = 'pn_verified_at';
 
   static void _notifyVerificationComplete(String email) {
     if (!kIsWeb) return;
     try {
-      html.window.localStorage[kVerifiedAt]    =
+      html.window.localStorage[kVerifiedAt] =
           DateTime.now().millisecondsSinceEpoch.toString();
       html.window.localStorage[kVerifiedEmail] = email.toLowerCase();
-      _log.d('📧 [EL] _notifyVerificationComplete: localStorage updated for $email');
+      _log.d(
+          '📧 [EL] _notifyVerificationComplete: localStorage updated for $email');
     } catch (e) {
-      _log.w('📧 [EL] _notifyVerificationComplete: localStorage unavailable — $e');
+      _log.w(
+          '📧 [EL] _notifyVerificationComplete: localStorage unavailable — $e');
     }
   }
 

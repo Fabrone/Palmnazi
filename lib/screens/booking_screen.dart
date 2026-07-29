@@ -67,11 +67,10 @@ class _BookingScreenState extends State<BookingScreen> {
 
   bool get _isAccommodation => widget.serviceType == 'rooms';
 
-  Map<String, dynamic>? get _selectedService =>
-      _selectedServiceIndex != null &&
-              _selectedServiceIndex! < widget.serviceOptions.length
-          ? widget.serviceOptions[_selectedServiceIndex!]
-          : null;
+  Map<String, dynamic>? get _selectedService => _selectedServiceIndex != null &&
+          _selectedServiceIndex! < widget.serviceOptions.length
+      ? widget.serviceOptions[_selectedServiceIndex!]
+      : null;
 
   EstimatedPrice? get _priceEstimate => estimateBookingTotal(
         placeMinPrice: widget.place.pricing?.min,

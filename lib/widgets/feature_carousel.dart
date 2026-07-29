@@ -22,7 +22,8 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
     FeatureItem(
       icon: Icons.king_bed_outlined,
       title: 'Premium Accommodation',
-      description: 'Experience world-class hospitality in Kenya\'s finest resort cities. From luxurious beachfront villas to serene mountain lodges, discover handpicked accommodations that offer exceptional comfort, breathtaking views, and personalized service.',
+      description:
+          'Experience world-class hospitality in Kenya\'s finest resort cities. From luxurious beachfront villas to serene mountain lodges, discover handpicked accommodations that offer exceptional comfort, breathtaking views, and personalized service.',
       gradient: const LinearGradient(
         colors: [Color(0xFF0D7377), Color(0xFF1E3A5F)],
       ),
@@ -32,7 +33,8 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
     FeatureItem(
       icon: Icons.restaurant_menu,
       title: 'Exquisite Dining',
-      description: 'Embark on a culinary adventure through Kenya with our curated collection of world-class restaurants and authentic local eateries. From fresh ocean catches to traditional Kenyan delicacies, savor dishes crafted with passion.',
+      description:
+          'Embark on a culinary adventure through Kenya with our curated collection of world-class restaurants and authentic local eateries. From fresh ocean catches to traditional Kenyan delicacies, savor dishes crafted with passion.',
       gradient: const LinearGradient(
         colors: [Color(0xFFE91E63), Color(0xFF880E4F)],
       ),
@@ -42,7 +44,8 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
     FeatureItem(
       icon: Icons.celebration,
       title: 'Cultural Events',
-      description: 'Immerse yourself in vibrant cultural celebrations, music festivals, and traditional ceremonies. Connect with local communities, witness age-old traditions, and participate in events that unite people across cultures.',
+      description:
+          'Immerse yourself in vibrant cultural celebrations, music festivals, and traditional ceremonies. Connect with local communities, witness age-old traditions, and participate in events that unite people across cultures.',
       gradient: const LinearGradient(
         colors: [Color(0xFFFF9800), Color(0xFFE65100)],
       ),
@@ -52,7 +55,8 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
     FeatureItem(
       icon: Icons.shopping_bag_outlined,
       title: 'Artisan Shopping',
-      description: 'Discover authentic Kenyan craftsmanship at vibrant local markets and boutique shops. Find one-of-a-kind souvenirs, handcrafted jewelry, traditional textiles, and contemporary art that tells a meaningful story.',
+      description:
+          'Discover authentic Kenyan craftsmanship at vibrant local markets and boutique shops. Find one-of-a-kind souvenirs, handcrafted jewelry, traditional textiles, and contemporary art that tells a meaningful story.',
       gradient: const LinearGradient(
         colors: [Color(0xFF9C27B0), Color(0xFF4A148C)],
       ),
@@ -62,7 +66,8 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
     FeatureItem(
       icon: Icons.terrain,
       title: 'Adventure & Nature',
-      description: 'Explore breathtaking landscapes from pristine beaches to majestic mountains. Engage in safari adventures, mountain hiking, water sports, and unforgettable wildlife encounters through sustainable tourism.',
+      description:
+          'Explore breathtaking landscapes from pristine beaches to majestic mountains. Engage in safari adventures, mountain hiking, water sports, and unforgettable wildlife encounters through sustainable tourism.',
       gradient: const LinearGradient(
         colors: [Color(0xFF2196F3), Color(0xFF0D47A1)],
       ),
@@ -85,7 +90,7 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
       } else {
         _currentPage = 0;
       }
-      
+
       if (_pageController.hasClients) {
         _pageController.animateToPage(
           _currentPage,
@@ -107,7 +112,7 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
     final carouselHeight = (screenHeight * 0.5).clamp(350.0, 450.0);
-    
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 30, horizontal: 0),
       child: Column(
@@ -123,10 +128,10 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
                   child: Text(
                     'What We Offer',
                     style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                      fontSize: 36,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
+                          fontSize: 36,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -134,8 +139,8 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
                 Text(
                   'Explore curated services for an unforgettable resort experience',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontSize: 14,
-                  ),
+                        fontSize: 14,
+                      ),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -163,7 +168,8 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
                     }
                     return Center(
                       child: SizedBox(
-                        height: Curves.easeInOut.transform(value) * carouselHeight,
+                        height:
+                            Curves.easeInOut.transform(value) * carouselHeight,
                         child: child,
                       ),
                     );
@@ -214,7 +220,7 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
                   },
                 ),
               ),
-              
+
               // Dark Gradient Overlay
               Positioned.fill(
                 child: Container(
@@ -230,7 +236,7 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
                   ),
                 ),
               ),
-              
+
               // Content
               Positioned(
                 bottom: 0,
@@ -249,7 +255,8 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
-                              color: feature.gradient.colors.first.withValues(alpha: 0.6),
+                              color: feature.gradient.colors.first
+                                  .withValues(alpha: 0.6),
                               blurRadius: 15,
                               spreadRadius: 2,
                             ),

@@ -1,7 +1,12 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 import 'package:palmnazi/admin/admin_api_service.dart';
 import 'package:palmnazi/admin/admin_shared_widgets.dart';
 import 'package:palmnazi/models/category_model.dart';
+import 'package:palmnazi/models/city_model.dart';
+import 'package:palmnazi/services/audit_log_service.dart';
+import 'package:palmnazi/services/category_details_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AdminCategoriesScreen
@@ -36,6 +41,7 @@ class AdminCategoriesScreen extends StatefulWidget {
 class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   // Root categories with their children pre-loaded
   List<CategoryModel> _rootCategories = [];
+  List<CityModel> _cities = [];
   bool _loading = false;
   String? _error;
   String _search = '';
@@ -48,6 +54,16 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
   void initState() {
     super.initState();
     _fetch();
+    _fetchCities();
+  }
+
+  Future<void> _fetchCities() async {
+    try {
+      final cities = await widget.apiService.getCities();
+      if (mounted) setState(() => _cities = cities);
+    } catch (_) {
+      // Non-critical — city-scoping picker just shows no options if this fails.
+    }
   }
 
   Future<void> _fetch() async {
@@ -100,15 +116,29 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
         existing: existing,
         parentCategory: null,
         allRootCategories: _rootCategories,
+        allCities: _cities,
         onSave: (payload) async {
+          final CategoryModel result;
           if (existing == null) {
-            await widget.apiService.createCategory(payload);
+            result = await widget.apiService.createCategory(payload);
+            AuditLogService.log(
+                action: 'create',
+                module: 'Category',
+                targetId: result.id,
+                targetLabel: result.name);
             _snack('Category created', isError: false);
           } else {
-            await widget.apiService.updateCategory(existing.id, payload);
+            result =
+                await widget.apiService.updateCategory(existing.id, payload);
+            AuditLogService.log(
+                action: 'update',
+                module: 'Category',
+                targetId: existing.id,
+                targetLabel: existing.name);
             _snack('Category updated', isError: false);
           }
           _fetch();
+          return result;
         },
       ),
     );
@@ -122,15 +152,31 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
         existing: existing,
         parentCategory: parent,
         allRootCategories: _rootCategories,
+        allCities: _cities,
         onSave: (payload) async {
+          final CategoryModel result;
           if (existing == null) {
-            await widget.apiService.createSubcategory(parent.id, payload);
+            result =
+                await widget.apiService.createSubcategory(parent.id, payload);
+            AuditLogService.log(
+                action: 'create',
+                module: 'Category',
+                targetId: result.id,
+                targetLabel: result.name,
+                details: 'Subcategory of ${parent.name}');
             _snack('Subcategory added to ${parent.name}', isError: false);
           } else {
-            await widget.apiService.updateCategory(existing.id, payload);
+            result =
+                await widget.apiService.updateCategory(existing.id, payload);
+            AuditLogService.log(
+                action: 'update',
+                module: 'Category',
+                targetId: existing.id,
+                targetLabel: existing.name);
             _snack('Subcategory updated', isError: false);
           }
           _fetch();
+          return result;
         },
       ),
     );
@@ -159,6 +205,11 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
 
     try {
       await widget.apiService.deleteCategory(cat.id, cascade: hasChildren);
+      AuditLogService.log(
+          action: 'delete',
+          module: 'Category',
+          targetId: cat.id,
+          targetLabel: cat.name);
       _snack('Deleted ${cat.name}', isError: false);
       _fetch();
     } on AdminApiException catch (e) {
@@ -172,8 +223,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg),
-      backgroundColor:
-          isError ? Colors.red.shade700 : const Color(0xFF2196F3),
+      backgroundColor: isError ? Colors.red.shade700 : const Color(0xFF2196F3),
       behavior: SnackBarBehavior.floating,
     ));
   }
@@ -201,16 +251,14 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: AdminAddButton(
-                          label: 'Add Category',
-                          onTap: () => _openRootForm()),
+                          label: 'Add Category', onTap: () => _openRootForm()),
                     ),
                   ],
                 )
               : Row(children: [
                   Expanded(child: _buildTitleBlock()),
                   AdminAddButton(
-                      label: 'Add Category',
-                      onTap: () => _openRootForm()),
+                      label: 'Add Category', onTap: () => _openRootForm()),
                 ]),
 
           const SizedBox(height: 20),
@@ -234,9 +282,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
         Text(
           'Categories',
           style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold),
+              color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
         ),
         Text(
           'Global service categories — shared across all cities',
@@ -256,8 +302,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
           style: const TextStyle(color: Colors.white, fontSize: 14),
           decoration: InputDecoration(
             hintText: 'Search categories…',
-            hintStyle:
-                const TextStyle(color: Colors.white24, fontSize: 13),
+            hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
             prefixIcon: const Icon(Icons.search_rounded,
                 color: Colors.white38, size: 18),
             filled: true,
@@ -270,8 +315,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
                 borderSide: const BorderSide(color: Colors.white12)),
             focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    const BorderSide(color: Color(0xFF2196F3))),
+                borderSide: const BorderSide(color: Color(0xFF2196F3))),
             contentPadding: const EdgeInsets.symmetric(vertical: 0),
           ),
         ),
@@ -331,8 +375,7 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
     if (roots.isEmpty) {
       return Center(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.category_rounded,
-            color: Colors.white24, size: 56),
+        const Icon(Icons.category_rounded, color: Colors.white24, size: 56),
         const SizedBox(height: 16),
         const Text('No categories yet',
             style: TextStyle(
@@ -353,38 +396,91 @@ class _AdminCategoriesScreenState extends State<AdminCategoriesScreen> {
           style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF2196F3),
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 24, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12))),
         ),
       ]));
     }
 
-    return ListView.separated(
+    // Drag-and-drop reordering only makes sense against the unfiltered list —
+    // reordering a filtered subset would produce confusing sortOrder writes.
+    final canReorder = _search.isEmpty && _filterActive == null;
+
+    Widget buildCard(int i) => _RootCategoryCard(
+          key: ValueKey(roots[i].id),
+          category: roots[i],
+          isExpanded: _expanded.contains(roots[i].id),
+          onToggleExpand: () => setState(() {
+            if (_expanded.contains(roots[i].id)) {
+              _expanded.remove(roots[i].id);
+            } else {
+              _expanded.add(roots[i].id);
+            }
+          }),
+          onEdit: () => _openRootForm(existing: roots[i]),
+          onDelete: () => _deleteCategory(roots[i]),
+          onToggleActive: () => widget.apiService.updateCategory(roots[i].id,
+              {'isActive': !roots[i].isActive}).then((_) => _fetch()),
+          onAddSubcategory: () => _openSubcategoryForm(roots[i]),
+          onEditSubcategory: (child) =>
+              _openSubcategoryForm(roots[i], existing: child),
+          onDeleteSubcategory: (child) => _deleteCategory(child),
+          dragHandle: canReorder
+              ? const Icon(Icons.drag_indicator_rounded,
+                  color: Colors.white24, size: 20)
+              : null,
+        );
+
+    if (!canReorder) {
+      return ListView.separated(
+        itemCount: roots.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (ctx, i) => buildCard(i),
+      );
+    }
+
+    return ReorderableListView.builder(
+      buildDefaultDragHandles: false,
       itemCount: roots.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (ctx, i) => _RootCategoryCard(
-        category: roots[i],
-        isExpanded: _expanded.contains(roots[i].id),
-        onToggleExpand: () => setState(() {
-          if (_expanded.contains(roots[i].id)) {
-            _expanded.remove(roots[i].id);
-          } else {
-            _expanded.add(roots[i].id);
-          }
-        }),
-        onEdit: () => _openRootForm(existing: roots[i]),
-        onDelete: () => _deleteCategory(roots[i]),
-        onToggleActive: () => widget.apiService
-            .updateCategory(roots[i].id, {'isActive': !roots[i].isActive})
-            .then((_) => _fetch()),
-        onAddSubcategory: () => _openSubcategoryForm(roots[i]),
-        onEditSubcategory: (child) =>
-            _openSubcategoryForm(roots[i], existing: child),
-        onDeleteSubcategory: (child) => _deleteCategory(child),
+      itemBuilder: (ctx, i) => Padding(
+        key: ValueKey('${roots[i].id}-pad'),
+        padding: const EdgeInsets.only(bottom: 12),
+        child: ReorderableDragStartListener(
+          index: i,
+          child: buildCard(i),
+        ),
       ),
+      onReorderItem: _reorderRoots,
     );
+  }
+
+  // ── Drag-and-drop reorder: PATCH sortOrder for every root whose position
+  // changed, matching manual sortOrder edits already supported by the form. ──
+  Future<void> _reorderRoots(int oldIndex, int newIndex) async {
+    final roots = List<CategoryModel>.from(_filteredRoots);
+    if (newIndex > oldIndex) newIndex -= 1;
+    final moved = roots.removeAt(oldIndex);
+    roots.insert(newIndex, moved);
+
+    setState(() {
+      _rootCategories = roots;
+    });
+
+    for (var i = 0; i < roots.length; i++) {
+      if (roots[i].sortOrder == i) continue;
+      try {
+        await widget.apiService.updateCategory(roots[i].id, {'sortOrder': i});
+      } catch (_) {
+        // Best-effort — a single failed PATCH shouldn't block the rest;
+        // _fetch() below reconciles the UI with whatever the backend has.
+      }
+    }
+    AuditLogService.log(
+        action: 'update',
+        module: 'Category',
+        details: 'Reordered root categories');
+    _fetch();
   }
 }
 
@@ -408,8 +504,10 @@ class _RootCategoryCard extends StatelessWidget {
   final VoidCallback onAddSubcategory;
   final ValueChanged<CategoryModel> onEditSubcategory;
   final ValueChanged<CategoryModel> onDeleteSubcategory;
+  final Widget? dragHandle;
 
   const _RootCategoryCard({
+    super.key,
     required this.category,
     required this.isExpanded,
     required this.onToggleExpand,
@@ -419,6 +517,7 @@ class _RootCategoryCard extends StatelessWidget {
     required this.onAddSubcategory,
     required this.onEditSubcategory,
     required this.onDeleteSubcategory,
+    this.dragHandle,
   });
 
   @override
@@ -444,6 +543,10 @@ class _RootCategoryCard extends StatelessWidget {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
+                      if (dragHandle != null) ...[
+                        dragHandle!,
+                        const SizedBox(width: 6),
+                      ],
                       // Expand toggle
                       GestureDetector(
                         onTap: onToggleExpand,
@@ -461,8 +564,8 @@ class _RootCategoryCard extends StatelessWidget {
                         width: 38,
                         height: 38,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF2196F3)
-                              .withValues(alpha: 0.12),
+                          color:
+                              const Color(0xFF2196F3).withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
                               color: const Color(0xFF2196F3)
@@ -537,8 +640,8 @@ class _RootCategoryCard extends StatelessWidget {
                             color: Colors.white38, size: 18),
                         iconSize: 18,
                         padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                            minWidth: 30, minHeight: 30),
+                        constraints:
+                            const BoxConstraints(minWidth: 30, minHeight: 30),
                         onSelected: (val) {
                           if (val == 'edit') onEdit();
                           if (val == 'toggle') onToggleActive();
@@ -559,8 +662,7 @@ class _RootCategoryCard extends StatelessWidget {
                                       : 'Activate')),
                           const PopupMenuItem(
                               value: 'delete',
-                              child: _PopItem(
-                                  Icons.delete_rounded, 'Delete',
+                              child: _PopItem(Icons.delete_rounded, 'Delete',
                                   color: Colors.redAccent)),
                         ],
                       ),
@@ -617,8 +719,7 @@ class _RootCategoryCard extends StatelessWidget {
                 child: Row(children: [
                   Icon(
                     Icons.add_circle_outline_rounded,
-                    color:
-                        const Color(0xFF2196F3).withValues(alpha: 0.7),
+                    color: const Color(0xFF2196F3).withValues(alpha: 0.7),
                     size: 15,
                   ),
                   const SizedBox(width: 6),
@@ -628,8 +729,7 @@ class _RootCategoryCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          color: const Color(0xFF2196F3)
-                              .withValues(alpha: 0.8),
+                          color: const Color(0xFF2196F3).withValues(alpha: 0.8),
                           fontSize: 12,
                           fontWeight: FontWeight.w500),
                     ),
@@ -692,15 +792,13 @@ class _ChildCategoryRow extends StatelessWidget {
                     child.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style:
-                        const TextStyle(color: Colors.white70, fontSize: 13),
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
                   ),
                   Text(
                     '/${child.slug}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Colors.white24, fontSize: 10),
+                    style: const TextStyle(color: Colors.white24, fontSize: 10),
                   ),
                 ],
               ),
@@ -727,8 +825,7 @@ class _ChildCategoryRow extends StatelessWidget {
                 onPressed: onEdit,
                 tooltip: 'Edit',
                 padding: EdgeInsets.zero,
-                constraints:
-                    const BoxConstraints(minWidth: 28, minHeight: 28),
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
               ),
             ),
             // Delete button
@@ -741,8 +838,7 @@ class _ChildCategoryRow extends StatelessWidget {
                 onPressed: onDelete,
                 tooltip: 'Delete',
                 padding: EdgeInsets.zero,
-                constraints:
-                    const BoxConstraints(minWidth: 28, minHeight: 28),
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
               ),
             ),
           ],
@@ -760,12 +856,14 @@ class _CategoryFormDialog extends StatefulWidget {
   final CategoryModel? existing;
   final CategoryModel? parentCategory;
   final List<CategoryModel> allRootCategories;
-  final Future<void> Function(Map<String, dynamic>) onSave;
+  final List<CityModel> allCities;
+  final Future<CategoryModel> Function(Map<String, dynamic>) onSave;
 
   const _CategoryFormDialog({
     this.existing,
     this.parentCategory,
     required this.allRootCategories,
+    required this.allCities,
     required this.onSave,
   });
 
@@ -785,9 +883,14 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
   late TextEditingController _icon;
   late TextEditingController _description;
   late TextEditingController _sortOrder;
+  late TextEditingController _tags;
   bool _isActive = true;
   String? _selectedParentId;
   bool _slugManuallyEdited = false;
+
+  // ── City-scoping (Firestore CategoryDetails side-table) ──────────────────
+  // Empty = visible in every resort city (today's behaviour, unchanged).
+  final Set<String> _selectedCityIds = {};
 
   @override
   void initState() {
@@ -798,8 +901,22 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
     _icon = TextEditingController(text: e?.icon ?? '');
     _description = TextEditingController(text: e?.description ?? '');
     _sortOrder = TextEditingController(text: '${e?.sortOrder ?? 0}');
+    _tags = TextEditingController();
     _isActive = e?.isActive ?? true;
     _selectedParentId = e?.parentId ?? widget.parentCategory?.id;
+
+    if (e != null) {
+      CategoryDetailsService.stream(e.id).first.then((details) {
+        if (mounted) {
+          setState(() {
+            _selectedCityIds
+              ..clear()
+              ..addAll(details.cityIds);
+            _tags.text = details.tags.join(', ');
+          });
+        }
+      });
+    }
 
     _name.addListener(() {
       if (!_slugManuallyEdited && widget.existing == null) {
@@ -818,6 +935,7 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
     _icon.dispose();
     _description.dispose();
     _sortOrder.dispose();
+    _tags.dispose();
     super.dispose();
   }
 
@@ -840,7 +958,19 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
     };
 
     try {
-      await widget.onSave(payload);
+      final saved = await widget.onSave(payload);
+      final tags = _tags.text
+          .split(',')
+          .map((t) => t.trim())
+          .where((t) => t.isNotEmpty)
+          .toList();
+      // Best-effort — the category itself is already saved at this point,
+      // so a scoping-write failure shouldn't block closing the dialog.
+      unawaited(CategoryDetailsService.setScoping(
+        categoryId: saved.id,
+        cityIds: _selectedCityIds.toList(),
+        tags: tags,
+      ));
       if (mounted) Navigator.pop(context);
     } on AdminApiException catch (e) {
       if (mounted) {
@@ -933,8 +1063,8 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
                       fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                 decoration: BoxDecoration(
                   color: const Color(0xFF0D1117),
                   borderRadius: BorderRadius.circular(10),
@@ -944,12 +1074,10 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
                   value: _selectedParentId,
                   isExpanded: true,
                   dropdownColor: const Color(0xFF1F2937),
-                  style: const TextStyle(
-                      color: Colors.white70, fontSize: 14),
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
                   underline: const SizedBox.shrink(),
                   hint: const Text('Root category (top level)',
-                      style: TextStyle(
-                          color: Colors.white38, fontSize: 13)),
+                      style: TextStyle(color: Colors.white38, fontSize: 13)),
                   onChanged: (v) => setState(() => _selectedParentId = v),
                   items: [
                     const DropdownMenuItem<String?>(
@@ -962,15 +1090,14 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
                         .map((r) => DropdownMenuItem<String?>(
                               value: r.id,
                               child: Text('Subcategory of: ${r.name}',
-                                  style: const TextStyle(
-                                      color: Colors.white70)),
+                                  style:
+                                      const TextStyle(color: Colors.white70)),
                             )),
                   ],
                 ),
               ),
               const SizedBox(height: 16),
             ],
-
             AdminField(
               ctrl: _name,
               label: 'Category Name',
@@ -978,7 +1105,6 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
               required: true,
               apiError: _apiErrors?['name'],
             ),
-
             AdminField(
               ctrl: _slug,
               label: 'Slug',
@@ -988,21 +1114,18 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
               apiError: _apiErrors?['slug'],
               onChanged: (_) => _slugManuallyEdited = true,
             ),
-
             AdminField(
               ctrl: _icon,
               label: 'Icon (emoji)',
               hint: '🏨',
               helperText: 'Paste a single emoji character',
             ),
-
             AdminField(
               ctrl: _description,
               label: 'Description',
               hint: 'Brief description of this category',
               maxLines: 2,
             ),
-
             AdminField(
               ctrl: _sortOrder,
               label: 'Sort Order',
@@ -1010,7 +1133,51 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
               keyboardType: TextInputType.number,
               helperText: 'Lower numbers appear first',
             ),
-
+            AdminField(
+              ctrl: _tags,
+              label: 'Tags',
+              hint: 'e.g. beachfront, family-friendly, budget',
+              helperText: 'Comma-separated — used for search/filtering',
+            ),
+            const SizedBox(height: 4),
+            const Text('Visible In',
+                style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500)),
+            const SizedBox(height: 6),
+            Text(
+              _selectedCityIds.isEmpty
+                  ? 'All resort cities (default)'
+                  : '${_selectedCityIds.length} selected city/cities',
+              style: const TextStyle(color: Colors.white38, fontSize: 11),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: widget.allCities.map((city) {
+                final selected = _selectedCityIds.contains(city.id);
+                return FilterChip(
+                  label: Text(city.name),
+                  labelStyle: TextStyle(
+                      color: selected ? Colors.black : Colors.white70,
+                      fontSize: 12),
+                  selected: selected,
+                  onSelected: (v) => setState(() {
+                    if (v) {
+                      _selectedCityIds.add(city.id);
+                    } else {
+                      _selectedCityIds.remove(city.id);
+                    }
+                  }),
+                  backgroundColor: Colors.white.withValues(alpha: 0.06),
+                  selectedColor: const Color(0xFF14FFEC),
+                  checkmarkColor: Colors.black,
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+                );
+              }).toList(),
+            ),
             const SizedBox(height: 8),
             Row(children: [
               const Expanded(
@@ -1043,8 +1210,7 @@ class _ActiveBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
           color: isActive
               ? Colors.green.withValues(alpha: 0.12)
@@ -1074,8 +1240,7 @@ class _CountPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(6),
@@ -1085,8 +1250,7 @@ class _CountPill extends StatelessWidget {
           Icon(icon, size: 10, color: Colors.white38),
           const SizedBox(width: 4),
           Text('$value $label',
-              style: const TextStyle(
-                  color: Colors.white54, fontSize: 10)),
+              style: const TextStyle(color: Colors.white54, fontSize: 10)),
         ]),
       );
 }
@@ -1109,24 +1273,19 @@ class _FilterChip extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
-          color:
-              selected ? c.withValues(alpha: 0.15) : Colors.transparent,
+          color: selected ? c.withValues(alpha: 0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-              color: selected
-                  ? c.withValues(alpha: 0.5)
-                  : Colors.white12),
+              color: selected ? c.withValues(alpha: 0.5) : Colors.white12),
         ),
         child: Text(
           label,
           style: TextStyle(
             fontSize: 12,
             color: selected ? c : Colors.white38,
-            fontWeight:
-                selected ? FontWeight.w600 : FontWeight.normal,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
       ),
@@ -1145,7 +1304,6 @@ class _PopItem extends StatelessWidget {
         Icon(icon, size: 15, color: color ?? Colors.white54),
         const SizedBox(width: 10),
         Text(label,
-            style: TextStyle(
-                color: color ?? Colors.white70, fontSize: 13)),
+            style: TextStyle(color: color ?? Colors.white70, fontSize: 13)),
       ]);
 }

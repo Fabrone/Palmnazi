@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:palmnazi/models/static_page_model.dart';
+import 'package:palmnazi/services/static_page_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // StaticInfoScreen
@@ -70,12 +72,14 @@ class StaticInfoScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(s.heading,
-                              style: const TextStyle(
-                                  color: _P.gold,
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w700)),
-                          const SizedBox(height: 8),
+                          if (s.heading.isNotEmpty) ...[
+                            Text(s.heading,
+                                style: const TextStyle(
+                                    color: _P.gold,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w700)),
+                            const SizedBox(height: 8),
+                          ],
                           Text(s.body,
                               style: const TextStyle(
                                   color: _P.textSec,
@@ -89,6 +93,55 @@ class StaticInfoScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// StaticPageScreen
+//
+// Live wrapper around [StaticInfoScreen] — streams admin-edited content from
+// StaticPageService/StaticPageModel (see admin_static_pages_screen.dart) and
+// falls back to the given hardcoded copy until an admin has edited the page,
+// so nothing goes blank pre-migration.
+// ─────────────────────────────────────────────────────────────────────────────
+class StaticPageScreen extends StatelessWidget {
+  final String slug;
+  final String fallbackTitle;
+  final String? fallbackLastUpdated;
+  final List<StaticInfoSection> fallbackSections;
+
+  const StaticPageScreen({
+    super.key,
+    required this.slug,
+    required this.fallbackTitle,
+    required this.fallbackSections,
+    this.fallbackLastUpdated,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<StaticPageModel?>(
+      stream: StaticPageService.stream(slug),
+      builder: (context, snap) {
+        final page = snap.data;
+        if (page == null || page.sections.isEmpty) {
+          return StaticInfoScreen(
+            title: fallbackTitle,
+            lastUpdated: fallbackLastUpdated,
+            sections: fallbackSections,
+          );
+        }
+        return StaticInfoScreen(
+          title: page.title.isNotEmpty ? page.title : fallbackTitle,
+          lastUpdated: page.lastUpdatedLabel.isNotEmpty
+              ? page.lastUpdatedLabel
+              : fallbackLastUpdated,
+          sections: page.sections
+              .map((s) => StaticInfoSection(heading: s.heading, body: s.body))
+              .toList(),
+        );
+      },
     );
   }
 }

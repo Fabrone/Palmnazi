@@ -48,17 +48,19 @@ class ResetPasswordService {
       response = await ApiClient.post(
         ApiEndpoints.resetPassword,
         body: {
-          'token':       token.trim(),
+          'token': token.trim(),
           'newPassword': newPassword,
         },
       );
-      _log.i('🔑 ResetPasswordService.resetPassword: Step 1 ✓ — Response received');
+      _log.i(
+          '🔑 ResetPasswordService.resetPassword: Step 1 ✓ — Response received');
     } on Exception catch (e, st) {
       _log.e(
         '❌ ResetPasswordService.resetPassword: Step 1 FAILED\n'
         '   Type    : ${e.runtimeType}\n'
         '   Message : $e',
-        error: e, stackTrace: st,
+        error: e,
+        stackTrace: st,
       );
       return ResetPasswordResult.failure(
         ApiClient.friendlyNetworkError(e),
@@ -67,8 +69,10 @@ class ResetPasswordService {
 
     // ── Step 2: Log raw response ───────────────────────────────────────────
     _log.d('🔑 ResetPasswordService.resetPassword: Step 2 — Raw response:');
-    _log.d('🔑 ResetPasswordService.resetPassword:   Status : ${response.statusCode}');
-    _log.d('🔑 ResetPasswordService.resetPassword:   Body   : ${response.body}');
+    _log.d(
+        '🔑 ResetPasswordService.resetPassword:   Status : ${response.statusCode}');
+    _log.d(
+        '🔑 ResetPasswordService.resetPassword:   Body   : ${response.body}');
 
     final body = ApiClient.parseBody(response);
     _log.d('🔑 ResetPasswordService.resetPassword: Step 2 ✓ — Parsed: $body');
@@ -83,7 +87,8 @@ class ResetPasswordService {
 
       case 400:
         final msg = (body['message'] ?? body['error'] ?? '').toString();
-        _log.w('⚠️ ResetPasswordService.resetPassword: 400 — $msg | body: $body');
+        _log.w(
+            '⚠️ ResetPasswordService.resetPassword: 400 — $msg | body: $body');
 
         // Distinguish token errors from password-strength errors
         if (msg.toLowerCase().contains('token')) {
@@ -130,13 +135,13 @@ class ResetPasswordService {
 // RESET PASSWORD RESULT
 // ─────────────────────────────────────────────────────────────────────────────
 class ResetPasswordResult {
-  final bool   isSuccess;
+  final bool isSuccess;
   final String message;
 
   ResetPasswordResult._({required this.isSuccess, required this.message});
 
   factory ResetPasswordResult.success({required String message}) =>
-      ResetPasswordResult._(isSuccess: true,  message: message);
+      ResetPasswordResult._(isSuccess: true, message: message);
 
   factory ResetPasswordResult.failure(String message) =>
       ResetPasswordResult._(isSuccess: false, message: message);
@@ -183,22 +188,21 @@ class ResetPasswordScreen extends StatefulWidget {
 
 class _ResetPasswordScreenState extends State<ResetPasswordScreen>
     with SingleTickerProviderStateMixin {
-
   final _formKey = GlobalKey<FormState>();
 
   late final TextEditingController _tokenController;
-  final _passwordController        = TextEditingController();
+  final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
-  bool _obscurePassword        = true;
+  bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
-  bool _isLoading              = false;
-  bool _isSuccess              = false;
+  bool _isLoading = false;
+  bool _isSuccess = false;
 
   // Animation for the success card entrance
   late AnimationController _successAnimController;
-  late Animation<double>   _successFadeAnimation;
-  late Animation<Offset>   _successSlideAnimation;
+  late Animation<double> _successFadeAnimation;
+  late Animation<Offset> _successSlideAnimation;
 
   @override
   void initState() {
@@ -230,7 +234,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
 
     _successSlideAnimation = Tween<Offset>(
       begin: const Offset(0, 0.15),
-      end:   Offset.zero,
+      end: Offset.zero,
     ).animate(
       CurvedAnimation(
         parent: _successAnimController,
@@ -263,7 +267,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
     setState(() => _isLoading = true);
 
     final result = await ResetPasswordService.resetPassword(
-      token:       _tokenController.text.trim(),
+      token: _tokenController.text.trim(),
       newPassword: _passwordController.text,
     );
 
@@ -278,7 +282,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
     if (result.isSuccess) {
       setState(() => _isSuccess = true);
       _successAnimController.forward();
-      _log.i('🖥️ ResetPasswordScreen: ✅ Password reset — showing success state');
+      _log.i(
+          '🖥️ ResetPasswordScreen: ✅ Password reset — showing success state');
     } else {
       _showErrorSnackbar(result.message);
     }
@@ -435,7 +440,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
                     color: Colors.white.withValues(alpha: 0.2),
                   ),
                 ),
-                child: const Icon(Icons.arrow_back, color: Colors.white, size: 18),
+                child:
+                    const Icon(Icons.arrow_back, color: Colors.white, size: 18),
               ),
             ),
         ],
@@ -602,7 +608,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
                 ),
               ),
               validator: (v) {
-                if (v == null || v.isEmpty) return 'Please enter a new password';
+                if (v == null || v.isEmpty) {
+                  return 'Please enter a new password';
+                }
                 if (v.length < 8) {
                   return 'Password must be at least 8 characters';
                 }
@@ -636,7 +644,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
                 ),
               ),
               validator: (v) {
-                if (v == null || v.isEmpty) return 'Please confirm your password';
+                if (v == null || v.isEmpty) {
+                  return 'Please confirm your password';
+                }
                 if (v != _passwordController.text) {
                   return 'Passwords do not match';
                 }
@@ -938,8 +948,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
     if (password.isEmpty) return const SizedBox.shrink();
 
     final strength = _passwordStrength(password);
-    final label    = _strengthLabel(strength);
-    final color    = _strengthColor(strength);
+    final label = _strengthLabel(strength);
+    final color = _strengthColor(strength);
     final segments = strength; // 1–4
 
     return Column(
@@ -978,7 +988,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
   int _passwordStrength(String password) {
     if (password.length < 8) return 1;
     int score = 1;
-    if (password.length >= 12)                               score++;
+    if (password.length >= 12) score++;
     if (RegExp(r'[A-Z]').hasMatch(password) &&
         RegExp(r'[a-z]').hasMatch(password)) {
       score++;
@@ -992,19 +1002,27 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
 
   String _strengthLabel(int strength) {
     switch (strength) {
-      case 1:  return 'Weak';
-      case 2:  return 'Fair';
-      case 3:  return 'Good';
-      default: return 'Strong';
+      case 1:
+        return 'Weak';
+      case 2:
+        return 'Fair';
+      case 3:
+        return 'Good';
+      default:
+        return 'Strong';
     }
   }
 
   Color _strengthColor(int strength) {
     switch (strength) {
-      case 1:  return const Color(0xFFCF6679);
-      case 2:  return const Color(0xFFFFB300);
-      case 3:  return const Color(0xFF14FFEC);
-      default: return const Color(0xFF00E676);
+      case 1:
+        return const Color(0xFFCF6679);
+      case 2:
+        return const Color(0xFFFFB300);
+      case 3:
+        return const Color(0xFF14FFEC);
+      default:
+        return const Color(0xFF00E676);
     }
   }
 }
@@ -1023,11 +1041,11 @@ class _DiagonalGridPainter extends CustomPainter {
 
     const spacing = 60.0;
     for (double i = -size.height; i < size.width + size.height; i += spacing) {
-      canvas.drawLine(Offset(i, 0), Offset(i + size.height, size.height), paint);
+      canvas.drawLine(
+          Offset(i, 0), Offset(i + size.height, size.height), paint);
     }
 
-    final dotPaint = Paint()
-      ..style = PaintingStyle.fill;
+    final dotPaint = Paint()..style = PaintingStyle.fill;
     for (double x = 0; x < size.width; x += spacing) {
       for (double y = 0; y < size.height; y += spacing) {
         dotPaint.color = const Color(0xFF14FFEC).withValues(alpha: 0.12);

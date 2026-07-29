@@ -43,9 +43,11 @@ class FirebaseSessionService {
           persistenceEnabled: false,
           cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
         );
-        _fbLog.i('FirebaseSessionService.init: ✓ Firestore offline persistence DISABLED on web');
+        _fbLog.i(
+            'FirebaseSessionService.init: ✓ Firestore offline persistence DISABLED on web');
       } catch (e) {
-        _fbLog.w('FirebaseSessionService.init: Could not disable Firestore persistence: $e');
+        _fbLog.w(
+            'FirebaseSessionService.init: Could not disable Firestore persistence: $e');
       }
 
       // ── Set Firebase Auth persistence to NONE ─────────────────────────────
@@ -77,7 +79,8 @@ class FirebaseSessionService {
       // is nothing to restore, so the wait has been removed.
       try {
         await _auth.setPersistence(Persistence.NONE);
-        _fbLog.i('FirebaseSessionService.init: ✓ Firebase Auth persistence set to NONE (no IndexedDB)');
+        _fbLog.i(
+            'FirebaseSessionService.init: ✓ Firebase Auth persistence set to NONE (no IndexedDB)');
       } catch (e) {
         _fbLog.w('FirebaseSessionService.init: setPersistence failed: $e');
       }
@@ -85,9 +88,11 @@ class FirebaseSessionService {
 
     final current = _auth.currentUser;
     if (current != null && !current.isAnonymous) {
-      _fbLog.i('FirebaseSessionService.init: ✓ Real Firebase user present — uid=${current.uid}');
+      _fbLog.i(
+          'FirebaseSessionService.init: ✓ Real Firebase user present — uid=${current.uid}');
     } else {
-      _fbLog.i('FirebaseSessionService.init: No real Firebase user yet — session backup ready');
+      _fbLog.i(
+          'FirebaseSessionService.init: No real Firebase user yet — session backup ready');
     }
 
     _fbLog.i('FirebaseSessionService.init: ━━━ DONE ━━━');
@@ -105,7 +110,8 @@ class FirebaseSessionService {
   }) async {
     final uid = _uid;
     if (uid == null) {
-      _fbLog.w('FirebaseSessionService.saveSession: No Firebase user — skipping Firestore write');
+      _fbLog.w(
+          'FirebaseSessionService.saveSession: No Firebase user — skipping Firestore write');
       return;
     }
 
@@ -116,17 +122,18 @@ class FirebaseSessionService {
     await runZonedGuarded(
       () async {
         await _db.collection(_collection).doc(uid).set({
-          'accessToken':  accessToken,
+          'accessToken': accessToken,
           'refreshToken': refreshToken,
-          'userId':       userId,
-          'userEmail':    email,
-          'userRoles':    roles.join(','),
-          'savedAt':      FieldValue.serverTimestamp(),
+          'userId': userId,
+          'userEmail': email,
+          'userRoles': roles.join(','),
+          'savedAt': FieldValue.serverTimestamp(),
         });
         _fbLog.i('✅ [SESSION_SAVE] Session written to Firestore — uid=$uid');
       },
       (e, st) {
-        _fbLog.e('❌ [SESSION_SAVE] Firestore write failed (non-fatal)', error: e, stackTrace: st);
+        _fbLog.e('❌ [SESSION_SAVE] Firestore write failed (non-fatal)',
+            error: e, stackTrace: st);
       },
     );
   }
@@ -147,9 +154,12 @@ class FirebaseSessionService {
       final refreshToken = data['refreshToken'] as String?;
       final userId = data['userId'] as String?;
 
-      if (accessToken == null || refreshToken == null || userId == null) return null;
+      if (accessToken == null || refreshToken == null || userId == null) {
+        return null;
+      }
 
-      _fbLog.i('✅ FirebaseSessionService.restoreSession: Success — userId=$userId');
+      _fbLog.i(
+          '✅ FirebaseSessionService.restoreSession: Success — userId=$userId');
       return {
         'accessToken': accessToken,
         'refreshToken': refreshToken,

@@ -55,8 +55,14 @@ class CategoryModel {
               ?.map((c) => CategoryModel.fromJson(c as Map<String, dynamic>))
               .toList() ??
           [],
-      childrenCount: ((json['_count'] as Map<String, dynamic>?)?['children'] as num?)?.toInt() ?? 0,
-      placeLinksCount: ((json['_count'] as Map<String, dynamic>?)?['placeLinks'] as num?)?.toInt() ?? 0,
+      childrenCount:
+          ((json['_count'] as Map<String, dynamic>?)?['children'] as num?)
+                  ?.toInt() ??
+              0,
+      placeLinksCount:
+          ((json['_count'] as Map<String, dynamic>?)?['placeLinks'] as num?)
+                  ?.toInt() ??
+              0,
     );
   }
 
@@ -97,7 +103,8 @@ class CategoryModel {
   }
 
   @override
-  String toString() => 'CategoryModel(id: $id, name: $name, slug: $slug, parentId: $parentId)';
+  String toString() =>
+      'CategoryModel(id: $id, name: $name, slug: $slug, parentId: $parentId)';
 
   @override
   bool operator ==(Object other) => other is CategoryModel && other.id == id;

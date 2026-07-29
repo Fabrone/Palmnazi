@@ -50,10 +50,14 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Color(0xFF0D2461), // rich deep navy  (was dull 0xFF0A1128)
-                      Color(0xFF1565C0), // vibrant royal blue (was flat 0xFF1E3A5F)
-                      Color(0xFF00ACC1), // vivid cyan        (was muddy 0xFF0D7377)
-                      Color(0xFF0D2461), // back to rich navy (was dull 0xFF0A1128)
+                      Color(
+                          0xFF0D2461), // rich deep navy  (was dull 0xFF0A1128)
+                      Color(
+                          0xFF1565C0), // vibrant royal blue (was flat 0xFF1E3A5F)
+                      Color(
+                          0xFF00ACC1), // vivid cyan        (was muddy 0xFF0D7377)
+                      Color(
+                          0xFF0D2461), // back to rich navy (was dull 0xFF0A1128)
                     ],
                     stops: [0.0, 0.35, 0.7, 1.0],
                   ),
@@ -62,7 +66,7 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
             },
           ),
         ),
-        
+
         // ── Overlay — SIGNIFICANTLY LIGHTENED ─────────────────────────────
         // The original alpha (0.55 / 0.65 / 0.55) smothered both the hero
         // image and every colour beneath it. Reduced to 0.28 / 0.35 / 0.28
@@ -82,7 +86,7 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
             ),
           ),
         ),
-        
+
         // Animated gradient overlay — brighter, more visible sweep
         AnimatedBuilder(
           animation: _controller,
@@ -99,16 +103,19 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
                     -math.sin(_controller.value * 2 * math.pi),
                   ),
                   colors: [
-                    const Color(0xFF00FFEA).withValues(alpha: 0.14), // was 0xFF14FFEC @ 0.06
-                    const Color(0xFF00BCD4).withValues(alpha: 0.18), // was 0xFF0D7377 @ 0.08
-                    const Color(0xFF00FFEA).withValues(alpha: 0.14), // was 0xFF14FFEC @ 0.06
+                    const Color(0xFF00FFEA)
+                        .withValues(alpha: 0.14), // was 0xFF14FFEC @ 0.06
+                    const Color(0xFF00BCD4)
+                        .withValues(alpha: 0.18), // was 0xFF0D7377 @ 0.08
+                    const Color(0xFF00FFEA)
+                        .withValues(alpha: 0.14), // was 0xFF14FFEC @ 0.06
                   ],
                 ),
               ),
             );
           },
         ),
-        
+
         // Floating particles (bubbles) — brighter colours & stronger glow
         AnimatedBuilder(
           animation: _controller,
@@ -122,18 +129,19 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
             );
           },
         ),
-        
+
         // Animated circles (larger bubbles)
         AnimatedBuilder(
           animation: _controller,
           builder: (context, child) {
             return CustomPaint(
-              painter: AnimatedCirclesPainter(animationValue: _controller.value),
+              painter:
+                  AnimatedCirclesPainter(animationValue: _controller.value),
               size: Size.infinite,
             );
           },
         ),
-        
+
         // Subtle geometric pattern overlay — slightly more visible
         Opacity(
           opacity: 0.08, // was 0.04
@@ -162,12 +170,13 @@ class Particle {
     size = random.nextDouble() * 5 + 1;
     speedX = (random.nextDouble() - 0.5) * 0.0003;
     speedY = (random.nextDouble() - 0.5) * 0.0003;
-    
+
     // Brighter particle colours — higher alpha for better visibility
     final colors = [
-      Colors.white.withValues(alpha: 0.70),                    // was 0.4
-      const Color(0xFF00FFEA).withValues(alpha: 0.80),         // was 0xFF14FFEC @ 0.5
-      const Color(0xFF40C4FF).withValues(alpha: 0.65),         // was 0xFF0D7377 @ 0.4 (dull)
+      Colors.white.withValues(alpha: 0.70), // was 0.4
+      const Color(0xFF00FFEA).withValues(alpha: 0.80), // was 0xFF14FFEC @ 0.5
+      const Color(0xFF40C4FF)
+          .withValues(alpha: 0.65), // was 0xFF0D7377 @ 0.4 (dull)
     ];
     color = colors[random.nextInt(colors.length)];
   }
@@ -197,7 +206,7 @@ class ParticlePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     for (var particle in particles) {
       particle.update();
-      
+
       final paint = Paint()
         ..color = particle.color
         ..style = PaintingStyle.fill;
@@ -207,12 +216,12 @@ class ParticlePainter extends CustomPainter {
         particle.size,
         paint,
       );
-      
+
       // Glow effect — stronger alpha for better bubble brightness
       final glowPaint = Paint()
         ..color = particle.color.withValues(alpha: 0.30) // was 0.15
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
-      
+
       canvas.drawCircle(
         Offset(particle.x * size.width, particle.y * size.height),
         particle.size * 4,
@@ -243,36 +252,38 @@ class AnimatedCirclesPainter extends CustomPainter {
     for (int i = 0; i < 5; i++) {
       final radius = (size.width / 4) + (i * 50) + (animationValue * 20);
       // was: alpha: 0.05 - (i * 0.01) — too faint; now 0.12 - (i * 0.02)
-      paint.color = const Color(0xFF00FFEA).withValues(alpha: 0.12 - (i * 0.02).clamp(0.0, 0.12));
-      
+      paint.color = const Color(0xFF00FFEA)
+          .withValues(alpha: 0.12 - (i * 0.02).clamp(0.0, 0.12));
+
       canvas.drawCircle(
         Offset(size.width * 0.3, size.height * 0.4),
         radius,
         paint,
       );
-      
+
       canvas.drawCircle(
         Offset(size.width * 0.7, size.height * 0.6),
         radius * 0.8,
         paint,
       );
     }
-    
+
     // Pulsing bubble positions — brighter
     final random = math.Random(42); // Fixed seed for consistency
     for (int i = 0; i < 10; i++) {
       final x = random.nextDouble() * size.width;
       final y = random.nextDouble() * size.height;
       final baseRadius = 40.0 + (i * 25);
-      final radius = baseRadius + (math.sin(animationValue * 2 * math.pi + i) * 15);
-      
+      final radius =
+          baseRadius + (math.sin(animationValue * 2 * math.pi + i) * 15);
+
       paint.color = const Color(0xFF00FFEA).withValues(alpha: 0.07); // was 0.03
       canvas.drawCircle(
         Offset(x, y),
         radius,
         paint,
       );
-      
+
       // Inner glow ring
       paint.color = const Color(0xFF00FFEA).withValues(alpha: 0.05); // was 0.02
       canvas.drawCircle(
@@ -299,7 +310,7 @@ class GeometricPatternPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
 
     const spacing = 60.0;
-    
+
     // Diagonal grid lines
     for (double i = -size.height; i < size.width + size.height; i += spacing) {
       canvas.drawLine(
@@ -308,7 +319,7 @@ class GeometricPatternPainter extends CustomPainter {
         paint,
       );
     }
-    
+
     // Bright intersection dots
     for (double x = 0; x < size.width; x += spacing) {
       for (double y = 0; y < size.height; y += spacing) {
@@ -316,7 +327,8 @@ class GeometricPatternPainter extends CustomPainter {
           Offset(x, y),
           2,
           Paint()
-            ..color = const Color(0xFF00FFEA).withValues(alpha: 0.45) // was 0xFF14FFEC @ 0.2
+            ..color = const Color(0xFF00FFEA)
+                .withValues(alpha: 0.45) // was 0xFF14FFEC @ 0.2
             ..style = PaintingStyle.fill,
         );
       }

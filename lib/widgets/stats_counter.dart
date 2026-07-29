@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 abstract final class _SC {
   static const Color aquaBright = Color(0xFF00E5FF);
-  static const Color teal       = Color(0xFF00838F);
+  static const Color teal = Color(0xFF00838F);
 }
 
 class StatsCounter extends StatefulWidget {
@@ -16,10 +16,21 @@ class _StatsCounterState extends State<StatsCounter> {
   bool _hasAnimated = false;
 
   final List<StatItem> _stats = [
-    StatItem(icon: Icons.location_city, count: 15,    label: 'Resort Cities',  suffix: '+'),
-    StatItem(icon: Icons.business,      count: 500,   label: 'Businesses',     suffix: '+'),
-    StatItem(icon: Icons.people,        count: 10000, label: 'Happy Visitors', suffix: '+'),
-    StatItem(icon: Icons.star,          count: 4,     label: 'Average Rating', suffix: '.8', decimal: true),
+    StatItem(
+        icon: Icons.location_city,
+        count: 15,
+        label: 'Resort Cities',
+        suffix: '+'),
+    StatItem(
+        icon: Icons.business, count: 500, label: 'Businesses', suffix: '+'),
+    StatItem(
+        icon: Icons.people, count: 10000, label: 'Happy Visitors', suffix: '+'),
+    StatItem(
+        icon: Icons.star,
+        count: 4,
+        label: 'Average Rating',
+        suffix: '.8',
+        decimal: true),
   ];
 
   @override
@@ -38,12 +49,20 @@ class _StatsCounterState extends State<StatsCounter> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double w        = constraints.maxWidth;
-        final bool   isLarge  = w > 1200;
-        final bool   isMedium = w > 700;
+        final double w = constraints.maxWidth;
+        final bool isLarge = w > 1200;
+        final bool isMedium = w > 700;
 
-        final double hPad = isLarge ? 32 : isMedium ? 24 : 16;
-        final double vPad = isLarge ? 28 : isMedium ? 24 : 18;
+        final double hPad = isLarge
+            ? 32
+            : isMedium
+                ? 24
+                : 16;
+        final double vPad = isLarge
+            ? 28
+            : isMedium
+                ? 24
+                : 18;
 
         final List<Widget> items = _stats
             .map((s) => Expanded(child: _buildStatItem(s, isLarge, isMedium)))
@@ -98,13 +117,41 @@ class _StatsCounterState extends State<StatsCounter> {
   }
 
   Widget _buildStatItem(StatItem stat, bool isLarge, bool isMedium) {
-    final double iconContainerSize = isLarge ? 48 : isMedium ? 44 : 38;
-    final double iconSize          = isLarge ? 22 : isMedium ? 20 : 18;
-    final double iconPad           = isLarge ? 10 : isMedium ? 10 : 8;
-    final double counterSize       = isLarge ? 30 : isMedium ? 26 : 22;
-    final double labelSize         = isLarge ? 13 : isMedium ? 12 : 11;
-    final double spacingAbove      = isLarge ? 10 : isMedium ? 8  : 6;
-    final double spacingBelowNum   = isLarge ? 4  : isMedium ? 4  : 3;
+    final double iconContainerSize = isLarge
+        ? 48
+        : isMedium
+            ? 44
+            : 38;
+    final double iconSize = isLarge
+        ? 22
+        : isMedium
+            ? 20
+            : 18;
+    final double iconPad = isLarge
+        ? 10
+        : isMedium
+            ? 10
+            : 8;
+    final double counterSize = isLarge
+        ? 30
+        : isMedium
+            ? 26
+            : 22;
+    final double labelSize = isLarge
+        ? 13
+        : isMedium
+            ? 12
+            : 11;
+    final double spacingAbove = isLarge
+        ? 10
+        : isMedium
+            ? 8
+            : 6;
+    final double spacingBelowNum = isLarge
+        ? 4
+        : isMedium
+            ? 4
+            : 3;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -138,12 +185,12 @@ class _StatsCounterState extends State<StatsCounter> {
 
           // Animated number
           AnimatedCounter(
-            count:         stat.count,
-            duration:      const Duration(seconds: 2),
-            suffix:        stat.suffix,
-            decimal:       stat.decimal,
+            count: stat.count,
+            duration: const Duration(seconds: 2),
+            suffix: stat.suffix,
+            decimal: stat.decimal,
             shouldAnimate: _hasAnimated,
-            fontSize:      counterSize,
+            fontSize: counterSize,
           ),
 
           SizedBox(height: spacingBelowNum),
@@ -152,9 +199,9 @@ class _StatsCounterState extends State<StatsCounter> {
           Text(
             stat.label,
             style: TextStyle(
-              fontSize:      labelSize,
-              color:         Colors.white.withValues(alpha: 0.92),
-              fontWeight:    FontWeight.w600,
+              fontSize: labelSize,
+              color: Colors.white.withValues(alpha: 0.92),
+              fontWeight: FontWeight.w600,
               letterSpacing: 0.3,
             ),
             textAlign: TextAlign.center,
@@ -170,21 +217,21 @@ class _StatsCounterState extends State<StatsCounter> {
 // ── AnimatedCounter ──────────────────────────────────────────────────────────
 
 class AnimatedCounter extends StatefulWidget {
-  final int      count;
+  final int count;
   final Duration duration;
-  final String   suffix;
-  final bool     decimal;
-  final bool     shouldAnimate;
-  final double   fontSize;
+  final String suffix;
+  final bool decimal;
+  final bool shouldAnimate;
+  final double fontSize;
 
   const AnimatedCounter({
     super.key,
     required this.count,
     required this.duration,
-    this.suffix        = '',
-    this.decimal       = false,
+    this.suffix = '',
+    this.decimal = false,
     required this.shouldAnimate,
-    this.fontSize      = 48,
+    this.fontSize = 48,
   });
 
   @override
@@ -194,14 +241,14 @@ class AnimatedCounter extends StatefulWidget {
 class _AnimatedCounterState extends State<AnimatedCounter>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  late Animation<double>   _animation;
+  late Animation<double> _animation;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(duration: widget.duration, vsync: this);
-    _animation  = Tween<double>(begin: 0, end: widget.count.toDouble())
-        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    _animation = Tween<double>(begin: 0, end: widget.count.toDouble()).animate(
+        CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
   }
 
   @override
@@ -234,9 +281,9 @@ class _AnimatedCounterState extends State<AnimatedCounter>
           child: Text(
             '$value${widget.suffix}',
             style: TextStyle(
-              fontSize:   widget.fontSize,
+              fontSize: widget.fontSize,
               fontWeight: FontWeight.bold,
-              color:      Colors.white,
+              color: Colors.white,
             ),
           ),
         );
@@ -249,16 +296,16 @@ class _AnimatedCounterState extends State<AnimatedCounter>
 
 class StatItem {
   final IconData icon;
-  final int      count;
-  final String   label;
-  final String   suffix;
-  final bool     decimal;
+  final int count;
+  final String label;
+  final String suffix;
+  final bool decimal;
 
   StatItem({
     required this.icon,
     required this.count,
     required this.label,
-    this.suffix  = '',
+    this.suffix = '',
     this.decimal = false,
   });
 }

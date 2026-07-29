@@ -139,7 +139,8 @@ class BookingModel {
           'mpesaTransactionRef': mpesaTransactionRef,
         if (totalAmount != null) 'totalAmount': totalAmount,
         if (currency != null) 'currency': currency,
-        if (cancellationPolicy != null) 'cancellationPolicy': cancellationPolicy,
+        if (cancellationPolicy != null)
+          'cancellationPolicy': cancellationPolicy,
         'status': status.name,
         'createdAt': FieldValue.serverTimestamp(),
       };

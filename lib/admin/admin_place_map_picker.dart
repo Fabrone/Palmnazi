@@ -155,7 +155,7 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
     _loadWatchdog?.cancel();
     _searchCtrl.dispose();
     _searchFocus.dispose();
-    // Deliberately NOT calling _mapController?.dispose() here. 
+    // Deliberately NOT calling _mapController?.dispose() here.
     super.dispose();
   }
 
@@ -216,17 +216,20 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
           return;
         }
 
-        final mapped = results.map<Map<String, dynamic>>((r) {
-          final geo = r['geometry'] as Map<String, dynamic>?;
-          final loc = geo?['location'] as Map<String, dynamic>?;
-          return {
-            'place_id': r['place_id'] as String? ?? '',
-            'name': r['name'] as String? ?? '',
-            'address': r['formatted_address'] as String? ?? '',
-            'lat': (loc?['lat'] as num?)?.toDouble(),
-            'lng': (loc?['lng'] as num?)?.toDouble(),
-          };
-        }).where((r) => r['lat'] != null && r['lng'] != null).toList();
+        final mapped = results
+            .map<Map<String, dynamic>>((r) {
+              final geo = r['geometry'] as Map<String, dynamic>?;
+              final loc = geo?['location'] as Map<String, dynamic>?;
+              return {
+                'place_id': r['place_id'] as String? ?? '',
+                'name': r['name'] as String? ?? '',
+                'address': r['formatted_address'] as String? ?? '',
+                'lat': (loc?['lat'] as num?)?.toDouble(),
+                'lng': (loc?['lng'] as num?)?.toDouble(),
+              };
+            })
+            .where((r) => r['lat'] != null && r['lng'] != null)
+            .toList();
 
         setState(() {
           _searchResults = mapped;
@@ -301,7 +304,8 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
     final position = LatLng(lat, lng);
     debugPrint('📍 [MapPicker] Result tapped: $name @ $position');
 
-    _setSelectedLocation(position, preResolvedAddress: address.isNotEmpty ? address : null);
+    _setSelectedLocation(position,
+        preResolvedAddress: address.isNotEmpty ? address : null);
     _moveCamera(position, zoom: 18);
 
     setState(() {
@@ -339,7 +343,7 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
   }
 
   // ── Clear pin ─────────────────────────────────────────────────────────────
-  
+
   void _clearSelection() {
     debugPrint('📍 [MapPicker] Pin cleared by user');
     _geocodeToken++; // invalidate any in-flight reverse-geocode for this pin
@@ -446,7 +450,8 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
   @override
   Widget build(BuildContext context) {
     final initialTarget = widget.initialSelectedLocation ?? _kenyaCenter;
-    final initialZoom = widget.initialSelectedLocation != null ? 16.0 : _defaultZoom;
+    final initialZoom =
+        widget.initialSelectedLocation != null ? 16.0 : _defaultZoom;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E1A),
@@ -517,7 +522,8 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                   onChanged: _onSearchChanged,
                   decoration: InputDecoration(
                     hintText: 'Search for a place, hotel, restaurant, area…',
-                    hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+                    hintStyle:
+                        const TextStyle(color: Colors.white24, fontSize: 13),
                     prefixIcon: const Icon(Icons.search_rounded,
                         color: Colors.white38, size: 18),
                     suffixIcon: _searching
@@ -556,8 +562,8 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                       borderRadius: BorderRadius.circular(10),
                       borderSide: const BorderSide(color: Color(0xFF14FFEC)),
                     ),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 13),
                   ),
                 ),
 
@@ -577,18 +583,18 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                         shrinkWrap: true,
                         padding: EdgeInsets.zero,
                         itemCount: _searchResults.length,
-                        separatorBuilder: (_, __) => const Divider(
-                            color: Colors.white10, height: 1),
+                        separatorBuilder: (_, __) =>
+                            const Divider(color: Colors.white10, height: 1),
                         itemBuilder: (_, i) {
                           final r = _searchResults[i];
                           return Material(
                             color: Colors.transparent,
                             child: InkWell(
                               onTap: () => _onSearchResultTapped(r),
-                              highlightColor:
-                                  const Color(0xFF14FFEC).withValues(alpha: 0.07),
-                              splashColor:
-                                  const Color(0xFF14FFEC).withValues(alpha: 0.04),
+                              highlightColor: const Color(0xFF14FFEC)
+                                  .withValues(alpha: 0.07),
+                              splashColor: const Color(0xFF14FFEC)
+                                  .withValues(alpha: 0.04),
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 14, vertical: 11),
@@ -635,10 +641,8 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                                       ],
                                     ),
                                   ),
-                                  const Icon(
-                                      Icons.arrow_forward_ios_rounded,
-                                      color: Colors.white24,
-                                      size: 11),
+                                  const Icon(Icons.arrow_forward_ios_rounded,
+                                      color: Colors.white24, size: 11),
                                 ]),
                               ),
                             ),
@@ -728,8 +732,8 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                       ),
                       SizedBox(width: 8),
                       Text('Resolving address…',
-                          style: TextStyle(
-                              color: Colors.white38, fontSize: 11)),
+                          style:
+                              TextStyle(color: Colors.white38, fontSize: 11)),
                     ]),
                   ],
                 ],
@@ -745,13 +749,13 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
             color: const Color(0xFF111827),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: const Row(children: [
-              Icon(Icons.touch_app_rounded,
-                  color: Colors.white24, size: 14),
+              Icon(Icons.touch_app_rounded, color: Colors.white24, size: 14),
               SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'Tap anywhere on the map to drop a pin. Drag the pin to fine-tune. Search above to find named places. Tap ✕ on the info bar above to clear a mis-placed pin.',
-                  style: TextStyle(color: Colors.white38, fontSize: 11, height: 1.4),
+                  style: TextStyle(
+                      color: Colors.white38, fontSize: 11, height: 1.4),
                 ),
               ),
             ]),

@@ -77,16 +77,16 @@ class CityModel {
     }
 
     return CityModel(
-      id:          json['id'] as String,
-      name:        json['name'] as String,
-      slug:        json['slug'] as String? ?? '',
-      country:     json['country'] as String? ?? '',
-      region:      json['region'] as String? ?? '',
-      latitude:    (json['latitude'] as num?)?.toDouble() ?? 0.0,
-      longitude:   (json['longitude'] as num?)?.toDouble() ?? 0.0,
-      coverImage:  json['coverImage'] as String? ?? '',
+      id: json['id'] as String,
+      name: json['name'] as String,
+      slug: json['slug'] as String? ?? '',
+      country: json['country'] as String? ?? '',
+      region: json['region'] as String? ?? '',
+      latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
+      longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
+      coverImage: json['coverImage'] as String? ?? '',
       description: json['description'] as String? ?? '',
-      isActive:    json['isActive'] as bool? ?? true,
+      isActive: json['isActive'] as bool? ?? true,
       totalPlaces: (json['totalPlaces'] as num?)?.toInt() ?? 0,
       totalEvents: (json['totalEvents'] as num?)?.toInt() ?? 0,
       categoryCounts: counts,
@@ -104,15 +104,15 @@ class CityModel {
   /// [coverImage] is omitted when empty so the backend does not receive an
   /// empty-string URL that may fail URL validation on creation.
   Map<String, dynamic> toCreateJson() => {
-        'name':        name,
-        'country':     country,
-        'region':      region,
-        'slug':        slug,
-        'latitude':    latitude,
-        'longitude':   longitude,
+        'name': name,
+        'country': country,
+        'region': region,
+        'slug': slug,
+        'latitude': latitude,
+        'longitude': longitude,
         if (coverImage.isNotEmpty) 'coverImage': coverImage,
         'description': description,
-        'isActive':    isActive,
+        'isActive': isActive,
       };
 
   /// Returns the writable fields for a partial UPDATE (PUT /api/cities/:id).
@@ -127,15 +127,15 @@ class CityModel {
   /// Zero is a perfectly valid coordinate (Gulf of Guinea / prime meridian).
   /// Using 0.0 as a sentinel would silently drop real coordinates on update.
   Map<String, dynamic> toUpdateJson() => {
-        'name':        name,
-        'country':     country,
-        'region':      region,
-        'slug':        slug,
-        'latitude':    latitude,
-        'longitude':   longitude,
-        'coverImage':  coverImage,
+        'name': name,
+        'country': country,
+        'region': region,
+        'slug': slug,
+        'latitude': latitude,
+        'longitude': longitude,
+        'coverImage': coverImage,
         'description': description,
-        'isActive':    isActive,
+        'isActive': isActive,
       };
 
   // ── Copy-with for in-memory edits ─────────────────────────────────────────
@@ -158,21 +158,21 @@ class CityModel {
     DateTime? updatedAt,
   }) =>
       CityModel(
-        id:             id          ?? this.id,
-        name:           name        ?? this.name,
-        slug:           slug        ?? this.slug,
-        country:        country     ?? this.country,
-        region:         region      ?? this.region,
-        latitude:       latitude    ?? this.latitude,
-        longitude:      longitude   ?? this.longitude,
-        coverImage:     coverImage  ?? this.coverImage,
-        description:    description ?? this.description,
-        isActive:       isActive    ?? this.isActive,
-        totalPlaces:    totalPlaces ?? this.totalPlaces,
-        totalEvents:    totalEvents ?? this.totalEvents,
+        id: id ?? this.id,
+        name: name ?? this.name,
+        slug: slug ?? this.slug,
+        country: country ?? this.country,
+        region: region ?? this.region,
+        latitude: latitude ?? this.latitude,
+        longitude: longitude ?? this.longitude,
+        coverImage: coverImage ?? this.coverImage,
+        description: description ?? this.description,
+        isActive: isActive ?? this.isActive,
+        totalPlaces: totalPlaces ?? this.totalPlaces,
+        totalEvents: totalEvents ?? this.totalEvents,
         categoryCounts: categoryCounts ?? this.categoryCounts,
-        createdAt:      createdAt   ?? this.createdAt,
-        updatedAt:      updatedAt   ?? this.updatedAt,
+        createdAt: createdAt ?? this.createdAt,
+        updatedAt: updatedAt ?? this.updatedAt,
       );
 
   @override

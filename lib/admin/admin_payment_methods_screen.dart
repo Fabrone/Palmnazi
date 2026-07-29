@@ -313,7 +313,8 @@ class _PaymentMethodFormDialogState extends State<_PaymentMethodFormDialog> {
     try {
       final config = <String, String>{
         for (final entry in _configCtrls.entries)
-          if (entry.value.text.trim().isNotEmpty) entry.key: entry.value.text.trim(),
+          if (entry.value.text.trim().isNotEmpty)
+            entry.key: entry.value.text.trim(),
       };
       final method = PaymentMethodModel(
         id: widget.existing?.id ?? '',
@@ -435,12 +436,12 @@ class _PaymentMethodFormDialogState extends State<_PaymentMethodFormDialog> {
                 'These fields are stored for reference only — no real gateway is wired up yet. Fill them in once this method is ready for actual integration.',
                 style: TextStyle(color: Colors.white38, fontSize: 11)),
             const SizedBox(height: 10),
-            ...PaymentMethodModel.configFieldsFor(_type).map((field) =>
-                AdminField(
-                  ctrl: _configCtrls[field.key]!,
-                  label: field.label,
-                  hint: field.hint,
-                )),
+            ...PaymentMethodModel.configFieldsFor(_type)
+                .map((field) => AdminField(
+                      ctrl: _configCtrls[field.key]!,
+                      label: field.label,
+                      hint: field.hint,
+                    )),
           ],
           Row(children: [
             const Expanded(

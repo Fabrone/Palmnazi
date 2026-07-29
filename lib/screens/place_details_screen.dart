@@ -14,6 +14,7 @@ import 'package:palmnazi/models/place_model.dart';
 import 'package:palmnazi/models/place_query_model.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/booking_screen.dart';
+import 'package:palmnazi/services/analytics_service.dart';
 import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/services/favorite_service.dart';
 import 'package:palmnazi/services/payment_methods_service.dart';
@@ -272,6 +273,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     );
     _fadeController.forward();
     _fetchDetail();
+    AnalyticsService.logEvent('place_view',
+        params: {'place_id': _place.id, 'place_name': _place.name});
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {

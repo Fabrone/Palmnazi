@@ -2,6 +2,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:palmnazi/admin/admin_api_service.dart';
 import 'package:palmnazi/admin/admin_blog_compose_screen.dart';
+import 'package:palmnazi/admin/admin_shared_widgets.dart';
+import 'package:palmnazi/models/blog_post_details_model.dart';
+import 'package:palmnazi/services/audit_log_service.dart';
+import 'package:palmnazi/services/blog_post_details_service.dart';
+import 'package:palmnazi/widgets/place_search_picker.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AdminBlogListScreen
@@ -37,15 +42,15 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
 
   // ── State ──────────────────────────────────────────────────────────────────
   List<Map<String, dynamic>> _posts = [];
-  bool   _loading      = true;
-  bool   _loadingMore  = false;
-  bool   _fetchingPost = false; // overlay while loading full post before edit
+  bool _loading = true;
+  bool _loadingMore = false;
+  bool _fetchingPost = false; // overlay while loading full post before edit
   String? _error;
 
   // Filter: ALL | PUBLISHED | DRAFT | SCHEDULED | MY_DRAFTS
   String _statusFilter = 'ALL';
-  int    _page         = 1;
-  int    _totalPages   = 1;
+  int _page = 1;
+  int _totalPages = 1;
 
   final _searchCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
@@ -95,10 +100,10 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
   Future<void> _load({bool reset = false}) async {
     if (reset) {
       setState(() {
-        _loading     = true;
-        _error       = null;
-        _page        = 1;
-        _posts       = [];
+        _loading = true;
+        _error = null;
+        _page = 1;
+        _posts = [];
       });
     }
 
@@ -109,42 +114,42 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
 
       if (_statusFilter == 'MY_DRAFTS') {
         // ── Dedicated drafts endpoint — returns current user's own drafts only
-        fetched    = await widget.apiService.getBlogDrafts();
+        fetched = await widget.apiService.getBlogDrafts();
         totalPages = 1; // endpoint returns all at once, no pagination
       } else if (query.isNotEmpty) {
         // ── Server-side full-text search across all pages
         final result = await widget.apiService.searchBlogPosts(
           query,
-          page:  _page,
+          page: _page,
           limit: 20,
         );
-        fetched    = (result['posts'] as List).cast<Map<String, dynamic>>();
+        fetched = (result['posts'] as List).cast<Map<String, dynamic>>();
         totalPages = (result['totalPages'] as num?)?.toInt() ?? 1;
       } else {
         // ── Standard paginated list with optional status filter
         final status = _statusFilter == 'ALL' ? null : _statusFilter;
         final result = await widget.apiService.getBlogPosts(
-          page:   _page,
-          limit:  20,
+          page: _page,
+          limit: 20,
           status: status,
         );
-        fetched    = (result['posts'] as List).cast<Map<String, dynamic>>();
+        fetched = (result['posts'] as List).cast<Map<String, dynamic>>();
         totalPages = (result['totalPages'] as num?)?.toInt() ?? 1;
       }
 
       if (mounted) {
         setState(() {
-          _posts       = reset ? fetched : [..._posts, ...fetched];
-          _totalPages  = totalPages;
-          _loading     = false;
+          _posts = reset ? fetched : [..._posts, ...fetched];
+          _totalPages = totalPages;
+          _loading = false;
           _loadingMore = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error       = e is AdminApiException ? e.message : e.toString();
-          _loading     = false;
+          _error = e is AdminApiException ? e.message : e.toString();
+          _loading = false;
           _loadingMore = false;
         });
       }
@@ -153,7 +158,10 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
 
   Future<void> _loadMore() async {
     if (_loadingMore || _page >= _totalPages) return;
-    setState(() { _loadingMore = true; _page++; });
+    setState(() {
+      _loadingMore = true;
+      _page++;
+    });
     await _load();
   }
 
@@ -191,7 +199,7 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
         context,
         MaterialPageRoute(
           builder: (_) => AdminBlogComposeScreen(
-            apiService:   widget.apiService,
+            apiService: widget.apiService,
             existingPost: fullPost,
           ),
         ),
@@ -215,7 +223,7 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
   // ── Delete — soft (archive) + hard (permanent) ─────────────────────────────
 
   Future<void> _deletePost(Map<String, dynamic> post) async {
-    final slug  = post['slug']  as String?;
+    final slug = post['slug'] as String?;
     final title = post['title'] as String? ?? 'this post';
     if (slug == null) return;
 
@@ -225,8 +233,7 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF111827),
         surfaceTintColor: Colors.transparent,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Delete Post',
             style: TextStyle(
                 color: Colors.white,
@@ -251,8 +258,8 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, null),
-            child: const Text('Cancel',
-                style: TextStyle(color: Colors.white54)),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white54)),
           ),
           Row(mainAxisSize: MainAxisSize.min, children: [
             // Soft delete — archive only
@@ -266,8 +273,7 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
             // Hard delete — irreversible
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    Colors.redAccent.withValues(alpha: 0.15),
+                backgroundColor: Colors.redAccent.withValues(alpha: 0.15),
                 foregroundColor: Colors.redAccent,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -275,12 +281,11 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
                   side: BorderSide(
                       color: Colors.redAccent.withValues(alpha: 0.4)),
                 ),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               ),
               icon: const Icon(Icons.delete_forever_rounded, size: 15),
-              label: const Text('Permanent',
-                  style: TextStyle(fontSize: 12)),
+              label: const Text('Permanent', style: TextStyle(fontSize: 12)),
               onPressed: () => Navigator.pop(ctx, 'hard'),
             ),
           ]),
@@ -297,8 +302,8 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
         builder: (ctx) => AlertDialog(
           backgroundColor: const Color(0xFF111827),
           surfaceTintColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Row(children: [
             Icon(Icons.warning_amber_rounded,
                 color: Colors.redAccent, size: 20),
@@ -311,8 +316,8 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
           ]),
           content: RichText(
             text: const TextSpan(
-              style: TextStyle(
-                  color: Colors.white54, fontSize: 13, height: 1.5),
+              style:
+                  TextStyle(color: Colors.white54, fontSize: 13, height: 1.5),
               children: [
                 TextSpan(
                     text: 'This action is ',
@@ -320,11 +325,9 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
                 TextSpan(
                     text: 'IRREVERSIBLE',
                     style: TextStyle(
-                        color: Colors.redAccent,
-                        fontWeight: FontWeight.w700)),
+                        color: Colors.redAccent, fontWeight: FontWeight.w700)),
                 TextSpan(
-                    text:
-                        '. The post, all its comments, likes, and view '
+                    text: '. The post, all its comments, likes, and view '
                         'history will be permanently erased from the '
                         'database.\n\nAre you absolutely sure?'),
               ],
@@ -333,8 +336,8 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel',
-                  style: TextStyle(color: Colors.white54)),
+              child:
+                  const Text('Cancel', style: TextStyle(color: Colors.white54)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -371,8 +374,7 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-            e is AdminApiException ? e.message : 'Delete failed: $e'),
+        content: Text(e is AdminApiException ? e.message : 'Delete failed: $e'),
         backgroundColor: Colors.redAccent,
         behavior: SnackBarBehavior.floating,
       ));
@@ -382,7 +384,7 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
   // ── Comments bottom sheet ──────────────────────────────────────────────────
 
   void _showComments(Map<String, dynamic> post) {
-    final slug  = post['slug']  as String? ?? '';
+    final slug = post['slug'] as String? ?? '';
     final title = post['title'] as String? ?? 'Post';
     showModalBottomSheet(
       context: context,
@@ -390,8 +392,8 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
       backgroundColor: Colors.transparent,
       builder: (_) => _CommentsSheet(
         apiService: widget.apiService,
-        slug:       slug,
-        postTitle:  title,
+        slug: slug,
+        postTitle: title,
       ),
     );
   }
@@ -403,8 +405,8 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
     return Stack(children: [
       Column(children: [
         _BlogToolbar(
-          searchCtrl:      _searchCtrl,
-          statusFilter:    _statusFilter,
+          searchCtrl: _searchCtrl,
+          statusFilter: _statusFilter,
           onFilterChanged: (s) {
             setState(() => _statusFilter = s);
             _load(reset: true);
@@ -432,8 +434,7 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(
-          child: CircularProgressIndicator(color: _accent));
+      return const Center(child: CircularProgressIndicator(color: _accent));
     }
     if (_error != null) {
       return _ErrorState(message: _error!, onRetry: _refresh);
@@ -456,15 +457,15 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
             return const Padding(
               padding: EdgeInsets.symmetric(vertical: 24),
               child: Center(
-                child: CircularProgressIndicator(
-                    color: _accent, strokeWidth: 2),
+                child:
+                    CircularProgressIndicator(color: _accent, strokeWidth: 2),
               ),
             );
           }
           return _PostCard(
-            post:       _posts[i],
-            onEdit:     () => _openCompose(post: _posts[i]),
-            onDelete:   () => _deletePost(_posts[i]),
+            post: _posts[i],
+            onEdit: () => _openCompose(post: _posts[i]),
+            onDelete: () => _deletePost(_posts[i]),
             onComments: () => _showComments(_posts[i]),
           );
         },
@@ -479,9 +480,9 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
 
 class _BlogToolbar extends StatelessWidget {
   final TextEditingController searchCtrl;
-  final String                statusFilter;
-  final ValueChanged<String>  onFilterChanged;
-  final VoidCallback          onNewPost;
+  final String statusFilter;
+  final ValueChanged<String> onFilterChanged;
+  final VoidCallback onNewPost;
 
   const _BlogToolbar({
     required this.searchCtrl,
@@ -491,15 +492,20 @@ class _BlogToolbar extends StatelessWidget {
   });
 
   static const _blogColor = Color(0xFFE91E8C);
-  static const _accent    = Color(0xFF14FFEC);
+  static const _accent = Color(0xFF14FFEC);
 
   Color _chipColor(String s) {
     switch (s) {
-      case 'PUBLISHED': return Colors.greenAccent;
-      case 'DRAFT':     return Colors.white54;
-      case 'SCHEDULED': return Colors.blueAccent;
-      case 'MY_DRAFTS': return Colors.orangeAccent;
-      default:          return _accent;
+      case 'PUBLISHED':
+        return Colors.greenAccent;
+      case 'DRAFT':
+        return Colors.white54;
+      case 'SCHEDULED':
+        return Colors.blueAccent;
+      case 'MY_DRAFTS':
+        return Colors.orangeAccent;
+      default:
+        return _accent;
     }
   }
 
@@ -509,13 +515,10 @@ class _BlogToolbar extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF111827),
         border: Border(
-            bottom: BorderSide(
-                color: Colors.white.withValues(alpha: 0.06))),
+            bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
       ),
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-      child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         // Row 1 — search + new-post button
         Row(children: [
           Expanded(
@@ -524,8 +527,7 @@ class _BlogToolbar extends StatelessWidget {
               style: const TextStyle(color: Colors.white, fontSize: 13),
               decoration: InputDecoration(
                 hintText: 'Search posts… (server-side, all pages)',
-                hintStyle: const TextStyle(
-                    color: Colors.white24, fontSize: 13),
+                hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
                 prefixIcon: const Icon(Icons.search_rounded,
                     color: Colors.white38, size: 18),
                 suffixIcon: ValueListenableBuilder(
@@ -541,8 +543,7 @@ class _BlogToolbar extends StatelessWidget {
                 filled: true,
                 fillColor: const Color(0xFF0D1117),
                 isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(vertical: 10),
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
                   borderSide: const BorderSide(color: Colors.white12),
@@ -553,8 +554,7 @@ class _BlogToolbar extends StatelessWidget {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide:
-                      const BorderSide(color: _accent, width: 1),
+                  borderSide: const BorderSide(color: _accent, width: 1),
                 ),
               ),
             ),
@@ -567,13 +567,11 @@ class _BlogToolbar extends StatelessWidget {
               elevation: 0,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 11),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
             ),
             icon: const Icon(Icons.edit_note_rounded, size: 18),
             label: const Text('New Post',
-                style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w600)),
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             onPressed: onNewPost,
           ),
         ]),
@@ -585,17 +583,17 @@ class _BlogToolbar extends StatelessWidget {
           scrollDirection: Axis.horizontal,
           child: Row(children: [
             for (final entry in const {
-              'ALL':       'All Posts',
+              'ALL': 'All Posts',
               'PUBLISHED': 'Published',
-              'DRAFT':     'Drafts',
+              'DRAFT': 'Drafts',
               'SCHEDULED': 'Scheduled',
               'MY_DRAFTS': 'My Drafts',
             }.entries)
               _FilterChip(
-                label:      entry.value,
+                label: entry.value,
                 isSelected: statusFilter == entry.key,
-                color:      _chipColor(entry.key),
-                onTap:      () => onFilterChanged(entry.key),
+                color: _chipColor(entry.key),
+                onTap: () => onFilterChanged(entry.key),
               ),
           ]),
         ),
@@ -607,9 +605,9 @@ class _BlogToolbar extends StatelessWidget {
 }
 
 class _FilterChip extends StatelessWidget {
-  final String    label;
-  final bool      isSelected;
-  final Color     color;
+  final String label;
+  final bool isSelected;
+  final Color color;
   final VoidCallback onTap;
 
   const _FilterChip({
@@ -625,17 +623,13 @@ class _FilterChip extends StatelessWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           margin: const EdgeInsets.only(right: 8, bottom: 12),
-          padding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
-            color: isSelected
-                ? color.withValues(alpha: 0.14)
-                : Colors.transparent,
+            color:
+                isSelected ? color.withValues(alpha: 0.14) : Colors.transparent,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: isSelected
-                  ? color.withValues(alpha: 0.5)
-                  : Colors.white12,
+              color: isSelected ? color.withValues(alpha: 0.5) : Colors.white12,
               width: isSelected ? 1.5 : 1,
             ),
           ),
@@ -643,8 +637,7 @@ class _FilterChip extends StatelessWidget {
               style: TextStyle(
                 color: isSelected ? color : Colors.white38,
                 fontSize: 12,
-                fontWeight:
-                    isSelected ? FontWeight.w600 : FontWeight.normal,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
               )),
         ),
       );
@@ -671,17 +664,23 @@ class _PostCard extends StatelessWidget {
 
   Color _statusColor(String s) {
     switch (s.toUpperCase()) {
-      case 'PUBLISHED': return Colors.greenAccent;
-      case 'SCHEDULED': return Colors.blueAccent;
-      default:          return Colors.white38;
+      case 'PUBLISHED':
+        return Colors.greenAccent;
+      case 'SCHEDULED':
+        return Colors.blueAccent;
+      default:
+        return Colors.white38;
     }
   }
 
   IconData _statusIcon(String s) {
     switch (s.toUpperCase()) {
-      case 'PUBLISHED': return Icons.public_rounded;
-      case 'SCHEDULED': return Icons.schedule_rounded;
-      default:          return Icons.drafts_rounded;
+      case 'PUBLISHED':
+        return Icons.public_rounded;
+      case 'SCHEDULED':
+        return Icons.schedule_rounded;
+      default:
+        return Icons.drafts_rounded;
     }
   }
 
@@ -700,31 +699,29 @@ class _PostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title        = post['title']        as String? ?? 'Untitled';
-    final excerpt      = post['excerpt']      as String? ?? '';
-    final slug         = post['slug']         as String? ?? '';
-    final status       = post['status']       as String? ?? 'DRAFT';
-    final featuredImg  = post['featuredImage'] as String?;
-    final readingTime  = post['readingTimeMinutes'];
-    final publishedAt  = post['publishedAt']  as String?;
+    final title = post['title'] as String? ?? 'Untitled';
+    final excerpt = post['excerpt'] as String? ?? '';
+    final slug = post['slug'] as String? ?? '';
+    final status = post['status'] as String? ?? 'DRAFT';
+    final featuredImg = post['featuredImage'] as String?;
+    final readingTime = post['readingTimeMinutes'];
+    final publishedAt = post['publishedAt'] as String?;
     final scheduledFor = post['scheduledFor'] as String?;
-    final categories   =
-        (post['categories'] as List?)?.cast<String>() ?? [];
+    final categories = (post['categories'] as List?)?.cast<String>() ?? [];
     final tags = (post['tags'] as List?)?.cast<String>() ?? [];
     final stats = post['stats'] as Map<String, dynamic>?;
 
     // Engagement counts from stats payload
-    final viewCount    = (stats?['views']    as num?)?.toInt() ?? 0;
-    final likeCount    = (stats?['likes']    as num?)?.toInt() ?? 0;
+    final viewCount = (stats?['views'] as num?)?.toInt() ?? 0;
+    final likeCount = (stats?['likes'] as num?)?.toInt() ?? 0;
     final commentCount = (stats?['comments'] as num?)?.toInt() ?? 0;
 
-    final author     = post['author'] as Map<String, dynamic>?;
+    final author = post['author'] as Map<String, dynamic>?;
     final authorName = author != null
-        ? '${author['firstName'] ?? ''} ${author['lastName'] ?? ''}'
-            .trim()
+        ? '${author['firstName'] ?? ''} ${author['lastName'] ?? ''}'.trim()
         : '';
 
-    final city     = post['city'] as Map<String, dynamic>?;
+    final city = post['city'] as Map<String, dynamic>?;
     final cityName = city?['name'] as String?;
 
     final statusColor = _statusColor(status);
@@ -741,73 +738,69 @@ class _PostCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF111827),
         borderRadius: BorderRadius.circular(14),
-        border:
-            Border.all(color: Colors.white.withValues(alpha: 0.07)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
       ),
-      child:
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         // ── Main content row ───────────────────────────────────────────
         Padding(
           padding: const EdgeInsets.all(16),
-          child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _Thumbnail(url: featuredImg),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                // Badges row — status + city + engagement
-                Wrap(spacing: 6, runSpacing: 4, children: [
-                  _Badge(
-                    icon:  _statusIcon(status),
-                    label: _capitalize(status),
-                    color: statusColor,
-                  ),
-                  if (cityName != null)
-                    _Badge(
-                      icon:  Icons.location_city_rounded,
-                      label: cityName,
-                      color: Colors.white38,
-                    ),
-                  if (viewCount > 0)
-                    _Badge(
-                      icon:  Icons.visibility_outlined,
-                      label: '$viewCount',
-                      color: Colors.white24,
-                    ),
-                  if (likeCount > 0)
-                    _Badge(
-                      icon:  Icons.favorite_border_rounded,
-                      label: '$likeCount',
-                      color: Colors.pinkAccent,
-                    ),
-                ]),
-
-                const SizedBox(height: 8),
-
-                // Title
-                Text(title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        height: 1.35)),
-
-                if (excerpt.isNotEmpty) ...[
-                  const SizedBox(height: 5),
-                  Text(excerpt,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                    // Badges row — status + city + engagement
+                    Wrap(spacing: 6, runSpacing: 4, children: [
+                      _Badge(
+                        icon: _statusIcon(status),
+                        label: _capitalize(status),
+                        color: statusColor,
+                      ),
+                      if (cityName != null)
+                        _Badge(
+                          icon: Icons.location_city_rounded,
+                          label: cityName,
                           color: Colors.white38,
-                          fontSize: 12,
-                          height: 1.4)),
-                ],
-              ]),
+                        ),
+                      if (viewCount > 0)
+                        _Badge(
+                          icon: Icons.visibility_outlined,
+                          label: '$viewCount',
+                          color: Colors.white24,
+                        ),
+                      if (likeCount > 0)
+                        _Badge(
+                          icon: Icons.favorite_border_rounded,
+                          label: '$likeCount',
+                          color: Colors.pinkAccent,
+                        ),
+                    ]),
+
+                    const SizedBox(height: 8),
+
+                    // Title
+                    Text(title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            height: 1.35)),
+
+                    if (excerpt.isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      Text(excerpt,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: Colors.white38,
+                              fontSize: 12,
+                              height: 1.4)),
+                    ],
+                  ]),
             ),
           ]),
         ),
@@ -834,27 +827,21 @@ class _PostCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.03),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-                color: Colors.white.withValues(alpha: 0.05)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
           ),
           child: Row(children: [
             if (authorName.isNotEmpty)
-              _MetaItem(
-                  icon: Icons.person_outline_rounded,
-                  label: authorName),
+              _MetaItem(icon: Icons.person_outline_rounded, label: authorName),
 
             if (dateLabel.isNotEmpty) ...[
               if (authorName.isNotEmpty) const SizedBox(width: 10),
-              _MetaItem(
-                  icon: Icons.calendar_today_rounded,
-                  label: dateLabel),
+              _MetaItem(icon: Icons.calendar_today_rounded, label: dateLabel),
             ],
 
             if (readingTime != null) ...[
               const SizedBox(width: 10),
               _MetaItem(
-                  icon: Icons.timer_outlined,
-                  label: '${readingTime}m read'),
+                  icon: Icons.timer_outlined, label: '${readingTime}m read'),
             ],
 
             const Spacer(),
@@ -862,26 +849,47 @@ class _PostCard extends StatelessWidget {
             // Slug
             if (slug.isNotEmpty)
               Text('/$slug',
-                  style: const TextStyle(
-                      color: Colors.white24, fontSize: 10)),
+                  style: const TextStyle(color: Colors.white24, fontSize: 10)),
 
             const SizedBox(width: 10),
 
             // Comments button (with count badge when non-zero)
             _ActionBtn(
               icon: Icons.chat_bubble_outline_rounded,
-              label: commentCount > 0
-                  ? 'Comments ($commentCount)'
-                  : 'Comments',
+              label: commentCount > 0 ? 'Comments ($commentCount)' : 'Comments',
               color: Colors.white54,
               onTap: onComments,
             ),
 
             const SizedBox(width: 6),
 
+            // Promote (featured / paid-advert / related links) — only once
+            // the post has a slug to key the Firestore side-table on.
+            if (slug.isNotEmpty)
+              StreamBuilder<BlogPostDetailsModel>(
+                stream: BlogPostDetailsService.stream(slug),
+                builder: (context, snap) {
+                  final details = snap.data ?? BlogPostDetailsModel.empty;
+                  return _ActionBtn(
+                    icon: details.isFeatured
+                        ? Icons.star_rounded
+                        : Icons.star_border_rounded,
+                    label: 'Promote',
+                    color: const Color(0xFFFFC107),
+                    onTap: () => showDialog(
+                      context: context,
+                      builder: (_) =>
+                          _BlogPromoteDialog(slug: slug, initial: details),
+                    ),
+                  );
+                },
+              ),
+
+            const SizedBox(width: 6),
+
             // Edit
             _ActionBtn(
-              icon:  Icons.edit_rounded,
+              icon: Icons.edit_rounded,
               label: 'Edit',
               color: const Color(0xFF14FFEC),
               onTap: onEdit,
@@ -891,7 +899,7 @@ class _PostCard extends StatelessWidget {
 
             // Delete (opens soft/hard dialog)
             _ActionBtn(
-              icon:  Icons.delete_outline_rounded,
+              icon: Icons.delete_outline_rounded,
               label: 'Delete',
               color: Colors.redAccent,
               onTap: onDelete,
@@ -904,13 +912,166 @@ class _PostCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Promote dialog — featured flag, paid-advert/sponsor label, related links.
+// Writes to BlogPostDetails/{slug}, the Firestore side-table for everything
+// the frozen /api/blog contract doesn't support (see BlogPostDetailsModel).
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _BlogPromoteDialog extends StatefulWidget {
+  final String slug;
+  final BlogPostDetailsModel initial;
+  const _BlogPromoteDialog({required this.slug, required this.initial});
+
+  @override
+  State<_BlogPromoteDialog> createState() => _BlogPromoteDialogState();
+}
+
+class _BlogPromoteDialogState extends State<_BlogPromoteDialog> {
+  late bool _isFeatured;
+  late bool _isPaidAdvert;
+  late TextEditingController _sponsorCtrl;
+  late List<BlogRelatedLink> _links;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _isFeatured = widget.initial.isFeatured;
+    _isPaidAdvert = widget.initial.isPaidAdvert;
+    _sponsorCtrl = TextEditingController(text: widget.initial.sponsorLabel);
+    _links = List.of(widget.initial.relatedLinks);
+  }
+
+  @override
+  void dispose() {
+    _sponsorCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _addPlaceLink() async {
+    final picked = await showPlaceSearchPicker(context);
+    if (picked == null || !mounted) return;
+    setState(() => _links.add(
+        BlogRelatedLink(type: 'place', id: picked.id, label: picked.name)));
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await BlogPostDetailsService.save(
+        slug: widget.slug,
+        isFeatured: _isFeatured,
+        isPaidAdvert: _isPaidAdvert,
+        sponsorLabel: _sponsorCtrl.text.trim(),
+        relatedLinks: _links,
+      );
+      AuditLogService.log(
+          action: 'update',
+          module: 'Blog',
+          targetId: widget.slug,
+          details: _isFeatured ? 'Marked featured' : 'Promotion updated');
+      if (mounted) Navigator.pop(context);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF1E3A5F),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text('Promote Post',
+          style: TextStyle(color: Colors.white, fontSize: 16)),
+      content: SizedBox(
+        width: 380,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _isFeatured,
+                onChanged: (v) => setState(() => _isFeatured = v),
+                activeThumbColor: const Color(0xFFFFC107),
+                title: const Text('Featured',
+                    style: TextStyle(color: Colors.white, fontSize: 13)),
+                subtitle: const Text('Surfaces first in the blog section',
+                    style: TextStyle(color: Colors.white38, fontSize: 11)),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _isPaidAdvert,
+                onChanged: (v) => setState(() => _isPaidAdvert = v),
+                activeThumbColor: const Color(0xFFD4AF37),
+                title: const Text('Paid Advert',
+                    style: TextStyle(color: Colors.white, fontSize: 13)),
+                subtitle: const Text('Shows a "Sponsored by" badge',
+                    style: TextStyle(color: Colors.white38, fontSize: 11)),
+              ),
+              if (_isPaidAdvert) ...[
+                const SizedBox(height: 8),
+                AdminField(ctrl: _sponsorCtrl, label: 'Sponsor Name'),
+              ],
+              const SizedBox(height: 12),
+              const Text('Related Links',
+                  style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: _links
+                    .map((l) => Chip(
+                          label: Text(l.label,
+                              style: const TextStyle(fontSize: 11)),
+                          backgroundColor: Colors.white.withValues(alpha: 0.08),
+                          labelStyle: const TextStyle(color: Colors.white),
+                          onDeleted: () => setState(() => _links.remove(l)),
+                          deleteIconColor: Colors.white54,
+                        ))
+                    .toList(),
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: _addPlaceLink,
+                icon: const Icon(Icons.add_rounded,
+                    color: Color(0xFF14FFEC), size: 16),
+                label: const Text('Link a Place',
+                    style: TextStyle(color: Color(0xFF14FFEC))),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+        ),
+        ElevatedButton(
+          onPressed: _saving ? null : _save,
+          style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF14FFEC),
+              foregroundColor: Colors.black),
+          child: Text(_saving ? 'Saving…' : 'Save'),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Comments bottom sheet
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _CommentsSheet extends StatefulWidget {
   final AdminApiService apiService;
-  final String          slug;
-  final String          postTitle;
+  final String slug;
+  final String postTitle;
 
   const _CommentsSheet({
     required this.apiService,
@@ -925,21 +1086,21 @@ class _CommentsSheet extends StatefulWidget {
 class _CommentsSheetState extends State<_CommentsSheet> {
   static const _accent = Color(0xFF14FFEC);
 
-  List<Map<String, dynamic>> _comments    = [];
-  bool   _loading     = true;
-  bool   _submitting  = false;
-  bool   _loadingMore = false;
+  List<Map<String, dynamic>> _comments = [];
+  bool _loading = true;
+  bool _submitting = false;
+  bool _loadingMore = false;
   String? _error;
-  int    _page        = 1;
-  int    _totalPages  = 1;
-  int    _total       = 0;
+  int _page = 1;
+  int _totalPages = 1;
+  int _total = 0;
 
   // Reply-to context: null = top-level comment, set = reply
   Map<String, dynamic>? _replyTo;
 
   final _commentCtrl = TextEditingController();
-  final _scrollCtrl  = ScrollController();
-  final _inputFocus  = FocusNode();
+  final _scrollCtrl = ScrollController();
+  final _inputFocus = FocusNode();
 
   @override
   void initState() {
@@ -968,34 +1129,33 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   Future<void> _loadComments({bool reset = false}) async {
     if (reset) {
       setState(() {
-        _loading  = true;
-        _error    = null;
-        _page     = 1;
+        _loading = true;
+        _error = null;
+        _page = 1;
         _comments = [];
       });
     }
     try {
       final result = await widget.apiService
           .getBlogComments(widget.slug, page: _page, limit: 20);
-      final fetched =
-          (result['comments'] as List).cast<Map<String, dynamic>>();
+      final fetched = (result['comments'] as List).cast<Map<String, dynamic>>();
       final totalPages = (result['totalPages'] as num?)?.toInt() ?? 1;
-      final total      = (result['total']      as num?)?.toInt() ?? fetched.length;
+      final total = (result['total'] as num?)?.toInt() ?? fetched.length;
 
       if (mounted) {
         setState(() {
-          _comments    = reset ? fetched : [..._comments, ...fetched];
-          _totalPages  = totalPages;
-          _total       = total;
-          _loading     = false;
+          _comments = reset ? fetched : [..._comments, ...fetched];
+          _totalPages = totalPages;
+          _total = total;
+          _loading = false;
           _loadingMore = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error       = e is AdminApiException ? e.message : e.toString();
-          _loading     = false;
+          _error = e is AdminApiException ? e.message : e.toString();
+          _loading = false;
           _loadingMore = false;
         });
       }
@@ -1004,7 +1164,10 @@ class _CommentsSheetState extends State<_CommentsSheet> {
 
   Future<void> _loadMore() async {
     if (_loadingMore || _page >= _totalPages) return;
-    setState(() { _loadingMore = true; _page++; });
+    setState(() {
+      _loadingMore = true;
+      _page++;
+    });
     await _loadComments();
   }
 
@@ -1023,7 +1186,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       _commentCtrl.clear();
       setState(() {
         _submitting = false;
-        _replyTo    = null;
+        _replyTo = null;
       });
       // Reload from page 1 to reflect the new comment
       await _loadComments(reset: true);
@@ -1031,9 +1194,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       if (!mounted) return;
       setState(() => _submitting = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(e is AdminApiException
-            ? e.message
-            : 'Failed to post comment'),
+        content:
+            Text(e is AdminApiException ? e.message : 'Failed to post comment'),
         backgroundColor: Colors.redAccent,
         behavior: SnackBarBehavior.floating,
       ));
@@ -1053,15 +1215,14 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
       initialChildSize: 0.72,
-      minChildSize:     0.40,
-      maxChildSize:     0.95,
-      snap:             true,
-      snapSizes:        const [0.40, 0.72, 0.95],
+      minChildSize: 0.40,
+      maxChildSize: 0.95,
+      snap: true,
+      snapSizes: const [0.40, 0.72, 0.95],
       builder: (_, sheetCtrl) => Container(
         decoration: const BoxDecoration(
           color: Color(0xFF111827),
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(children: [
           // ── Drag handle ────────────────────────────────────────────
@@ -1079,8 +1240,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
 
           // ── Header ────────────────────────────────────────────────
           Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
             child: Row(children: [
               const Icon(Icons.chat_bubble_outline_rounded,
                   color: Color(0xFF14FFEC), size: 16),
@@ -1111,20 +1271,19 @@ class _CommentsSheetState extends State<_CommentsSheet> {
           Expanded(child: _buildList(sheetCtrl)),
 
           // ── Reply-to banner ────────────────────────────────────────
-          if (_replyTo != null) _ReplyBanner(
-            replyTo:     _replyTo!,
-            onCancel:    _cancelReply,
-          ),
+          if (_replyTo != null)
+            _ReplyBanner(
+              replyTo: _replyTo!,
+              onCancel: _cancelReply,
+            ),
 
           // ── Input row ──────────────────────────────────────────────
           _CommentInput(
-            ctrl:        _commentCtrl,
-            focusNode:   _inputFocus,
-            submitting:  _submitting,
-            onSubmit:    _submitComment,
-            hintText:    _replyTo != null
-                ? 'Write a reply…'
-                : 'Add a comment…',
+            ctrl: _commentCtrl,
+            focusNode: _inputFocus,
+            submitting: _submitting,
+            onSubmit: _submitComment,
+            hintText: _replyTo != null ? 'Write a reply…' : 'Add a comment…',
           ),
         ]),
       ),
@@ -1133,8 +1292,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
 
   Widget _buildList(ScrollController ctrl) {
     if (_loading) {
-      return const Center(
-          child: CircularProgressIndicator(color: _accent));
+      return const Center(child: CircularProgressIndicator(color: _accent));
     }
     if (_error != null) {
       return Center(
@@ -1146,13 +1304,11 @@ class _CommentsSheetState extends State<_CommentsSheet> {
             const SizedBox(height: 12),
             Text(_error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: Colors.white54, fontSize: 13)),
+                style: const TextStyle(color: Colors.white54, fontSize: 13)),
             const SizedBox(height: 16),
             TextButton(
               onPressed: () => _loadComments(reset: true),
-              child: const Text('Retry',
-                  style: TextStyle(color: _accent)),
+              child: const Text('Retry', style: TextStyle(color: _accent)),
             ),
           ]),
         ),
@@ -1161,8 +1317,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     if (_comments.isEmpty) {
       return const Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.forum_outlined,
-              color: Colors.white24, size: 36),
+          Icon(Icons.forum_outlined, color: Colors.white24, size: 36),
           SizedBox(height: 12),
           Text('No comments yet.',
               style: TextStyle(color: Colors.white38, fontSize: 13)),
@@ -1174,21 +1329,21 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     }
 
     return ListView.builder(
-      controller:  ctrl,
+      controller: ctrl,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      itemCount:   _comments.length + (_loadingMore ? 1 : 0),
+      itemCount: _comments.length + (_loadingMore ? 1 : 0),
       itemBuilder: (_, i) {
         if (i == _comments.length) {
           return const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Center(
-                child: CircularProgressIndicator(
-                    color: _accent, strokeWidth: 2)),
+                child:
+                    CircularProgressIndicator(color: _accent, strokeWidth: 2)),
           );
         }
         return _CommentTile(
-          comment:    _comments[i],
-          onReply:    () => _startReply(_comments[i]),
+          comment: _comments[i],
+          onReply: () => _startReply(_comments[i]),
         );
       },
     );
@@ -1199,21 +1354,21 @@ class _CommentsSheetState extends State<_CommentsSheet> {
 
 class _CommentTile extends StatelessWidget {
   final Map<String, dynamic> comment;
-  final VoidCallback          onReply;
+  final VoidCallback onReply;
 
   const _CommentTile({required this.comment, required this.onReply});
 
   @override
   Widget build(BuildContext context) {
-    final author  = comment['author'] as Map<String, dynamic>?;
-    final name    = author != null
+    final author = comment['author'] as Map<String, dynamic>?;
+    final name = author != null
         ? '${author['firstName'] ?? ''} ${author['lastName'] ?? ''}'.trim()
         : 'Anonymous';
     final initials = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    final content  = comment['content']   as String? ?? '';
+    final content = comment['content'] as String? ?? '';
     final createdAt = comment['createdAt'] as String?;
-    final replies  = (comment['replies'] as List?)
-            ?.cast<Map<String, dynamic>>() ?? [];
+    final replies =
+        (comment['replies'] as List?)?.cast<Map<String, dynamic>>() ?? [];
 
     String timeLabel = '';
     if (createdAt != null) {
@@ -1236,12 +1391,10 @@ class _CommentTile extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.04),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-                color: Colors.white.withValues(alpha: 0.07)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
           ),
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             // Author row
             Row(children: [
               CircleAvatar(
@@ -1264,27 +1417,23 @@ class _CommentTile extends StatelessWidget {
               ),
               if (timeLabel.isNotEmpty)
                 Text(timeLabel,
-                    style: const TextStyle(
-                        color: Colors.white24, fontSize: 10)),
+                    style:
+                        const TextStyle(color: Colors.white24, fontSize: 10)),
             ]),
             const SizedBox(height: 8),
             // Content
             Text(content,
                 style: const TextStyle(
-                    color: Colors.white54,
-                    fontSize: 13,
-                    height: 1.45)),
+                    color: Colors.white54, fontSize: 13, height: 1.45)),
             const SizedBox(height: 8),
             // Reply button
             GestureDetector(
               onTap: onReply,
               child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.reply_rounded,
-                    size: 13, color: Color(0xFF14FFEC)),
+                Icon(Icons.reply_rounded, size: 13, color: Color(0xFF14FFEC)),
                 SizedBox(width: 4),
                 Text('Reply',
-                    style: TextStyle(
-                        color: Color(0xFF14FFEC), fontSize: 11)),
+                    style: TextStyle(color: Color(0xFF14FFEC), fontSize: 11)),
               ]),
             ),
           ]),
@@ -1297,13 +1446,13 @@ class _CommentTile extends StatelessWidget {
             child: Column(
               children: replies.map((r) {
                 final rAuthor = r['author'] as Map<String, dynamic>?;
-                final rName   = rAuthor != null
+                final rName = rAuthor != null
                     ? '${rAuthor['firstName'] ?? ''} '
-                        '${rAuthor['lastName'] ?? ''}'.trim()
+                            '${rAuthor['lastName'] ?? ''}'
+                        .trim()
                     : 'Anonymous';
-                final rInitial = rName.isNotEmpty
-                    ? rName[0].toUpperCase()
-                    : '?';
+                final rInitial =
+                    rName.isNotEmpty ? rName[0].toUpperCase() : '?';
                 final rContent = r['content'] as String? ?? '';
                 return Container(
                   margin: const EdgeInsets.only(bottom: 6),
@@ -1311,41 +1460,40 @@ class _CommentTile extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.03),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.05)),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.05)),
                   ),
                   child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                    CircleAvatar(
-                      radius: 11,
-                      backgroundColor:
-                          Colors.white.withValues(alpha: 0.08),
-                      child: Text(rInitial,
-                          style: const TextStyle(
-                              color: Colors.white54,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600)),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                        Text(rName,
-                            style: const TextStyle(
-                                color: Colors.white60,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 4),
-                        Text(rContent,
-                            style: const TextStyle(
-                                color: Colors.white38,
-                                fontSize: 12,
-                                height: 1.4)),
+                        CircleAvatar(
+                          radius: 11,
+                          backgroundColor: Colors.white.withValues(alpha: 0.08),
+                          child: Text(rInitial,
+                              style: const TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600)),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(rName,
+                                    style: const TextStyle(
+                                        color: Colors.white60,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 4),
+                                Text(rContent,
+                                    style: const TextStyle(
+                                        color: Colors.white38,
+                                        fontSize: 12,
+                                        height: 1.4)),
+                              ]),
+                        ),
                       ]),
-                    ),
-                  ]),
                 );
               }).toList(),
             ),
@@ -1361,34 +1509,31 @@ class _CommentTile extends StatelessWidget {
 
 class _ReplyBanner extends StatelessWidget {
   final Map<String, dynamic> replyTo;
-  final VoidCallback          onCancel;
+  final VoidCallback onCancel;
 
   const _ReplyBanner({required this.replyTo, required this.onCancel});
 
   @override
   Widget build(BuildContext context) {
     final author = replyTo['author'] as Map<String, dynamic>?;
-    final name   = author != null
+    final name = author != null
         ? '${author['firstName'] ?? ''} ${author['lastName'] ?? ''}'.trim()
         : 'someone';
 
     return Container(
       color: const Color(0xFF14FFEC).withValues(alpha: 0.07),
-      padding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(children: [
-        const Icon(Icons.reply_rounded,
-            size: 14, color: Color(0xFF14FFEC)),
+        const Icon(Icons.reply_rounded, size: 14, color: Color(0xFF14FFEC)),
         const SizedBox(width: 8),
         Expanded(
           child: Text('Replying to $name',
-              style: const TextStyle(
-                  color: Color(0xFF14FFEC), fontSize: 12)),
+              style: const TextStyle(color: Color(0xFF14FFEC), fontSize: 12)),
         ),
         GestureDetector(
           onTap: onCancel,
-          child: const Icon(Icons.close_rounded,
-              size: 16, color: Colors.white38),
+          child:
+              const Icon(Icons.close_rounded, size: 16, color: Colors.white38),
         ),
       ]),
     );
@@ -1399,10 +1544,10 @@ class _ReplyBanner extends StatelessWidget {
 
 class _CommentInput extends StatelessWidget {
   final TextEditingController ctrl;
-  final FocusNode             focusNode;
-  final bool                  submitting;
-  final VoidCallback          onSubmit;
-  final String                hintText;
+  final FocusNode focusNode;
+  final bool submitting;
+  final VoidCallback onSubmit;
+  final String hintText;
 
   const _CommentInput({
     required this.ctrl,
@@ -1420,27 +1565,25 @@ class _CommentInput extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF111827),
         border: Border(
-            top: BorderSide(
-                color: Colors.white.withValues(alpha: 0.07))),
+            top: BorderSide(color: Colors.white.withValues(alpha: 0.07))),
       ),
       child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
         Expanded(
           child: TextField(
-            controller:  ctrl,
-            focusNode:   focusNode,
-            maxLines:    4,
-            minLines:    1,
+            controller: ctrl,
+            focusNode: focusNode,
+            maxLines: 4,
+            minLines: 1,
             textInputAction: TextInputAction.newline,
             style: const TextStyle(color: Colors.white, fontSize: 13),
             decoration: InputDecoration(
-              hintText:  hintText,
-              hintStyle: const TextStyle(
-                  color: Colors.white24, fontSize: 13),
-              filled:    true,
+              hintText: hintText,
+              hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+              filled: true,
               fillColor: const Color(0xFF0D1117),
-              isDense:   true,
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 10),
+              isDense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
                 borderSide: const BorderSide(color: Colors.white12),
@@ -1451,8 +1594,8 @@ class _CommentInput extends StatelessWidget {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(
-                    color: Color(0xFF14FFEC), width: 1),
+                borderSide:
+                    const BorderSide(color: Color(0xFF14FFEC), width: 1),
               ),
             ),
           ),
@@ -1478,7 +1621,8 @@ class _CommentInput extends StatelessWidget {
             child: submitting
                 ? const Center(
                     child: SizedBox(
-                      width: 16, height: 16,
+                      width: 16,
+                      height: 16,
                       child: CircularProgressIndicator(
                           color: Color(0xFF14FFEC), strokeWidth: 2),
                     ),
@@ -1509,7 +1653,8 @@ class _Thumbnail extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         child: Image.network(
           url!,
-          width: 80, height: 80,
+          width: 80,
+          height: 80,
           fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => _placeholder(),
         ),
@@ -1519,30 +1664,27 @@ class _Thumbnail extends StatelessWidget {
   }
 
   Widget _placeholder() => Container(
-        width: 80, height: 80,
+        width: 80,
+        height: 80,
         decoration: BoxDecoration(
           color: _blogColor.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-              color: _blogColor.withValues(alpha: 0.15)),
+          border: Border.all(color: _blogColor.withValues(alpha: 0.15)),
         ),
-        child: const Icon(Icons.article_rounded,
-            color: _blogColor, size: 28),
+        child: const Icon(Icons.article_rounded, color: _blogColor, size: 28),
       );
 }
 
 class _Badge extends StatelessWidget {
   final IconData icon;
-  final String   label;
-  final Color    color;
+  final String label;
+  final Color color;
 
-  const _Badge(
-      {required this.icon, required this.label, required this.color});
+  const _Badge({required this.icon, required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) => Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(20),
@@ -1553,23 +1695,20 @@ class _Badge extends StatelessWidget {
           const SizedBox(width: 4),
           Text(label,
               style: TextStyle(
-                  color: color,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600)),
+                  color: color, fontSize: 10, fontWeight: FontWeight.w600)),
         ]),
       );
 }
 
 class _Chip extends StatelessWidget {
   final String label;
-  final Color  color;
+  final Color color;
   const _Chip({required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) => Container(
         margin: const EdgeInsets.only(right: 6, bottom: 8),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(20),
@@ -1585,7 +1724,7 @@ class _Chip extends StatelessWidget {
 
 class _MetaItem extends StatelessWidget {
   final IconData icon;
-  final String   label;
+  final String label;
   const _MetaItem({required this.icon, required this.label});
 
   @override
@@ -1595,16 +1734,15 @@ class _MetaItem extends StatelessWidget {
           Icon(icon, size: 11, color: Colors.white38),
           const SizedBox(width: 4),
           Text(label,
-              style: const TextStyle(
-                  color: Colors.white38, fontSize: 11)),
+              style: const TextStyle(color: Colors.white38, fontSize: 11)),
         ],
       );
 }
 
 class _ActionBtn extends StatelessWidget {
-  final IconData     icon;
-  final String       label;
-  final Color        color;
+  final IconData icon;
+  final String label;
+  final Color color;
   final VoidCallback onTap;
 
   const _ActionBtn({
@@ -1618,8 +1756,7 @@ class _ActionBtn extends StatelessWidget {
   Widget build(BuildContext context) => GestureDetector(
         onTap: onTap,
         child: Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(7),
@@ -1630,9 +1767,7 @@ class _ActionBtn extends StatelessWidget {
             const SizedBox(width: 4),
             Text(label,
                 style: TextStyle(
-                    color: color,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500)),
+                    color: color, fontSize: 11, fontWeight: FontWeight.w500)),
           ]),
         ),
       );
@@ -1643,13 +1778,13 @@ class _ActionBtn extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _EmptyState extends StatelessWidget {
-  final String       filter;
+  final String filter;
   final VoidCallback onNewPost;
   const _EmptyState({required this.filter, required this.onNewPost});
 
   @override
   Widget build(BuildContext context) {
-    final isAll      = filter == 'ALL';
+    final isAll = filter == 'ALL';
     final isMyDrafts = filter == 'MY_DRAFTS';
 
     return Center(
@@ -1662,8 +1797,7 @@ class _EmptyState extends StatelessWidget {
               color: const Color(0xFFE91E8C).withValues(alpha: 0.07),
               shape: BoxShape.circle,
               border: Border.all(
-                  color: const Color(0xFFE91E8C)
-                      .withValues(alpha: 0.2)),
+                  color: const Color(0xFFE91E8C).withValues(alpha: 0.2)),
             ),
             child: Icon(
               isAll || isMyDrafts
@@ -1681,9 +1815,7 @@ class _EmptyState extends StatelessWidget {
                     ? 'No drafts yet'
                     : 'No ${filter.toLowerCase()} posts',
             style: const TextStyle(
-                color: Colors.white,
-                fontSize: 17,
-                fontWeight: FontWeight.w600),
+                color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Text(
@@ -1703,13 +1835,12 @@ class _EmptyState extends StatelessWidget {
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 24, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
               icon: const Icon(Icons.edit_note_rounded, size: 18),
               label: const Text('Write First Post',
-                  style: TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600)),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
               onPressed: onNewPost,
             ),
           ],
@@ -1724,7 +1855,7 @@ class _EmptyState extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ErrorState extends StatelessWidget {
-  final String       message;
+  final String message;
   final VoidCallback onRetry;
   const _ErrorState({required this.message, required this.onRetry});
 
@@ -1739,19 +1870,16 @@ class _ErrorState extends StatelessWidget {
             Text(message,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                    color: Colors.white54,
-                    fontSize: 13,
-                    height: 1.5)),
+                    color: Colors.white54, fontSize: 13, height: 1.5)),
             const SizedBox(height: 24),
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFF14FFEC),
-                side: const BorderSide(
-                    color: Color(0xFF14FFEC), width: 1),
+                side: const BorderSide(color: Color(0xFF14FFEC), width: 1),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 20, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               ),
               icon: const Icon(Icons.refresh_rounded, size: 16),
               label: const Text('Retry'),

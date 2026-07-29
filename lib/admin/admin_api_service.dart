@@ -71,8 +71,7 @@ abstract class _Ep {
   static String placeShows(String placeId) => '/api/places/$placeId/shows';
   static String placePerformances(String placeId) =>
       '/api/places/$placeId/performances';
-  static String performanceById(String perfId) =>
-      '/api/performances/$perfId';
+  static String performanceById(String perfId) => '/api/performances/$perfId';
 
   // Cultural
   static String placeExhibitions(String placeId) =>
@@ -84,19 +83,19 @@ abstract class _Ep {
   static const String adminStats = '/api/stats';
 
   // ── Blog ─────────────────────────────────────────────────────────────────
-  static const String blog       = '/api/blog';
+  static const String blog = '/api/blog';
   static const String blogSearch = '/api/blog/search';
   static const String blogDrafts = '/api/blog/drafts';
 
-  static String blogBySlug(String slug)        => '/api/blog/$slug';
-  static String blogHardDelete(String slug)    => '/api/blog/$slug?hard=true';
-  static String blogViews(String slug)         => '/api/blog/$slug/views';
-  static String blogLike(String slug)          => '/api/blog/$slug/like';
-  static String blogComments(String slug)      => '/api/blog/$slug/comments';
+  static String blogBySlug(String slug) => '/api/blog/$slug';
+  static String blogHardDelete(String slug) => '/api/blog/$slug?hard=true';
+  static String blogViews(String slug) => '/api/blog/$slug/views';
+  static String blogLike(String slug) => '/api/blog/$slug/like';
+  static String blogComments(String slug) => '/api/blog/$slug/comments';
 
   // Filter endpoints (public-facing but also useful for admin)
   static const String blogByCategory = '/api/blog/categories';
-  static const String blogByTag      = '/api/blog/tags';
+  static const String blogByTag = '/api/blog/tags';
   static String blogByAuthor(String authorId) => '/api/blog/author/$authorId';
 }
 
@@ -144,7 +143,6 @@ class AdminApiException implements Exception {
 // AdminApiService
 // ─────────────────────────────────────────────────────────────────────────────
 class AdminApiService {
-
   // ── In-memory cache (cities / category tree) ─────────────────────────────
   //
   // The admin dashboard rebuilds AdminResortCitiesScreen/AdminCategoriesScreen/
@@ -187,12 +185,18 @@ class AdminApiService {
       final data = body['data'];
       if (data is List) return data;
       for (final key in [
-        'places', 'categories', 'rooms',
-        'posts', 'drafts',
+        'places',
+        'categories',
+        'rooms',
+        'posts',
+        'drafts',
         'comments',
-        'shows', 'performances',
-        'exhibitions', 'artifacts',
-        'menuSections', 'menuItems',
+        'shows',
+        'performances',
+        'exhibitions',
+        'artifacts',
+        'menuSections',
+        'menuItems',
       ]) {
         if (data is Map && data.containsKey(key)) return data[key] as List;
         if (body.containsKey(key)) return body[key] as List;
@@ -202,17 +206,16 @@ class AdminApiService {
     _throwFromBody(body, response.statusCode, method, endpoint);
   }
 
-  void _unwrapDelete(
-      http.Response response, String method, String endpoint) {
+  void _unwrapDelete(http.Response response, String method, String endpoint) {
     _adminLog.d('   ↳ $method $endpoint  →  ${response.statusCode}');
     if (response.statusCode >= 200 && response.statusCode < 300) return;
     final body = ApiClient.parseBody(response);
     _throwFromBody(body, response.statusCode, method, endpoint);
   }
 
-  Never _throwFromBody(Map<String, dynamic> body, int statusCode,
-      String method, String endpoint) {
-    final errors  = body['errors'] as Map<String, dynamic>?;
+  Never _throwFromBody(Map<String, dynamic> body, int statusCode, String method,
+      String endpoint) {
+    final errors = body['errors'] as Map<String, dynamic>?;
     final message = body['message'] as String? ??
         body['error'] as String? ??
         (errors != null
@@ -234,7 +237,8 @@ class AdminApiService {
   Future<List<CityModel>> getCities({Map<String, String>? filters}) async {
     final useCache = filters == null || filters.isEmpty;
     if (useCache && _isFresh(_allCitiesCachedAt)) {
-      _adminLog.d('🏙️  [AdminApiService] GET cities  →  serving ${_allCitiesCache!.length} from cache');
+      _adminLog.d(
+          '🏙️  [AdminApiService] GET cities  →  serving ${_allCitiesCache!.length} from cache');
       return _allCitiesCache!;
     }
     _adminLog.i('🏙️  [AdminApiService] GET cities  filters=$filters');
@@ -243,9 +247,8 @@ class AdminApiService {
       queryParams: filters,
     );
     final list = _unwrapList(response, 'GET', _Ep.cities);
-    final cities = list
-        .map((e) => CityModel.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final cities =
+        list.map((e) => CityModel.fromJson(e as Map<String, dynamic>)).toList();
     if (useCache) {
       _allCitiesCache = cities;
       _allCitiesCachedAt = DateTime.now();
@@ -262,7 +265,8 @@ class AdminApiService {
   Future<CityModel> createCity(Map<String, dynamic> payload) async {
     _adminLog.i('➕ [AdminApiService] POST createCity  payload=$payload');
     final response = await ApiClient.authPost(_Ep.cities, body: payload);
-    final city = CityModel.fromJson(_unwrapObject(response, 'POST', _Ep.cities));
+    final city =
+        CityModel.fromJson(_unwrapObject(response, 'POST', _Ep.cities));
     _allCitiesCache = null;
     return city;
   }
@@ -308,7 +312,8 @@ class AdminApiService {
 
   Future<List<CategoryModel>> getCategoryTree() async {
     if (_isFresh(_categoryTreeCachedAt)) {
-      _adminLog.d('📂 [AdminApiService] getCategoryTree  →  serving ${_categoryTreeCache!.length} from cache');
+      _adminLog.d(
+          '📂 [AdminApiService] getCategoryTree  →  serving ${_categoryTreeCache!.length} from cache');
       return _categoryTreeCache!;
     }
     final all = await getCategories(includeChildren: true);
@@ -321,19 +326,20 @@ class AdminApiService {
   Future<CategoryModel> createCategory(Map<String, dynamic> payload) async {
     _adminLog.i('➕ [AdminApiService] POST createCategory  payload=$payload');
     final response = await ApiClient.authPost(_Ep.categories, body: payload);
-    final category = CategoryModel.fromJson(
-        _unwrapObject(response, 'POST', _Ep.categories));
+    final category =
+        CategoryModel.fromJson(_unwrapObject(response, 'POST', _Ep.categories));
     _categoryTreeCache = null;
     return category;
   }
 
   Future<CategoryModel> createSubcategory(
       String parentId, Map<String, dynamic> payload) async {
-    _adminLog.i('➕ [AdminApiService] POST createSubcategory  parentId=$parentId');
+    _adminLog
+        .i('➕ [AdminApiService] POST createSubcategory  parentId=$parentId');
     final merged = {...payload, 'parentId': parentId};
     final response = await ApiClient.authPost(_Ep.categories, body: merged);
-    final category = CategoryModel.fromJson(
-        _unwrapObject(response, 'POST', _Ep.categories));
+    final category =
+        CategoryModel.fromJson(_unwrapObject(response, 'POST', _Ep.categories));
     _categoryTreeCache = null;
     return category;
   }
@@ -350,7 +356,8 @@ class AdminApiService {
 
   Future<void> deleteCategory(String id, {bool cascade = false}) async {
     final ep = _Ep.deleteCategory(id, cascade: cascade);
-    _adminLog.i('🗑️  [AdminApiService] DELETE category  id=$id  cascade=$cascade');
+    _adminLog
+        .i('🗑️  [AdminApiService] DELETE category  id=$id  cascade=$cascade');
     _unwrapDelete(await ApiClient.authDelete(ep), 'DELETE', ep);
     _categoryTreeCache = null;
   }
@@ -416,7 +423,8 @@ class AdminApiService {
     required String primaryCategory,
     String? ownerId,
   }) async {
-    _adminLog.i('➕ [AdminApiService] POST createPlaceDraft  name=$name  cityId=$cityId');
+    _adminLog.i(
+        '➕ [AdminApiService] POST createPlaceDraft  name=$name  cityId=$cityId');
     final payload = <String, dynamic>{
       'name': name,
       'cityId': cityId,
@@ -457,10 +465,10 @@ class AdminApiService {
   }
 
   Future<PlaceModel> updatePlaceMedia(
-      String id, {
-      required String? coverImage,
-      required List<Map<String, dynamic>> images,
-    }) async {
+    String id, {
+    required String? coverImage,
+    required List<Map<String, dynamic>> images,
+  }) async {
     final ep = _Ep.placeMedia(id);
     final payload = <String, dynamic>{
       if (coverImage != null && coverImage.isNotEmpty) 'coverImage': coverImage,
@@ -478,9 +486,9 @@ class AdminApiService {
   }
 
   Future<PlaceModel> linkPlaceCategories(
-      String id,
-      List<String> categoryIds, {
-      bool replaceMode = false,
+    String id,
+    List<String> categoryIds, {
+    bool replaceMode = false,
   }) async {
     final ep = replaceMode
         ? '${_Ep.placeCategories(id)}?mode=replace'
@@ -493,7 +501,8 @@ class AdminApiService {
   Future<PlaceModel> unlinkPlaceCategories(
       String id, List<String> categoryIds) async {
     final ep = _Ep.placeCategories(id);
-    final response = await ApiClient.authDelete(ep, body: {'categoryIds': categoryIds});
+    final response =
+        await ApiClient.authDelete(ep, body: {'categoryIds': categoryIds});
     return PlaceModel.fromJson(_unwrapObject(response, 'DELETE', ep));
   }
 
@@ -696,30 +705,30 @@ class AdminApiService {
   /// list endpoint, and status/category/tag filters are ignored by the server
   /// (the search API only accepts page/limit).
   Future<Map<String, dynamic>> getBlogPosts({
-    int    page    = 1,
-    int    limit   = 20,
+    int page = 1,
+    int limit = 20,
     String? status,
     String? category,
     String? tag,
     String? cityId,
     String? authorId,
-    bool?   featured,
-    String? sortBy,   // publishedAt | title | updatedAt
-    String? order,    // asc | desc
+    bool? featured,
+    String? sortBy, // publishedAt | title | updatedAt
+    String? order, // asc | desc
   }) async {
     _adminLog.i('📰 [AdminApiService] GET blog  page=$page  status=$status  '
         'category=$category  tag=$tag');
     final params = <String, String>{
-      'page':  '$page',
+      'page': '$page',
       'limit': '$limit',
-      if (status   != null) 'status':   status,
+      if (status != null) 'status': status,
       if (category != null) 'category': category,
-      if (tag      != null) 'tag':      tag,
-      if (cityId   != null) 'cityId':   cityId,
+      if (tag != null) 'tag': tag,
+      if (cityId != null) 'cityId': cityId,
       if (authorId != null) 'authorId': authorId,
       if (featured != null) 'featured': featured.toString(),
-      if (sortBy   != null) 'sortBy':   sortBy,
-      if (order    != null) 'order':    order,
+      if (sortBy != null) 'sortBy': sortBy,
+      if (order != null) 'order': order,
     };
     final response = await ApiClient.authGetWithParams(
       _Ep.blog,
@@ -732,15 +741,15 @@ class AdminApiService {
   /// Returns the same shape as [getBlogPosts] for easy interop.
   Future<Map<String, dynamic>> searchBlogPosts(
     String query, {
-    int page  = 1,
+    int page = 1,
     int limit = 20,
   }) async {
     _adminLog.i('🔍 [AdminApiService] GET blog/search  q=$query  page=$page');
     final response = await ApiClient.authGetWithParams(
       _Ep.blogSearch,
       queryParams: {
-        'q':     Uri.encodeQueryComponent(query),
-        'page':  '$page',
+        'q': Uri.encodeQueryComponent(query),
+        'page': '$page',
         'limit': '$limit',
       },
     );
@@ -753,14 +762,14 @@ class AdminApiService {
     final body = ApiClient.parseBody(response);
     _adminLog.d('   ↳ $method $ep  →  ${response.statusCode}');
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      final posts      = (body['posts'] as List? ?? []).cast<Map<String, dynamic>>();
+      final posts = (body['posts'] as List? ?? []).cast<Map<String, dynamic>>();
       final pagination = body['pagination'] as Map<String, dynamic>? ?? {};
       return {
-        'posts':      posts,
-        'page':       pagination['page']       ?? page,
-        'total':      pagination['total']      ?? posts.length,
+        'posts': posts,
+        'page': pagination['page'] ?? page,
+        'total': pagination['total'] ?? posts.length,
         'totalPages': pagination['totalPages'] ?? 1,
-        'query':      body['query'],   // present on search responses only
+        'query': body['query'], // present on search responses only
       };
     }
     _throwFromBody(body, response.statusCode, method, ep);
@@ -771,7 +780,7 @@ class AdminApiService {
   /// Posts filtered by category slug  —  GET /api/blog/categories?slug=…
   Future<Map<String, dynamic>> getBlogPostsByCategory(
     String categorySlug, {
-    int page  = 1,
+    int page = 1,
     int limit = 20,
   }) async {
     _adminLog.i('📂 [AdminApiService] GET blog/categories  slug=$categorySlug');
@@ -779,14 +788,13 @@ class AdminApiService {
       _Ep.blogByCategory,
       queryParams: {'slug': categorySlug, 'page': '$page', 'limit': '$limit'},
     );
-    return _parseBlogListResponse(
-        response, 'GET', _Ep.blogByCategory, page);
+    return _parseBlogListResponse(response, 'GET', _Ep.blogByCategory, page);
   }
 
   /// Posts filtered by tag slug  —  GET /api/blog/tags?slug=…
   Future<Map<String, dynamic>> getBlogPostsByTag(
     String tagSlug, {
-    int page  = 1,
+    int page = 1,
     int limit = 20,
   }) async {
     _adminLog.i('🏷️  [AdminApiService] GET blog/tags  slug=$tagSlug');
@@ -801,7 +809,7 @@ class AdminApiService {
   /// Returns { author: {...}, posts: [...], pagination: {...} }
   Future<Map<String, dynamic>> getBlogPostsByAuthor(
     String authorId, {
-    int page  = 1,
+    int page = 1,
     int limit = 20,
   }) async {
     _adminLog.i('👤 [AdminApiService] GET blog/author  authorId=$authorId');
@@ -813,13 +821,13 @@ class AdminApiService {
     final body = ApiClient.parseBody(response);
     _adminLog.d('   ↳ GET $ep  →  ${response.statusCode}');
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      final posts      = (body['posts'] as List? ?? []).cast<Map<String, dynamic>>();
+      final posts = (body['posts'] as List? ?? []).cast<Map<String, dynamic>>();
       final pagination = body['pagination'] as Map<String, dynamic>? ?? {};
       return {
-        'author':     body['author'],
-        'posts':      posts,
-        'page':       pagination['page']       ?? page,
-        'total':      pagination['total']      ?? posts.length,
+        'author': body['author'],
+        'posts': posts,
+        'page': pagination['page'] ?? page,
+        'total': pagination['total'] ?? posts.length,
         'totalPages': pagination['totalPages'] ?? 1,
       };
     }
@@ -833,9 +841,9 @@ class AdminApiService {
   /// HTML content is available — the list endpoint omits the content field.
   Future<Map<String, dynamic>> getBlogPostBySlug(String slug) async {
     _adminLog.i('📄 [AdminApiService] GET blog/$slug');
-    final ep       = _Ep.blogBySlug(slug);
+    final ep = _Ep.blogBySlug(slug);
     final response = await ApiClient.authGet(ep);
-    final body     = ApiClient.parseBody(response);
+    final body = ApiClient.parseBody(response);
     _adminLog.d('   ↳ GET $ep  →  ${response.statusCode}');
     if (response.statusCode >= 200 && response.statusCode < 300) {
       // Response shape: { post: {...}, relatedPlaces: [...], similarPosts: [...] }
@@ -849,10 +857,11 @@ class AdminApiService {
 
   Future<Map<String, dynamic>> createBlogPost(
       Map<String, dynamic> payload) async {
-    _adminLog.i('➕ [AdminApiService] POST createBlogPost  title=${payload['title']}');
-    const ep       = _Ep.blog;
+    _adminLog.i(
+        '➕ [AdminApiService] POST createBlogPost  title=${payload['title']}');
+    const ep = _Ep.blog;
     final response = await ApiClient.authPost(ep, body: payload);
-    final body     = ApiClient.parseBody(response);
+    final body = ApiClient.parseBody(response);
     _adminLog.d('   ↳ POST $ep  →  ${response.statusCode}');
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final post = body['post'] ?? body['data'] ?? body;
@@ -864,9 +873,9 @@ class AdminApiService {
   Future<Map<String, dynamic>> updateBlogPost(
       String slug, Map<String, dynamic> payload) async {
     _adminLog.i('✏️ [AdminApiService] PATCH updateBlogPost  slug=$slug');
-    final ep       = _Ep.blogBySlug(slug);
+    final ep = _Ep.blogBySlug(slug);
     final response = await ApiClient.authPatch(ep, body: payload);
-    final body     = ApiClient.parseBody(response);
+    final body = ApiClient.parseBody(response);
     _adminLog.d('   ↳ PATCH $ep  →  ${response.statusCode}');
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final post = body['post'] ?? body['data'] ?? body;
@@ -895,9 +904,9 @@ class AdminApiService {
   /// Useful for a personal "My Drafts" section distinct from the global list.
   Future<List<Map<String, dynamic>>> getBlogDrafts() async {
     _adminLog.i('📝 [AdminApiService] GET blog drafts');
-    const ep       = _Ep.blogDrafts;
+    const ep = _Ep.blogDrafts;
     final response = await ApiClient.authGet(ep);
-    final body     = ApiClient.parseBody(response);
+    final body = ApiClient.parseBody(response);
     _adminLog.d('   ↳ GET $ep  →  ${response.statusCode}');
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return (body['drafts'] as List? ?? []).cast<Map<String, dynamic>>();
@@ -911,9 +920,9 @@ class AdminApiService {
   /// Returns the new total view count.
   Future<int> trackBlogView(String slug) async {
     _adminLog.d('👁️  [AdminApiService] POST blog/views  slug=$slug');
-    final ep       = _Ep.blogViews(slug);
+    final ep = _Ep.blogViews(slug);
     final response = await ApiClient.authPost(ep, body: {});
-    final body     = ApiClient.parseBody(response);
+    final body = ApiClient.parseBody(response);
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return (body['views'] as num?)?.toInt() ?? 0;
     }
@@ -923,9 +932,9 @@ class AdminApiService {
   /// Toggle a like on a post. Returns the new total like count.
   Future<int> likeBlogPost(String slug) async {
     _adminLog.i('❤️  [AdminApiService] POST blog/like  slug=$slug');
-    final ep       = _Ep.blogLike(slug);
+    final ep = _Ep.blogLike(slug);
     final response = await ApiClient.authPost(ep, body: {});
-    final body     = ApiClient.parseBody(response);
+    final body = ApiClient.parseBody(response);
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return (body['likes'] as num?)?.toInt() ?? 0;
     }
@@ -938,11 +947,12 @@ class AdminApiService {
   /// Returns { comments: [...], page, total, totalPages }.
   Future<Map<String, dynamic>> getBlogComments(
     String slug, {
-    int page  = 1,
+    int page = 1,
     int limit = 20,
   }) async {
-    _adminLog.i('💬 [AdminApiService] GET blog/comments  slug=$slug  page=$page');
-    final ep       = _Ep.blogComments(slug);
+    _adminLog
+        .i('💬 [AdminApiService] GET blog/comments  slug=$slug  page=$page');
+    final ep = _Ep.blogComments(slug);
     final response = await ApiClient.authGetWithParams(
       ep,
       queryParams: {'page': '$page', 'limit': '$limit'},
@@ -950,12 +960,13 @@ class AdminApiService {
     final body = ApiClient.parseBody(response);
     _adminLog.d('   ↳ GET $ep  →  ${response.statusCode}');
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      final comments   = (body['comments'] as List? ?? []).cast<Map<String, dynamic>>();
+      final comments =
+          (body['comments'] as List? ?? []).cast<Map<String, dynamic>>();
       final pagination = body['pagination'] as Map<String, dynamic>? ?? {};
       return {
-        'comments':   comments,
-        'page':       pagination['page']       ?? page,
-        'total':      pagination['total']      ?? comments.length,
+        'comments': comments,
+        'page': pagination['page'] ?? page,
+        'total': pagination['total'] ?? comments.length,
         'totalPages': pagination['totalPages'] ?? 1,
       };
     }
@@ -972,17 +983,16 @@ class AdminApiService {
   }) async {
     _adminLog.i('💬 [AdminApiService] POST blog/comments  slug=$slug  '
         'isReply=${parentId != null}');
-    final ep      = _Ep.blogComments(slug);
+    final ep = _Ep.blogComments(slug);
     final payload = <String, dynamic>{
       'content': content,
       if (parentId != null) 'parentId': parentId,
     };
     final response = await ApiClient.authPost(ep, body: payload);
-    final body     = ApiClient.parseBody(response);
+    final body = ApiClient.parseBody(response);
     _adminLog.d('   ↳ POST $ep  →  ${response.statusCode}');
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      return (body['comment'] ?? body['data'] ?? body)
-          as Map<String, dynamic>;
+      return (body['comment'] ?? body['data'] ?? body) as Map<String, dynamic>;
     }
     _throwFromBody(body, response.statusCode, 'POST', ep);
   }

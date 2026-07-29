@@ -15,11 +15,17 @@ import 'package:palmnazi/models/city_details_model.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/place_model.dart';
+import 'package:palmnazi/models/system_settings_model.dart';
+import 'package:palmnazi/services/blog_post_details_service.dart';
+import 'package:palmnazi/services/analytics_service.dart';
+import 'package:palmnazi/services/page_view_service.dart';
+import 'package:palmnazi/services/system_settings_service.dart';
 import 'package:palmnazi/screens/about_screen.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/account_screen.dart';
 import 'package:palmnazi/screens/careers_screen.dart';
 import 'package:palmnazi/screens/contact_screen.dart';
+import 'package:palmnazi/screens/blog_post_detail_screen.dart';
 import 'package:palmnazi/screens/place_details_screen.dart';
 import 'package:palmnazi/screens/resort_city_screen.dart';
 import 'package:palmnazi/screens/static_info_screen.dart';
@@ -490,7 +496,11 @@ class _LandingPageState extends State<LandingPage>
   // FIX: was List<<CategoryModel>
   List<CategoryModel> _cachedCategories = []; // pre-fetched for instant overlay
   List<PlaceModel> _featuredPlaces = [];
+  Set<String> _featuredBlogSlugs = {};
   bool _citiesLoading = true;
+  bool _maintenanceMode = false;
+  String _maintenanceMessage = '';
+  StreamSubscription<SystemSettingsModel>? _settingsSub;
   bool _blogLoading = true;
   bool _blogLoadingMore = false;
   int _blogPage = 1;
@@ -562,6 +572,16 @@ class _LandingPageState extends State<LandingPage>
 
     _heroCtrl.forward();
     _loadAll();
+    PageViewService.recordVisit();
+    AnalyticsService.logScreenView('LandingPage');
+    _settingsSub = SystemSettingsService.stream().listen((s) {
+      if (mounted) {
+        setState(() {
+          _maintenanceMode = s.maintenanceMode;
+          _maintenanceMessage = s.maintenanceMessage;
+        });
+      }
+    });
 
     // ── Listen for email-link sign-in completions ─────────────────────────
     emailLinkResultNotifier.addListener(_onEmailLinkResult);
@@ -741,6 +761,19 @@ class _LandingPageState extends State<LandingPage>
     } catch (_) {
       if (mounted) setState(() => _blogLoading = false);
     }
+    _loadFeaturedBlogSlugs();
+  }
+
+  Future<void> _loadFeaturedBlogSlugs() async {
+    try {
+      final all = await BlogPostDetailsService.getAll();
+      if (mounted) {
+        setState(() => _featuredBlogSlugs =
+            all.values.where((d) => d.isFeatured).map((d) => d.slug).toSet());
+      }
+    } catch (_) {
+      // Decorative sort — fail silently.
+    }
   }
 
   Future<void> _loadMoreBlog() async {
@@ -892,6 +925,7 @@ class _LandingPageState extends State<LandingPage>
     _kenBurnsCtrl.dispose();
     _scrollCueCtrl.dispose();
     _heroSearchFocusNode.dispose();
+    _settingsSub?.cancel();
     super.dispose();
   }
 
@@ -905,6 +939,12 @@ class _LandingPageState extends State<LandingPage>
   // ═══════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
+    // Maintenance mode blocks tourists only — admins still need to get in to
+    // turn it back off, and MainAdmin-only screens already gate themselves.
+    if (_maintenanceMode && !_isAdmin) {
+      return _MaintenancePage(message: _maintenanceMessage);
+    }
+
     final w = MediaQuery.of(context).size.width;
     final navOpacity = (_scrollOffset / 80).clamp(0.0, 1.0);
     final isMobile = w < 600;
@@ -1071,10 +1111,11 @@ class _LandingPageState extends State<LandingPage>
   void _goToPrivacyPolicy() => Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => const StaticInfoScreen(
-            title: 'Privacy Policy',
-            lastUpdated: 'July 2026',
-            sections: [
+          builder: (_) => const StaticPageScreen(
+            slug: 'privacy-policy',
+            fallbackTitle: 'Privacy Policy',
+            fallbackLastUpdated: 'July 2026',
+            fallbackSections: [
               StaticInfoSection(
                 heading: 'What We Collect',
                 body:
@@ -1120,10 +1161,11 @@ class _LandingPageState extends State<LandingPage>
   void _goToTermsOfService() => Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => const StaticInfoScreen(
-            title: 'Terms of Service',
-            lastUpdated: 'July 2026',
-            sections: [
+          builder: (_) => const StaticPageScreen(
+            slug: 'terms-of-service',
+            fallbackTitle: 'Terms of Service',
+            fallbackLastUpdated: 'July 2026',
+            fallbackSections: [
               StaticInfoSection(
                 heading: 'Using Palmnazi',
                 body: 'Palmnazi Resort Cities connects travellers with resort '
@@ -1158,10 +1200,11 @@ class _LandingPageState extends State<LandingPage>
   void _goToCookiePolicy() => Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => const StaticInfoScreen(
-            title: 'Cookie Policy',
-            lastUpdated: 'July 2026',
-            sections: [
+          builder: (_) => const StaticPageScreen(
+            slug: 'cookie-policy',
+            fallbackTitle: 'Cookie Policy',
+            fallbackLastUpdated: 'July 2026',
+            fallbackSections: [
               StaticInfoSection(
                 heading: 'What Cookies Are Used For',
                 body:
@@ -2123,11 +2166,22 @@ class _LandingPageState extends State<LandingPage>
     });
   }
 
-  List<BlogPost> get _filteredBlogPosts => _blogCategoryFilter == null
-      ? _blogPosts
-      : _blogPosts
-          .where((p) => p.categories.contains(_blogCategoryFilter))
-          .toList();
+  List<BlogPost> get _filteredBlogPosts {
+    final base = _blogCategoryFilter == null
+        ? _blogPosts
+        : _blogPosts
+            .where((p) => p.categories.contains(_blogCategoryFilter))
+            .toList();
+    if (_featuredBlogSlugs.isEmpty) return base;
+    // Featured posts first; original order preserved within each group.
+    final indexed = base.asMap().entries.toList()
+      ..sort((a, b) {
+        final af = _featuredBlogSlugs.contains(a.value.slug) ? 1 : 0;
+        final bf = _featuredBlogSlugs.contains(b.value.slug) ? 1 : 0;
+        return af != bf ? bf.compareTo(af) : a.key.compareTo(b.key);
+      });
+    return indexed.map((e) => e.value).toList();
+  }
 
   Widget _buildBlogCategoryFilter() {
     final categories = _blogPosts.expand((p) => p.categories).toSet().toList()
@@ -3798,6 +3852,58 @@ class _FeaturedPlaceCardState extends State<_FeaturedPlaceCard> {
       );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Maintenance page — shown to tourists when SystemSettings.maintenanceMode
+// is on (see AdminSettingsScreen). Admins sign in from here to turn it off.
+// ─────────────────────────────────────────────────────────────────────────────
+class _MaintenancePage extends StatelessWidget {
+  final String message;
+  const _MaintenancePage({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final display = message.trim().isNotEmpty
+        ? message.trim()
+        : "We're carrying out scheduled maintenance — please check back shortly.";
+    return Scaffold(
+      backgroundColor: RC.navy,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.build_circle_outlined, size: 64, color: RC.gold),
+              const SizedBox(height: 20),
+              const Text('Under Maintenance',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              Text(display,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: RC.textSec, fontSize: 14, height: 1.5)),
+              const SizedBox(height: 28),
+              TextButton.icon(
+                onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const AuthScreen(isLogin: true))),
+                icon: const Icon(Icons.admin_panel_settings_outlined,
+                    color: RC.textMute, size: 16),
+                label: const Text('Admin sign in',
+                    style: TextStyle(color: RC.textMute, fontSize: 12)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CityCard extends StatefulWidget {
   final CityModel city;
   final VoidCallback onTap;
@@ -4073,7 +4179,11 @@ class _BlogCardState extends State<_BlogCard>
       onEnter: (_) => _hoverCtrl.forward(),
       onExit: (_) => _hoverCtrl.reverse(),
       child: GestureDetector(
-        onTap: () {},
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => BlogPostDetailScreen(slug: post.slug)),
+        ),
         child: AnimatedBuilder(
           animation: _scale,
           builder: (_, child) =>

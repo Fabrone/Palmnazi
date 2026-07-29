@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
 import 'package:palmnazi/admin/admin_api_service.dart';
@@ -11,9 +12,13 @@ import 'package:palmnazi/admin/admin_payment_methods_screen.dart';
 import 'package:palmnazi/admin/admin_bookings_screen.dart';
 import 'package:palmnazi/admin/admin_contact_messages_screen.dart';
 import 'package:palmnazi/admin/admin_reports_screen.dart';
+import 'package:palmnazi/admin/admin_settings_screen.dart';
+import 'package:palmnazi/admin/admin_static_pages_screen.dart';
+import 'package:palmnazi/admin/admin_audit_log_screen.dart';
 import 'package:palmnazi/admin/place_admin/place_admin_panel.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
+import 'package:palmnazi/services/dashboard_snapshot_service.dart';
 import 'package:palmnazi/services/notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -45,7 +50,16 @@ final Logger _log = Logger(
 //   5 — Role Requests (Admin & MainAdmin — live badge dot on pending count)
 //   6 — Payment Methods CRUD (Firestore-backed configuration catalogue)
 //   7 — Bookings (Firestore-backed; tourist-submitted booking requests)
+//   8 — Reports
+//   9 — Messages
+//  10 — Settings (MainAdmin only)
+//  11 — Static Pages (MainAdmin only)
+//  12 — Audit Log (MainAdmin only)
 // ─────────────────────────────────────────────────────────────────────────────
+
+// MainAdmin-only tabs: Role Requests (5), Settings (10), Static Pages (11),
+// Audit Log (12) — same permission gate as _canManageRoleRequests.
+const _mainAdminOnlyIndices = {5, 10, 11, 12};
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -91,6 +105,9 @@ class _AdminDashboardState extends State<AdminDashboard>
     _NavItem(Icons.calendar_month_rounded, 'Bookings'),
     _NavItem(Icons.bar_chart_rounded, 'Reports'),
     _NavItem(Icons.mail_outline_rounded, 'Messages'),
+    _NavItem(Icons.settings_rounded, 'Settings'),
+    _NavItem(Icons.description_outlined, 'Static Pages'),
+    _NavItem(Icons.history_rounded, 'Audit Log'),
   ];
 
   @override
@@ -242,6 +259,7 @@ class _AdminDashboardState extends State<AdminDashboard>
   Future<void> _loadStats() async {
     try {
       final s = await _apiService.getDashboardStats();
+      DashboardSnapshotService.recordToday(s);
       if (mounted) {
         setState(() {
           _stats = s;
@@ -391,7 +409,9 @@ class _AdminDashboardState extends State<AdminDashboard>
     final destinations = <NavigationDestination>[];
     for (int i = 0; i < _navItems.length; i++) {
       final item = _navItems[i];
-      if (i == 5 && !_canManageRoleRequests) continue;
+      if (_mainAdminOnlyIndices.contains(i) && !_canManageRoleRequests) {
+        continue;
+      }
 
       final isRoleRequests = i == 5;
       final hasBadge = isRoleRequests && _pendingRequestsCount > 0;
@@ -423,7 +443,8 @@ class _AdminDashboardState extends State<AdminDashboard>
       6,
       7,
       8,
-      9
+      9,
+      if (_canManageRoleRequests) ...[10, 11, 12],
     ];
     final visualIndex = logicalIndices.contains(_selectedIndex)
         ? logicalIndices.indexOf(_selectedIndex)
@@ -466,6 +487,12 @@ class _AdminDashboardState extends State<AdminDashboard>
         return 'Reports';
       case 9:
         return 'Messages';
+      case 10:
+        return 'Settings';
+      case 11:
+        return 'Static Pages';
+      case 12:
+        return 'Audit Log';
       default:
         return 'Admin';
     }
@@ -499,6 +526,12 @@ class _AdminDashboardState extends State<AdminDashboard>
         return 'System-wide bookings analytics';
       case 9:
         return 'Messages submitted through the landing page contact form';
+      case 10:
+        return 'Contact info, footer links, maintenance mode and data export';
+      case 11:
+        return 'Edit About Us, Privacy Policy, Terms of Service, Cookie Policy';
+      case 12:
+        return 'Every admin action, in order — who did what, and when';
       default:
         return '';
     }
@@ -550,9 +583,15 @@ class _AdminDashboardState extends State<AdminDashboard>
       case 7:
         return const AdminBookingsScreen();
       case 8:
-        return const AdminReportsScreen();
+        return AdminReportsScreen(apiService: _apiService);
       case 9:
         return const AdminContactMessagesScreen();
+      case 10:
+        return const AdminSettingsScreen();
+      case 11:
+        return const AdminStaticPagesScreen();
+      case 12:
+        return const AdminAuditLogScreen();
       default:
         return const SizedBox.shrink();
     }
@@ -587,7 +626,9 @@ class _AdminDashboardState extends State<AdminDashboard>
               ..._navItems
                   .asMap()
                   .entries
-                  .where((e) => e.key != 5 || _canManageRoleRequests)
+                  .where((e) =>
+                      !_mainAdminOnlyIndices.contains(e.key) ||
+                      _canManageRoleRequests)
                   .map((e) {
                 final isRoleReq = e.key == 5;
                 return ListTile(
@@ -717,7 +758,8 @@ class _AdminSidebar extends StatelessWidget {
               child: Column(
                 children: [
                   ...items.asMap().entries.map((e) {
-                    if (e.key == 5 && !canManageRoleRequests) {
+                    if (_mainAdminOnlyIndices.contains(e.key) &&
+                        !canManageRoleRequests) {
                       return const SizedBox.shrink();
                     }
 
@@ -1208,6 +1250,11 @@ class _DashboardOverview extends StatelessWidget {
 
               const SizedBox(height: 32),
 
+              // ── Growth chart ─────────────────────────────────────────────
+              const _GrowthChartCard(),
+
+              const SizedBox(height: 32),
+
               // ── Quick Actions ──────────────────────────────────────────
               const Text('Quick Actions',
                   style: TextStyle(
@@ -1292,6 +1339,173 @@ class _DashboardOverview extends StatelessWidget {
       },
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Growth Chart — line chart over DashboardSnapshots (see
+// dashboard_snapshot_service.dart). Starts sparse on a fresh install and
+// fills in day by day — no fabricated history.
+// ─────────────────────────────────────────────────────────────────────────────
+class _GrowthChartCard extends StatelessWidget {
+  const _GrowthChartCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Growth — Last 30 Days',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          const Text(
+              'Active places, resort cities and registered users, sampled '
+              'once per day.',
+              style: TextStyle(color: Colors.white38, fontSize: 11.5)),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 220,
+            child: StreamBuilder<List<DashboardSnapshot>>(
+              stream: DashboardSnapshotService.streamRecent(),
+              builder: (context, snap) {
+                final points = snap.data ?? const <DashboardSnapshot>[];
+                if (points.length < 2) {
+                  return const Center(
+                    child: Text(
+                      'Not enough history yet — check back after a few '
+                      'days of activity to see a trend.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white38, fontSize: 12),
+                    ),
+                  );
+                }
+                return _GrowthLineChart(points: points);
+              },
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(spacing: 16, runSpacing: 6, children: const [
+            _LegendDot(color: Color(0xFF9C27B0), label: 'Active places'),
+            _LegendDot(color: Color(0xFF0D7377), label: 'Resort cities'),
+            _LegendDot(color: Color(0xFF2196F3), label: 'Users'),
+          ]),
+        ],
+      ),
+    );
+  }
+}
+
+class _GrowthLineChart extends StatelessWidget {
+  final List<DashboardSnapshot> points;
+  const _GrowthLineChart({required this.points});
+
+  List<FlSpot> _spots(int Function(DashboardSnapshot) value) => List.generate(
+      points.length, (i) => FlSpot(i.toDouble(), value(points[i]).toDouble()));
+
+  @override
+  Widget build(BuildContext context) {
+    final maxY = points.fold<int>(
+        1,
+        (m, p) => [m, p.placesActive, p.citiesTotal, p.usersTotal]
+            .reduce((a, b) => a > b ? a : b));
+
+    return LineChart(
+      LineChartData(
+        minY: 0,
+        maxY: (maxY * 1.2).ceilToDouble(),
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          getDrawingHorizontalLine: (_) =>
+              FlLine(color: Colors.white10, strokeWidth: 1),
+        ),
+        borderData: FlBorderData(show: false),
+        titlesData: FlTitlesData(
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 32,
+              getTitlesWidget: (v, meta) => Text('${v.toInt()}',
+                  style: const TextStyle(color: Colors.white38, fontSize: 10)),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 24,
+              interval: (points.length / 4).clamp(1, points.length).toDouble(),
+              getTitlesWidget: (v, meta) {
+                final i = v.toInt();
+                if (i < 0 || i >= points.length) return const SizedBox.shrink();
+                final d = points[i].day;
+                return Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text('${d.day}/${d.month}',
+                      style:
+                          const TextStyle(color: Colors.white38, fontSize: 10)),
+                );
+              },
+            ),
+          ),
+        ),
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipColor: (_) => const Color(0xFF1F2937),
+          ),
+        ),
+        lineBarsData: [
+          _line(_spots((p) => p.placesActive), const Color(0xFF9C27B0)),
+          _line(_spots((p) => p.citiesTotal), const Color(0xFF0D7377)),
+          _line(_spots((p) => p.usersTotal), const Color(0xFF2196F3)),
+        ],
+      ),
+    );
+  }
+
+  LineChartBarData _line(List<FlSpot> spots, Color color) => LineChartBarData(
+        spots: spots,
+        isCurved: true,
+        color: color,
+        barWidth: 2.5,
+        dotData: const FlDotData(show: false),
+        belowBarData:
+            BarAreaData(show: true, color: color.withValues(alpha: 0.08)),
+      );
+}
+
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _LegendDot({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(label,
+              style: const TextStyle(color: Colors.white54, fontSize: 11)),
+        ],
+      );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

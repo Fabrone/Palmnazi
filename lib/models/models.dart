@@ -54,7 +54,8 @@ class ResortCityItem {
       'tagline': tagline,
       'description': description,
       'imagePath': imagePath,
-      'colorHex': '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
+      'colorHex':
+          '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
       'highlights': highlights,
     };
   }
@@ -113,7 +114,8 @@ class ChannelItem {
       'iconName': _getIconName(icon),
       'title': title,
       'description': description,
-      'colorHex': '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
+      'colorHex':
+          '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
       'imagePath': imagePath,
       'subcategories': subcategories,
     };

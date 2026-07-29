@@ -30,13 +30,11 @@ Future<bool> adminConfirm(
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel',
-              style: TextStyle(color: Colors.white38)),
+          child: const Text('Cancel', style: TextStyle(color: Colors.white38)),
         ),
         TextButton(
           onPressed: () => Navigator.pop(context, true),
-          child: Text(confirmLabel,
-              style: TextStyle(color: confirmColor)),
+          child: Text(confirmLabel, style: TextStyle(color: confirmColor)),
         ),
       ],
     ),
@@ -78,8 +76,8 @@ class AdminErrorView extends StatelessWidget {
             onPressed: onRetry,
             icon: const Icon(Icons.refresh_rounded,
                 size: 16, color: Color(0xFF14FFEC)),
-            label: const Text('Retry',
-                style: TextStyle(color: Color(0xFF14FFEC))),
+            label:
+                const Text('Retry', style: TextStyle(color: Color(0xFF14FFEC))),
           ),
         ]),
       );
@@ -124,8 +122,8 @@ class AdminEmptyState extends StatelessWidget {
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 20, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               ),
               onPressed: onAction,
               icon: const Icon(Icons.add_rounded, size: 18),
@@ -148,16 +146,14 @@ class AdminAddButton extends StatelessWidget {
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF0D7377),
           foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10)),
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         ),
         onPressed: onTap,
         icon: const Icon(Icons.add_rounded, size: 18),
         label: Text(label,
-            style: const TextStyle(
-                fontSize: 13, fontWeight: FontWeight.w600)),
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
       );
 }
 
@@ -174,8 +170,7 @@ class AdminPopItem extends StatelessWidget {
         Icon(icon, size: 15, color: color ?? Colors.white54),
         const SizedBox(width: 10),
         Text(label,
-            style: TextStyle(
-                color: color ?? Colors.white70, fontSize: 13)),
+            style: TextStyle(color: color ?? Colors.white70, fontSize: 13)),
       ]);
 }
 
@@ -205,8 +200,7 @@ class AdminDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return Dialog(
       backgroundColor: const Color(0xFF161B22),
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 540, maxHeight: 700),
         child: Column(
@@ -285,8 +279,8 @@ class AdminDialog extends StatelessWidget {
                             child: CircularProgressIndicator(
                                 strokeWidth: 2, color: Colors.white))
                         : Text(saveLabel,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w600)),
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600)),
                   ),
                 ],
               ),
@@ -318,10 +312,8 @@ class AdminOutlineBtn extends StatelessWidget {
         style: OutlinedButton.styleFrom(
           foregroundColor: color,
           side: BorderSide(color: color.withValues(alpha: 0.4)),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8)),
-          padding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         ),
         onPressed: onTap,
         icon: Icon(icon, size: 14),
@@ -351,10 +343,8 @@ class AdminFilledBtn extends StatelessWidget {
           foregroundColor: color,
           elevation: 0,
           side: BorderSide(color: color.withValues(alpha: 0.3)),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8)),
-          padding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         ),
         onPressed: onTap,
         icon: Icon(icon, size: 14),
@@ -406,7 +396,10 @@ class AdminColorPicker extends StatelessWidget {
                       width: isSelected ? 2.5 : 0,
                     ),
                     boxShadow: isSelected
-                        ? [BoxShadow(color: c.withValues(alpha: 0.5), blurRadius: 8)]
+                        ? [
+                            BoxShadow(
+                                color: c.withValues(alpha: 0.5), blurRadius: 8)
+                          ]
                         : null,
                   ),
                 ),
@@ -488,8 +481,7 @@ class AdminField extends StatelessWidget {
                     fontWeight: FontWeight.w500)),
             if (required)
               const Text(' *',
-                  style: TextStyle(
-                      color: Color(0xFF14FFEC), fontSize: 13)),
+                  style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
           ]),
           const SizedBox(height: 8),
           TextFormField(
@@ -501,11 +493,9 @@ class AdminField extends StatelessWidget {
             style: const TextStyle(color: Colors.white, fontSize: 14),
             decoration: InputDecoration(
               hintText: hint,
-              hintStyle:
-                  const TextStyle(color: Colors.white24, fontSize: 13),
+              hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
               helperText: apiError != null ? null : helperText,
-              helperStyle:
-                  const TextStyle(color: Colors.white38, fontSize: 11),
+              helperStyle: const TextStyle(color: Colors.white38, fontSize: 11),
               errorText: apiError,
               prefixIcon: prefixIcon != null
                   ? Icon(prefixIcon, size: 16, color: Colors.white38)
@@ -538,8 +528,8 @@ class AdminField extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
                 borderSide: const BorderSide(color: Colors.redAccent),
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 12),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
             validator: validator,
           ),
@@ -583,8 +573,8 @@ class AdminStatusBadge extends StatelessWidget {
       ),
       child: Text(
         status,
-        style: TextStyle(
-            color: color, fontSize: 10, fontWeight: FontWeight.w600),
+        style:
+            TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w600),
       ),
     );
   }

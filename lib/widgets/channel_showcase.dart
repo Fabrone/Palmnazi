@@ -135,9 +135,10 @@ class _ChannelShowcaseState extends State<ChannelShowcase> {
             builder: (context, constraints) {
               final isLargeScreen = constraints.maxWidth > 1200;
               final isMediumScreen = constraints.maxWidth > 800;
-              
-              final crossAxisCount = isLargeScreen ? 3 : (isMediumScreen ? 2 : 1);
-              
+
+              final crossAxisCount =
+                  isLargeScreen ? 3 : (isMediumScreen ? 2 : 1);
+
               return GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -161,7 +162,7 @@ class _ChannelShowcaseState extends State<ChannelShowcase> {
 
   Widget _buildChannelCard(ChannelItem channel) {
     final isExpanded = _expandedChannel == channel.title;
-    
+
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -182,8 +183,8 @@ class _ChannelShowcaseState extends State<ChannelShowcase> {
           ),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isExpanded 
-                ? const Color(0xFF14FFEC) 
+            color: isExpanded
+                ? const Color(0xFF14FFEC)
                 : Colors.white.withValues(alpha: 0.2),
             width: isExpanded ? 3 : 1,
           ),
@@ -219,7 +220,7 @@ class _ChannelShowcaseState extends State<ChannelShowcase> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    
+
                     // Title
                     Text(
                       channel.title,
@@ -231,7 +232,7 @@ class _ChannelShowcaseState extends State<ChannelShowcase> {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 8),
-                    
+
                     // Description
                     Text(
                       channel.description,
@@ -246,16 +247,16 @@ class _ChannelShowcaseState extends State<ChannelShowcase> {
                   ],
                 ),
               ),
-              
+
               // Dropdown indicator
               Icon(
-                isExpanded 
-                    ? Icons.keyboard_arrow_up 
+                isExpanded
+                    ? Icons.keyboard_arrow_up
                     : Icons.keyboard_arrow_down,
                 color: Colors.white,
                 size: 28,
               ),
-              
+
               // Expandable subcategories
               if (isExpanded) ...[
                 const SizedBox(height: 8),

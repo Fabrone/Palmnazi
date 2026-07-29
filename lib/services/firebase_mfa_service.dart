@@ -5,12 +5,12 @@ import 'package:logger/logger.dart';
 // MFA RESULT
 // ─────────────────────────────────────────────────────────────────────────────
 class MfaResult {
-  final bool   isSuccess;
+  final bool isSuccess;
   final String message;
   const MfaResult._({required this.isSuccess, required this.message});
 
   factory MfaResult.success({String message = 'Success'}) =>
-      MfaResult._(isSuccess: true,  message: message);
+      MfaResult._(isSuccess: true, message: message);
   factory MfaResult.failure(String message) =>
       MfaResult._(isSuccess: false, message: message);
 
@@ -105,7 +105,8 @@ class FirebaseMfaService {
       _log.d('🔐 [MFA_ENROLL] getMultiFactorSession: ✓');
       return session;
     } on FirebaseAuthException catch (e) {
-      _log.e('🔐 [MFA_ENROLL] getMultiFactorSession: FirebaseAuthException ${e.code}');
+      _log.e(
+          '🔐 [MFA_ENROLL] getMultiFactorSession: FirebaseAuthException ${e.code}');
       return null;
     } catch (e, st) {
       _log.e('🔐 [MFA_ENROLL] getMultiFactorSession: unexpected error',
@@ -123,18 +124,18 @@ class FirebaseMfaService {
   ///
   /// Phone number must include the country code (e.g. +254712345678).
   static Future<void> startEnrollment({
-    required String             phoneNumber,
+    required String phoneNumber,
     required MultiFactorSession session,
     required void Function(String verificationId, int? resendToken) onCodeSent,
     required void Function(FirebaseAuthException error) onFailed,
   }) async {
     _log.i('🔐 [MFA_ENROLL] startEnrollment: phoneNumber=$phoneNumber');
     await _auth.verifyPhoneNumber(
-      multiFactorSession:       session,
-      phoneNumber:              phoneNumber,
-      verificationCompleted:    (_) {},        // auto-retrieval — not used on web
-      verificationFailed:       onFailed,
-      codeSent:                 onCodeSent,
+      multiFactorSession: session,
+      phoneNumber: phoneNumber,
+      verificationCompleted: (_) {}, // auto-retrieval — not used on web
+      verificationFailed: onFailed,
+      codeSent: onCodeSent,
       codeAutoRetrievalTimeout: (_) {},
     );
   }
@@ -147,7 +148,7 @@ class FirebaseMfaService {
   static Future<MfaResult> completeEnrollment({
     required String verificationId,
     required String smsCode,
-    String? displayName,        // optional label shown in Firebase console
+    String? displayName, // optional label shown in Firebase console
   }) async {
     _log.i('🔐 [MFA_ENROLL] completeEnrollment()');
     try {
@@ -156,7 +157,7 @@ class FirebaseMfaService {
 
       final credential = PhoneAuthProvider.credential(
         verificationId: verificationId,
-        smsCode:        smsCode.trim(),
+        smsCode: smsCode.trim(),
       );
       await user.multiFactor.enroll(
         PhoneMultiFactorGenerator.getAssertion(credential),
@@ -213,21 +214,21 @@ class FirebaseMfaService {
         'sending SMS to ${hint.phoneNumber}',
       );
       await _auth.verifyPhoneNumber(
-        multiFactorSession:       resolver.session,
-        multiFactorInfo:          hint,
-        verificationCompleted:    (_) {},
-        verificationFailed:       onFailed,
-        codeSent:                 onCodeSent,
+        multiFactorSession: resolver.session,
+        multiFactorInfo: hint,
+        verificationCompleted: (_) {},
+        verificationFailed: onFailed,
+        codeSent: onCodeSent,
         codeAutoRetrievalTimeout: (_) {},
       );
       return MfaResult.success(
-        message:
-            'Verification code sent to ${_maskedPhone(hint.phoneNumber)}.',
+        message: 'Verification code sent to ${_maskedPhone(hint.phoneNumber)}.',
       );
     } catch (e, st) {
       _log.e('🔐 [MFA_SIGN_IN] startSignInChallenge: error',
           error: e, stackTrace: st);
-      return MfaResult.failure('Could not send verification code. Please try again.');
+      return MfaResult.failure(
+          'Could not send verification code. Please try again.');
     }
   }
 
@@ -236,14 +237,14 @@ class FirebaseMfaService {
   // ══════════════════════════════════════════════════════════════════════════
   static Future<MfaResult> resolveSignIn({
     required MultiFactorResolver resolver,
-    required String              verificationId,
-    required String              smsCode,
+    required String verificationId,
+    required String smsCode,
   }) async {
     _log.i('🔐 [MFA_SIGN_IN] resolveSignIn()');
     try {
       final credential = PhoneAuthProvider.credential(
         verificationId: verificationId,
-        smsCode:        smsCode.trim(),
+        smsCode: smsCode.trim(),
       );
       await resolver.resolveSignIn(
         PhoneMultiFactorGenerator.getAssertion(credential),
@@ -295,8 +296,7 @@ class FirebaseMfaService {
   // ── Public error mapper ───────────────────────────────────────────────────
   // auth_screen.dart calls this directly in onFailed callbacks, so it must
   // be public. It delegates to _mapAuthError internally.
-  static String mapAuthErrorPublic(FirebaseAuthException e) =>
-      _mapAuthError(e);
+  static String mapAuthErrorPublic(FirebaseAuthException e) => _mapAuthError(e);
 
   static String _mapAuthError(FirebaseAuthException e) {
     switch (e.code) {

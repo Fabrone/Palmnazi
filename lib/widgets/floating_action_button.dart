@@ -15,8 +15,7 @@ class CustomFloatingActionButton extends StatefulWidget {
       _CustomFloatingActionButtonState();
 }
 
-class _CustomFloatingActionButtonState
-    extends State<CustomFloatingActionButton>
+class _CustomFloatingActionButtonState extends State<CustomFloatingActionButton>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;

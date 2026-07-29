@@ -13,6 +13,7 @@ import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/place_model.dart';
 import 'package:palmnazi/models/payment_method_model.dart';
+import 'package:palmnazi/services/audit_log_service.dart';
 import 'package:palmnazi/services/payment_methods_service.dart';
 import 'package:palmnazi/services/place_details_service.dart';
 
@@ -1595,6 +1596,12 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
 
     try {
       final submitted = await widget.apiService.submitPlace(_place!.id);
+      AuditLogService.log(
+          action: widget.existingPlace == null ? 'create' : 'update',
+          module: 'Place',
+          targetId: submitted.id,
+          targetLabel: submitted.name,
+          details: 'Published as ACTIVE');
       debugPrint(
           '✅ [Wizard/Submit] Place submitted successfully — placeId=${submitted.id}  status=${submitted.status}');
       if (mounted) {

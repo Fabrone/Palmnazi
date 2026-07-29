@@ -114,24 +114,31 @@ class PaymentMethodModel {
     switch (type) {
       case PaymentMethodType.mpesa:
         return const [
-          PaymentConfigField('paybillNumber', 'Paybill / Till Number', 'e.g. 400200'),
-          PaymentConfigField('accountReference', 'Account Reference (optional)', 'e.g. PALMNAZI'),
+          PaymentConfigField(
+              'paybillNumber', 'Paybill / Till Number', 'e.g. 400200'),
+          PaymentConfigField('accountReference', 'Account Reference (optional)',
+              'e.g. PALMNAZI'),
         ];
       case PaymentMethodType.card:
         return const [
-          PaymentConfigField('publishableKey', 'Gateway Publishable Key', 'pk_live_… / pk_test_…'),
-          PaymentConfigField('merchantId', 'Merchant ID (optional)', 'e.g. MERCH-00123'),
+          PaymentConfigField('publishableKey', 'Gateway Publishable Key',
+              'pk_live_… / pk_test_…'),
+          PaymentConfigField(
+              'merchantId', 'Merchant ID (optional)', 'e.g. MERCH-00123'),
         ];
       case PaymentMethodType.paypal:
         return const [
           PaymentConfigField('clientId', 'PayPal Client ID', 'e.g. AZ8x…'),
-          PaymentConfigField('merchantEmail', 'Merchant Email', 'business@example.com'),
+          PaymentConfigField(
+              'merchantEmail', 'Merchant Email', 'business@example.com'),
         ];
       case PaymentMethodType.bankTransfer:
         return const [
           PaymentConfigField('bankName', 'Bank Name', 'e.g. Equity Bank'),
-          PaymentConfigField('accountNumber', 'Account Number', 'e.g. 0123456789'),
-          PaymentConfigField('accountName', 'Account Name', 'e.g. Palmnazi Resorts Ltd'),
+          PaymentConfigField(
+              'accountNumber', 'Account Number', 'e.g. 0123456789'),
+          PaymentConfigField(
+              'accountName', 'Account Name', 'e.g. Palmnazi Resorts Ltd'),
         ];
       case PaymentMethodType.cash:
       case PaymentMethodType.other:

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
 import 'package:palmnazi/models/admin_request_model.dart';
+import 'package:palmnazi/services/audit_log_service.dart';
 import 'package:palmnazi/services/rbac_service.dart';
 import 'package:palmnazi/widgets/place_search_picker.dart';
 
@@ -174,6 +175,12 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
 
       await batch.commit();
       final roleLabel = RbacService.roleLabel(role);
+      AuditLogService.log(
+          action: 'role_grant',
+          module: 'Role',
+          targetId: req.firebaseUid,
+          targetLabel: req.userEmail,
+          details: 'Granted $roleLabel');
       _log.i(
           '✅ [AdminRoleRequestsScreen] Approved ${req.userEmail} as $roleLabel');
       if (mounted) {
@@ -268,6 +275,11 @@ class _AdminRoleRequestsScreenState extends State<AdminRoleRequestsScreen>
       );
 
       await batch.commit();
+      AuditLogService.log(
+          action: 'role_revoke',
+          module: 'Role',
+          targetId: req.firebaseUid,
+          targetLabel: req.userEmail);
       _log.i('✅ [AdminRoleRequestsScreen] Revoked role for ${req.userEmail}');
       if (mounted) _snack('Role revoked for ${req.userEmail}.', ok: false);
     } catch (e) {

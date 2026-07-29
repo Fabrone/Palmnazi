@@ -86,7 +86,8 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
               animation: _floatController,
               builder: (context, child) {
                 return CustomPaint(
-                  painter: CirclesPainter(animationValue: _floatController.value),
+                  painter:
+                      CirclesPainter(animationValue: _floatController.value),
                 );
               },
             ),
@@ -101,10 +102,11 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const Spacer(),
-                    
+
                     // Logo with float animation
                     AnimatedBuilder(
-                      animation: Listenable.merge([_pulseAnimation, _floatAnimation]),
+                      animation:
+                          Listenable.merge([_pulseAnimation, _floatAnimation]),
                       builder: (context, child) {
                         return Transform.translate(
                           offset: Offset(0, _floatAnimation.value),
@@ -125,7 +127,8 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: const Color(0xFF14FFEC).withValues(alpha: 0.6),
+                                    color: const Color(0xFF14FFEC)
+                                        .withValues(alpha: 0.6),
                                     blurRadius: 50,
                                     spreadRadius: 15,
                                   ),
@@ -150,9 +153,9 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                         );
                       },
                     ),
-                    
+
                     const SizedBox(height: 50),
-                    
+
                     // Main Title with shimmer effect
                     TweenAnimationBuilder<double>(
                       duration: const Duration(milliseconds: 1500),
@@ -178,39 +181,47 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                                   Color(0xFF14FFEC),
                                 ],
                                 stops: [
-                                  (_pulseController.value - 0.3).clamp(0.0, 1.0),
+                                  (_pulseController.value - 0.3)
+                                      .clamp(0.0, 1.0),
                                   _pulseController.value,
-                                  (_pulseController.value + 0.3).clamp(0.0, 1.0),
+                                  (_pulseController.value + 0.3)
+                                      .clamp(0.0, 1.0),
                                 ],
                               ).createShader(bounds),
                               child: Text(
                                 'PALMNAZI',
-                                style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                                  fontSize: 64,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 6,
-                                  color: Colors.white,
-                                ),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .displayLarge
+                                    ?.copyWith(
+                                      fontSize: 64,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 6,
+                                      color: Colors.white,
+                                    ),
                                 textAlign: TextAlign.center,
                               ),
                             ),
                             const SizedBox(height: 12),
                             Text(
                               'RESORT CITIES',
-                              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                letterSpacing: 10,
-                                fontWeight: FontWeight.w300,
-                                color: Colors.white70,
-                              ),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .headlineMedium
+                                  ?.copyWith(
+                                    letterSpacing: 10,
+                                    fontWeight: FontWeight.w300,
+                                    color: Colors.white70,
+                                  ),
                               textAlign: TextAlign.center,
                             ),
                           ],
                         ),
                       ),
                     ),
-                    
+
                     const SizedBox(height: 30),
-                    
+
                     // Tagline with typewriter effect
                     TweenAnimationBuilder<double>(
                       duration: const Duration(milliseconds: 2000),
@@ -225,19 +236,20 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                         padding: const EdgeInsets.symmetric(horizontal: 48),
                         child: Text(
                           'Discover Kenya\'s Most Exquisite Resort Destinations',
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w400,
-                            color: const Color(0xFF14FFEC),
-                            letterSpacing: 0.5,
-                          ),
+                          style:
+                              Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w400,
+                                    color: const Color(0xFF14FFEC),
+                                    letterSpacing: 0.5,
+                                  ),
                           textAlign: TextAlign.center,
                         ),
                       ),
                     ),
-                    
+
                     const SizedBox(height: 50),
-                    
+
                     // CTA Button with glow
                     TweenAnimationBuilder<double>(
                       duration: const Duration(milliseconds: 2500),
@@ -256,7 +268,8 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                           borderRadius: BorderRadius.circular(50),
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFF14FFEC).withValues(alpha: 0.5),
+                              color: const Color(0xFF14FFEC)
+                                  .withValues(alpha: 0.5),
                               blurRadius: 30,
                               spreadRadius: 5,
                             ),
@@ -288,15 +301,16 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                         ),
                       ),
                     ),
-                    
+
                     const Spacer(),
-                    
+
                     // Scroll Indicator with animation
                     AnimatedBuilder(
                       animation: _floatController,
                       builder: (context, child) {
                         return Opacity(
-                          opacity: (1 - (widget.scrollOffset / 200)).clamp(0.0, 1.0),
+                          opacity:
+                              (1 - (widget.scrollOffset / 200)).clamp(0.0, 1.0),
                           child: Transform.translate(
                             offset: Offset(0, _floatAnimation.value * 0.5),
                             child: Column(
@@ -312,7 +326,8 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                                 const SizedBox(height: 8),
                                 Icon(
                                   Icons.keyboard_arrow_down,
-                                  color: const Color(0xFF14FFEC).withValues(alpha: 0.8),
+                                  color: const Color(0xFF14FFEC)
+                                      .withValues(alpha: 0.8),
                                   size: 32,
                                 ),
                               ],
@@ -321,7 +336,7 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                         );
                       },
                     ),
-                    
+
                     const SizedBox(height: 30),
                   ],
                 ),
@@ -349,14 +364,15 @@ class CirclesPainter extends CustomPainter {
     // Draw multiple circles with different sizes and positions
     for (int i = 0; i < 5; i++) {
       final radius = (size.width / 4) + (i * 50) + (animationValue * 20);
-      paint.color = const Color(0xFF14FFEC).withValues(alpha: 0.05 - (i * 0.01));
-      
+      paint.color =
+          const Color(0xFF14FFEC).withValues(alpha: 0.05 - (i * 0.01));
+
       canvas.drawCircle(
         Offset(size.width * 0.3, size.height * 0.4),
         radius,
         paint,
       );
-      
+
       canvas.drawCircle(
         Offset(size.width * 0.7, size.height * 0.6),
         radius * 0.8,

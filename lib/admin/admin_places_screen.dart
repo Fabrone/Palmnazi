@@ -7,6 +7,7 @@ import 'package:palmnazi/admin/admin_shared_widgets.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/place_model.dart';
+import 'package:palmnazi/services/audit_log_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AdminPlacesScreen
@@ -261,6 +262,11 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
     try {
       debugPrint('   ↳ Sending DELETE /api/places/${place.id}');
       await widget.apiService.deletePlaceById(place.id);
+      AuditLogService.log(
+          action: 'delete',
+          module: 'Place',
+          targetId: place.id,
+          targetLabel: place.name);
       debugPrint(
           '✅ [PlacesScreen] Deleted place "${place.name}" (${place.id})');
       _snack('Deleted ${place.name}', isError: false);
@@ -287,6 +293,12 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
         place.id,
         {...place.attributes, 'isFeatured': next},
       );
+      AuditLogService.log(
+          action: 'update',
+          module: 'Place',
+          targetId: place.id,
+          targetLabel: place.name,
+          details: next ? 'Marked featured' : 'Unfeatured');
       _snack(
         next ? '${place.name} is now featured' : '${place.name} unfeatured',
         isError: false,

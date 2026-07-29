@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:palmnazi/models/contact_message_model.dart';
+import 'package:palmnazi/models/system_settings_model.dart';
 import 'package:palmnazi/services/contact_message_service.dart';
+import 'package:palmnazi/services/system_settings_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ContactScreen — reached from the landing page footer's "Contact Us" link.
@@ -30,7 +33,7 @@ class ContactScreen extends StatefulWidget {
 }
 
 class _ContactScreenState extends State<ContactScreen> {
-  static const _supportEmail = 'support@palmnazi.com';
+  static const _fallbackSupportEmail = 'support@palmnazi.com';
 
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
@@ -39,11 +42,31 @@ class _ContactScreenState extends State<ContactScreen> {
   bool _submitting = false;
   bool _submitted = false;
 
+  // ── Admin-configurable contact info (Settings screen) — falls back to the
+  // hardcoded defaults until an admin sets it. ────────────────────────────
+  String _supportEmail = _fallbackSupportEmail;
+  String _supportPhone = '';
+  StreamSubscription<SystemSettingsModel>? _settingsSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _settingsSub = SystemSettingsService.stream().listen((s) {
+      if (!mounted) return;
+      setState(() {
+        _supportEmail =
+            s.contactEmail.isNotEmpty ? s.contactEmail : _fallbackSupportEmail;
+        _supportPhone = s.contactPhone;
+      });
+    });
+  }
+
   @override
   void dispose() {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _messageCtrl.dispose();
+    _settingsSub?.cancel();
     super.dispose();
   }
 
@@ -213,10 +236,25 @@ class _ContactScreenState extends State<ContactScreen> {
               onPressed: _emailDirectly,
               icon: const Icon(Icons.email_outlined,
                   color: _P.textMute, size: 16),
-              label: const Text('Or email us directly',
-                  style: TextStyle(color: _P.textMute, fontSize: 13)),
+              label: Text('Or email us directly at $_supportEmail',
+                  style: const TextStyle(color: _P.textMute, fontSize: 13)),
             ),
           ),
+          if (_supportPhone.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.phone_outlined,
+                      color: _P.textMute, size: 14),
+                  const SizedBox(width: 6),
+                  Text(_supportPhone,
+                      style: const TextStyle(color: _P.textMute, fontSize: 13)),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
