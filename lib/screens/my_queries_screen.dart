@@ -1,6 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:palmnazi/models/place_query_model.dart';
+import 'package:palmnazi/services/app_settings_controller.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/place_query_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -14,9 +16,26 @@ import 'package:palmnazi/services/place_query_service.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 abstract final class _P {
+  static bool get _isDark =>
+      AppSettingsController.instance.resolvedBrightness == Brightness.dark;
+
   static const Color aquaBright = Color(0xFF00E5FF);
-  static const Color deepNavy = Color(0xFF01263F);
-  static const Color deepBlue = Color(0xFF071829);
+  static Color get deepNavy =>
+      _isDark ? const Color(0xFF01263F) : const Color(0xFFF5F7FA);
+  static Color get deepBlue =>
+      _isDark ? const Color(0xFF071829) : const Color(0xFFE8EDF2);
+
+  static Color get textPri => _isDark ? Colors.white : const Color(0xFF121F2E);
+  static Color get textSec =>
+      _isDark ? Colors.white70 : const Color(0xFF3D4F60);
+  static Color get textMute =>
+      _isDark ? Colors.white38 : const Color(0xFF7C93A8);
+
+  /// Subtle fill for input/button backgrounds that used to be a flat
+  /// `Colors.white.withValues(alpha: x)` — invisible once the surface
+  /// behind it turns light.
+  static Color overlay(double alpha) =>
+      (_isDark ? Colors.white : Colors.black).withValues(alpha: alpha);
 }
 
 class MyQueriesScreen extends StatelessWidget {
@@ -30,14 +49,14 @@ class MyQueriesScreen extends StatelessWidget {
       backgroundColor: _P.deepBlue,
       appBar: AppBar(
         backgroundColor: _P.deepNavy,
-        title:
-            const Text('My Questions', style: TextStyle(color: Colors.white)),
-        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(context.tr('account_my_queries'),
+            style: TextStyle(color: _P.textPri)),
+        iconTheme: IconThemeData(color: _P.textPri),
       ),
       body: uid == null
-          ? const Center(
-              child: Text('Sign in to view your questions.',
-                  style: TextStyle(color: Colors.white54)))
+          ? Center(
+              child: Text(context.tr('my_queries_signin_required'),
+                  style: TextStyle(color: _P.textMute)))
           : StreamBuilder<List<PlaceQueryModel>>(
               stream: PlaceQueryService.streamForUser(uid),
               builder: (context, snap) {
@@ -47,19 +66,20 @@ class MyQueriesScreen extends StatelessWidget {
                 }
                 if (snap.hasError) {
                   return Center(
-                    child: Text('Could not load questions: ${snap.error}',
-                        style: const TextStyle(color: Colors.white54)),
+                    child: Text(
+                        '${context.tr('my_queries_error_load_prefix')} ${snap.error}',
+                        style: TextStyle(color: _P.textMute)),
                   );
                 }
                 final queries = snap.data ?? const <PlaceQueryModel>[];
                 if (queries.isEmpty) {
-                  return const Center(
+                  return Center(
                     child: Padding(
-                      padding: EdgeInsets.all(24),
+                      padding: const EdgeInsets.all(24),
                       child: Text(
-                        'No questions yet. Tap "Enquire" on a place to ask one.',
+                        context.tr('my_queries_empty'),
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.white54),
+                        style: TextStyle(color: _P.textMute),
                       ),
                     ),
                   );
@@ -88,7 +108,7 @@ class _QueryCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
+        color: _P.overlay(0.06),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: statusColor.withValues(alpha: 0.35)),
       ),
@@ -98,8 +118,8 @@ class _QueryCard extends StatelessWidget {
           Row(children: [
             Expanded(
               child: Text(query.placeName,
-                  style: const TextStyle(
-                      color: Colors.white,
+                  style: TextStyle(
+                      color: _P.textPri,
                       fontSize: 16,
                       fontWeight: FontWeight.bold)),
             ),
@@ -110,7 +130,9 @@ class _QueryCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                answered ? 'ANSWERED' : 'PENDING',
+                answered
+                    ? context.tr('my_queries_status_answered')
+                    : context.tr('my_queries_status_pending'),
                 style: TextStyle(
                     color: statusColor,
                     fontSize: 11,
@@ -120,7 +142,7 @@ class _QueryCard extends StatelessWidget {
           ]),
           const SizedBox(height: 10),
           Text(query.message,
-              style: const TextStyle(color: Colors.white70, fontSize: 13)),
+              style: TextStyle(color: _P.textSec, fontSize: 13)),
           if (answered && query.adminReply != null) ...[
             const SizedBox(height: 12),
             Container(
@@ -137,8 +159,7 @@ class _QueryCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(query.adminReply!,
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 13)),
+                        style: TextStyle(color: _P.textPri, fontSize: 13)),
                   ),
                 ],
               ),

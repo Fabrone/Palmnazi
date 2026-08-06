@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:palmnazi/models/static_page_model.dart';
+import 'package:palmnazi/screens/landing_page.dart' show RC;
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/static_page_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -9,13 +11,6 @@ import 'package:palmnazi/services/static_page_service.dart';
 // back to the hardcoded defaults below until an admin has edited the page —
 // see admin_static_pages_screen.dart.
 // ─────────────────────────────────────────────────────────────────────────────
-
-abstract final class _P {
-  static const Color navy = Color(0xFF121F2E);
-  static const Color deepBlue = Color(0xFF1C2E42);
-  static const Color gold = Color(0xFFD4AF37);
-  static const Color textSec = Color(0xFFC7D6E3);
-}
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
@@ -53,11 +48,12 @@ class AboutScreen extends StatelessWidget {
   Widget _buildScaffold(
       BuildContext context, String tagline, List<String> paragraphs) {
     return Scaffold(
-      backgroundColor: _P.navy,
+      backgroundColor: RC.navy,
       appBar: AppBar(
-        backgroundColor: _P.deepBlue,
-        title: const Text('About Us', style: TextStyle(color: Colors.white)),
-        iconTheme: const IconThemeData(color: Colors.white),
+        backgroundColor: RC.deepBlue,
+        title: Text(context.tr('about_page_title'),
+            style: TextStyle(color: RC.textPri)),
+        iconTheme: IconThemeData(color: RC.textPri),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -74,31 +70,31 @@ class AboutScreen extends StatelessWidget {
                     decoration: const BoxDecoration(
                       shape: BoxShape.circle,
                       gradient:
-                          LinearGradient(colors: [_P.gold, Color(0xFFC49A2C)]),
+                          LinearGradient(colors: [RC.gold, Color(0xFFC49A2C)]),
                     ),
                     child: const Icon(Icons.travel_explore_rounded,
                         color: Colors.white, size: 20),
                   ),
                   const SizedBox(width: 12),
-                  const Text('PALMNAZI RC',
+                  Text('PALMNAZI RC',
                       style: TextStyle(
-                          color: Colors.white,
+                          color: RC.textPri,
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 1.5)),
                 ]),
                 const SizedBox(height: 28),
                 Text(tagline,
-                    style: const TextStyle(
-                        color: Colors.white,
+                    style: TextStyle(
+                        color: RC.textPri,
                         fontSize: 26,
                         fontWeight: FontWeight.bold)),
                 const SizedBox(height: 20),
                 ...paragraphs.map((p) => Padding(
                       padding: const EdgeInsets.only(bottom: 18),
                       child: Text(p,
-                          style: const TextStyle(
-                              color: _P.textSec, fontSize: 15, height: 1.7)),
+                          style: TextStyle(
+                              color: RC.textSec, fontSize: 15, height: 1.7)),
                     )),
               ],
             ),

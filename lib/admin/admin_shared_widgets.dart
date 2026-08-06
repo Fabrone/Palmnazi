@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:palmnazi/services/admin_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // admin_shared_widgets.dart
@@ -21,16 +23,15 @@ Future<bool> adminConfirm(
   final result = await showDialog<bool>(
     context: context,
     builder: (_) => AlertDialog(
-      backgroundColor: const Color(0xFF161B22),
+      backgroundColor: AdC.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: Text(title,
-          style: const TextStyle(color: Colors.white, fontSize: 16)),
-      content: Text(body,
-          style: const TextStyle(color: Colors.white54, fontSize: 13)),
+      title: Text(title, style: TextStyle(color: AdC.textPri, fontSize: 16)),
+      content: Text(body, style: TextStyle(color: AdC.textMute, fontSize: 13)),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel', style: TextStyle(color: Colors.white38)),
+          child: Text(context.tr('common_cancel'),
+              style: TextStyle(color: AdC.textMute)),
         ),
         TextButton(
           onPressed: () => Navigator.pop(context, true),
@@ -49,7 +50,7 @@ class AdminLoader extends StatelessWidget {
   @override
   Widget build(BuildContext context) => const Center(
         child: CircularProgressIndicator(
-          color: Color(0xFF14FFEC),
+          color: AdC.teal,
           strokeWidth: 2,
         ),
       );
@@ -70,14 +71,13 @@ class AdminErrorView extends StatelessWidget {
           const SizedBox(height: 12),
           Text(error,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white54, fontSize: 13)),
+              style: TextStyle(color: AdC.textMute, fontSize: 13)),
           const SizedBox(height: 16),
           TextButton.icon(
             onPressed: onRetry,
-            icon: const Icon(Icons.refresh_rounded,
-                size: 16, color: Color(0xFF14FFEC)),
-            label:
-                const Text('Retry', style: TextStyle(color: Color(0xFF14FFEC))),
+            icon: const Icon(Icons.refresh_rounded, size: 16, color: AdC.teal),
+            label: Text(context.tr('common_retry'),
+                style: const TextStyle(color: AdC.teal)),
           ),
         ]),
       );
@@ -103,22 +103,22 @@ class AdminEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, color: Colors.white12, size: 64),
+          Icon(icon, color: AdC.textMute, size: 64),
           const SizedBox(height: 16),
           Text(title,
-              style: const TextStyle(
-                  color: Colors.white70,
+              style: TextStyle(
+                  color: AdC.textSec,
                   fontSize: 16,
                   fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
           Text(body,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white38, fontSize: 13)),
+              style: TextStyle(color: AdC.textMute, fontSize: 13)),
           if (actionLabel != null && onAction != null) ...[
             const SizedBox(height: 20),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0D7377),
+                backgroundColor: AdC.tealDark,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
@@ -144,7 +144,7 @@ class AdminAddButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ElevatedButton.icon(
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF0D7377),
+          backgroundColor: AdC.tealDark,
           foregroundColor: Colors.white,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -167,10 +167,10 @@ class AdminPopItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(children: [
-        Icon(icon, size: 15, color: color ?? Colors.white54),
+        Icon(icon, size: 15, color: color ?? AdC.textMute),
         const SizedBox(width: 10),
         Text(label,
-            style: TextStyle(color: color ?? Colors.white70, fontSize: 13)),
+            style: TextStyle(color: color ?? AdC.textSec, fontSize: 13)),
       ]);
 }
 
@@ -199,7 +199,7 @@ class AdminDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: const Color(0xFF161B22),
+      backgroundColor: AdC.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 540, maxHeight: 700),
@@ -213,9 +213,7 @@ class AdminDialog extends StatelessWidget {
                 color: color.withValues(alpha: 0.08),
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(20)),
-                border: Border(
-                    bottom: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.06))),
+                border: Border(bottom: BorderSide(color: AdC.overlay(0.06))),
               ),
               child: Row(children: [
                 Container(
@@ -228,14 +226,14 @@ class AdminDialog extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Text(title,
-                    style: const TextStyle(
-                        color: Colors.white,
+                    style: TextStyle(
+                        color: AdC.textPri,
                         fontSize: 16,
                         fontWeight: FontWeight.w600)),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.close_rounded,
-                      color: Colors.white38, size: 20),
+                  icon:
+                      Icon(Icons.close_rounded, color: AdC.textMute, size: 20),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ]),
@@ -258,8 +256,8 @@ class AdminDialog extends StatelessWidget {
                   TextButton(
                     onPressed:
                         saving ? null : () => Navigator.of(context).pop(),
-                    child: const Text('Cancel',
-                        style: TextStyle(color: Colors.white38)),
+                    child: Text(context.tr('common_cancel'),
+                        style: TextStyle(color: AdC.textMute)),
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
@@ -372,8 +370,8 @@ class AdminColorPicker extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label,
-              style: const TextStyle(
-                  color: Colors.white70,
+              style: TextStyle(
+                  color: AdC.textSec,
                   fontSize: 13,
                   fontWeight: FontWeight.w500)),
           const SizedBox(height: 10),
@@ -475,13 +473,12 @@ class AdminField extends StatelessWidget {
         children: [
           Row(children: [
             Text(label,
-                style: const TextStyle(
-                    color: Colors.white70,
+                style: TextStyle(
+                    color: AdC.textSec,
                     fontSize: 13,
                     fontWeight: FontWeight.w500)),
             if (required)
-              const Text(' *',
-                  style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+              const Text(' *', style: TextStyle(color: AdC.teal, fontSize: 13)),
           ]),
           const SizedBox(height: 8),
           TextFormField(
@@ -490,35 +487,33 @@ class AdminField extends StatelessWidget {
             keyboardType: keyboardType,
             inputFormatters: inputFormatters,
             onChanged: onChanged,
-            style: const TextStyle(color: Colors.white, fontSize: 14),
+            style: TextStyle(color: AdC.textPri, fontSize: 14),
             decoration: InputDecoration(
               hintText: hint,
-              hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+              hintStyle: TextStyle(color: AdC.textMute, fontSize: 13),
               helperText: apiError != null ? null : helperText,
-              helperStyle: const TextStyle(color: Colors.white38, fontSize: 11),
+              helperStyle: TextStyle(color: AdC.textMute, fontSize: 11),
               errorText: apiError,
               prefixIcon: prefixIcon != null
-                  ? Icon(prefixIcon, size: 16, color: Colors.white38)
+                  ? Icon(prefixIcon, size: 16, color: AdC.textMute)
                   : null,
               filled: true,
-              fillColor: const Color(0xFF0D1117),
+              fillColor: AdC.bg,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Colors.white12),
+                borderSide: BorderSide(color: AdC.overlay(0.12)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
                 borderSide: BorderSide(
                     color: apiError != null
                         ? Colors.redAccent.withValues(alpha: 0.5)
-                        : Colors.white12),
+                        : AdC.overlay(0.12)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
                 borderSide: BorderSide(
-                    color: apiError != null
-                        ? Colors.redAccent
-                        : const Color(0xFF14FFEC)),
+                    color: apiError != null ? Colors.redAccent : AdC.teal),
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),

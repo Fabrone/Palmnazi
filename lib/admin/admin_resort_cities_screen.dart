@@ -8,6 +8,8 @@ import 'package:palmnazi/admin/admin_api_service.dart';
 import 'package:palmnazi/admin/admin_place_map_picker.dart';
 import 'package:palmnazi/models/city_details_model.dart';
 import 'package:palmnazi/models/city_model.dart';
+import 'package:palmnazi/services/admin_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/audit_log_service.dart';
 import 'package:palmnazi/services/city_details_service.dart';
 
@@ -195,29 +197,29 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
     final result = await showDialog<int>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF161B22),
-        title:
-            const Text('Set Sort Order', style: TextStyle(color: Colors.white)),
+        backgroundColor: AdC.surface,
+        title: Text(context.tr('admin_resort_set_sort_order_title'),
+            style: TextStyle(color: AdC.textPri)),
         content: TextField(
           controller: ctrl,
           keyboardType: TextInputType.number,
           autofocus: true,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
-            hintText: 'Lower numbers show first',
-            hintStyle: TextStyle(color: Colors.white24),
+          style: TextStyle(color: AdC.textPri),
+          decoration: InputDecoration(
+            hintText: context.tr('admin_resort_set_sort_order_hint'),
+            hintStyle: TextStyle(color: AdC.textMute),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child:
-                const Text('Cancel', style: TextStyle(color: Colors.white38)),
+            child: Text(context.tr('common_cancel'),
+                style: TextStyle(color: AdC.textMute)),
           ),
           ElevatedButton(
             onPressed: () =>
                 Navigator.pop(ctx, int.tryParse(ctrl.text.trim()) ?? 0),
-            child: const Text('Save'),
+            child: Text(context.tr('common_save')),
           ),
         ],
       ),
@@ -242,11 +244,14 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
   Future<void> _delete(CityModel city) async {
     _screenLog.i('Delete requested for city "${city.name}"');
 
+    final deletedPrefix = context.tr('admin_resort_snack_deleted_prefix');
+    final deleteFailedMsg = context.tr('admin_resort_snack_delete_failed');
+
     final confirmed = await _showConfirmDialog(
-      title: 'Delete "${city.name}"?',
-      body:
-          'This will permanently remove the city and all its places. This action cannot be undone.',
-      confirmLabel: 'Delete',
+      title:
+          '${context.tr('admin_resort_delete_title_prefix')} "${city.name}"?',
+      body: context.tr('admin_resort_delete_body'),
+      confirmLabel: context.tr('common_delete'),
       isDestructive: true,
     );
 
@@ -262,19 +267,23 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
           module: 'City',
           targetId: city.id,
           targetLabel: city.name);
-      _snack('Deleted "${city.name}"', isError: false);
+      _snack('$deletedPrefix "${city.name}"', isError: false);
       _fetch();
     } on AdminApiException catch (e) {
       _screenLog.e('deleteCity failed', error: e);
       _snack(e.message, isError: true);
     } catch (e) {
       _screenLog.e('Unexpected delete error', error: e);
-      _snack('Failed to delete city', isError: true);
+      _snack(deleteFailedMsg, isError: true);
     }
   }
 
   Future<void> _toggleActive(CityModel city) async {
     _screenLog.i('Toggling isActive for "${city.name}" → ${!city.isActive}');
+    final nowPrefix = context.tr('admin_resort_snack_now_prefix');
+    final activeWord = context.tr('admin_resort_filter_active').toLowerCase();
+    final inactiveWord =
+        context.tr('admin_resort_filter_inactive').toLowerCase();
     try {
       final updated = await widget.apiService
           .updateCity(city.id, {'isActive': !city.isActive});
@@ -285,7 +294,7 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
           targetLabel: updated.name,
           details: updated.isActive ? 'Set active' : 'Set inactive');
       _snack(
-        '"${updated.name}" is now ${updated.isActive ? "active" : "inactive"}',
+        '"${updated.name}" $nowPrefix ${updated.isActive ? activeWord : inactiveWord}',
         isError: false,
       );
       _fetch();
@@ -299,6 +308,8 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
     _screenLog.i(city == null
         ? 'Opening ADD city form'
         : 'Opening EDIT form for ${city.name}');
+    final createdSuffix = context.tr('admin_resort_snack_created_suffix');
+    final updatedSuffix = context.tr('admin_resort_snack_updated_suffix');
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -313,7 +324,7 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
                   module: 'City',
                   targetId: created.id,
                   targetLabel: created.name);
-              _snack('Created "${created.name}"!', isError: false);
+              _snack('$createdSuffix "${created.name}"!', isError: false);
             } else {
               final updated =
                   await widget.apiService.updateCity(city.id, payload);
@@ -322,7 +333,7 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
                   module: 'City',
                   targetId: updated.id,
                   targetLabel: updated.name);
-              _snack('Updated "${updated.name}"!', isError: false);
+              _snack('$updatedSuffix "${updated.name}"!', isError: false);
             }
             _fetch();
           } on AdminApiException {
@@ -390,18 +401,18 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Resort Cities',
+        Text(
+          context.tr('admin_resort_title'),
           style: TextStyle(
-              color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+              color: AdC.textPri, fontSize: 22, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 4),
         Text(
           _loading
-              ? 'Loading…'
-              : '${_cities.length} ${_cities.length == 1 ? "city" : "cities"} total'
-                  '${_filterActive != null ? " · filtered" : ""}',
-          style: const TextStyle(color: Colors.white38, fontSize: 12),
+              ? context.tr('admin_resort_loading')
+              : '${_cities.length} ${_cities.length == 1 ? context.tr('admin_resort_city_singular') : context.tr('admin_resort_city_plural')} ${context.tr('admin_resort_total_suffix')}'
+                  '${_filterActive != null ? ' · ${context.tr('admin_resort_filtered_suffix')}' : ''}',
+          style: TextStyle(color: AdC.textMute, fontSize: 12),
         ),
       ],
     );
@@ -411,9 +422,9 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
     return ElevatedButton.icon(
       onPressed: () => _openForm(),
       icon: const Icon(Icons.add_rounded, size: 18),
-      label: const Text('Add Resort City'),
+      label: Text(context.tr('admin_resort_add_city')),
       style: ElevatedButton.styleFrom(
-        backgroundColor: const Color(0xFF14FFEC),
+        backgroundColor: AdC.teal,
         foregroundColor: Colors.black87,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -432,27 +443,27 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
         // Search field — always full width
         TextField(
           onChanged: _applySearch,
-          style: const TextStyle(color: Colors.white, fontSize: 14),
+          style: TextStyle(color: AdC.textPri, fontSize: 14),
           decoration: InputDecoration(
             hintText: isNarrow
-                ? 'Search cities…'
-                : 'Search by name, country, region or slug…',
-            hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
-            prefixIcon: const Icon(Icons.search_rounded,
-                color: Colors.white38, size: 18),
+                ? context.tr('admin_resort_search_hint_narrow')
+                : context.tr('admin_resort_search_hint_wide'),
+            hintStyle: TextStyle(color: AdC.textMute, fontSize: 13),
+            prefixIcon:
+                Icon(Icons.search_rounded, color: AdC.textMute, size: 18),
             filled: true,
-            fillColor: const Color(0xFF111827),
+            fillColor: AdC.surface,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Colors.white12),
+              borderSide: BorderSide(color: AdC.overlay(0.12)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Colors.white12),
+              borderSide: BorderSide(color: AdC.overlay(0.12)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF14FFEC)),
+              borderSide: const BorderSide(color: AdC.teal),
             ),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -466,25 +477,25 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             _FilterChip(
-              label: 'All',
+              label: context.tr('admin_resort_filter_all'),
               selected: _filterActive == null,
               onTap: () => _applyFilter(null),
             ),
             _FilterChip(
-              label: 'Active',
+              label: context.tr('admin_resort_filter_active'),
               selected: _filterActive == true,
               color: Colors.greenAccent,
               onTap: () => _applyFilter(true),
             ),
             _FilterChip(
-              label: 'Inactive',
+              label: context.tr('admin_resort_filter_inactive'),
               selected: _filterActive == false,
               color: Colors.redAccent,
               onTap: () => _applyFilter(false),
             ),
             IconButton(
-              tooltip: 'Refresh',
-              icon: const Icon(Icons.refresh_rounded, color: Colors.white38),
+              tooltip: context.tr('admin_resort_refresh_tooltip'),
+              icon: Icon(Icons.refresh_rounded, color: AdC.textMute),
               onPressed: _loading ? null : _fetch,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
@@ -497,8 +508,7 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(
-          child: CircularProgressIndicator(color: Color(0xFF14FFEC)));
+      return const Center(child: CircularProgressIndicator(color: AdC.teal));
     }
 
     if (_error != null) {
@@ -507,26 +517,24 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
           const Icon(Icons.cloud_off_rounded,
               color: Colors.redAccent, size: 56),
           const SizedBox(height: 16),
-          const Text(
-            'Failed to load cities',
+          Text(
+            context.tr('admin_resort_failed_load'),
             style: TextStyle(
-                color: Colors.white70,
-                fontSize: 18,
-                fontWeight: FontWeight.w600),
+                color: AdC.textSec, fontSize: 18, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Text(
             _error!,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white38, fontSize: 12),
+            style: TextStyle(color: AdC.textMute, fontSize: 12),
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: _fetch,
             icon: const Icon(Icons.refresh_rounded),
-            label: const Text('Retry'),
+            label: Text(context.tr('common_retry')),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF14FFEC),
+              backgroundColor: AdC.teal,
               foregroundColor: Colors.black87,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
@@ -539,27 +547,26 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
     if (_cities.isEmpty) {
       return Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.location_city_rounded,
-              color: Colors.white24, size: 64),
+          Icon(Icons.location_city_rounded, color: AdC.textMute, size: 64),
           const SizedBox(height: 20),
-          const Text('No Resort Cities Yet',
+          Text(context.tr('admin_resort_empty_title'),
               style: TextStyle(
-                  color: Colors.white70,
+                  color: AdC.textSec,
                   fontSize: 20,
                   fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
-          const Text(
-            'Add your first resort city to make it available in the app.',
-            style: TextStyle(color: Colors.white38, fontSize: 13),
+          Text(
+            context.tr('admin_resort_empty_body'),
+            style: TextStyle(color: AdC.textMute, fontSize: 13),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 28),
           ElevatedButton.icon(
             onPressed: () => _openForm(),
             icon: const Icon(Icons.add_location_alt_rounded),
-            label: const Text('Add First City'),
+            label: Text(context.tr('admin_resort_add_first_city')),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF14FFEC),
+              backgroundColor: AdC.teal,
               foregroundColor: Colors.black87,
               padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
               shape: RoundedRectangleBorder(
@@ -573,8 +580,8 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
     if (_filtered.isEmpty && _search.isNotEmpty) {
       return Center(
         child: Text(
-          'No cities match "$_search"',
-          style: const TextStyle(color: Colors.white38, fontSize: 14),
+          '${context.tr('admin_resort_no_match_prefix')} "$_search"',
+          style: TextStyle(color: AdC.textMute, fontSize: 14),
         ),
       );
     }
@@ -583,7 +590,7 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
       opacity: _fadeAnim,
       child: RefreshIndicator(
         onRefresh: _fetch,
-        color: const Color(0xFF14FFEC),
+        color: AdC.teal,
         child: LayoutBuilder(builder: (_, constraints) {
           final w = constraints.maxWidth;
           // Responsive column count driven by actual available width
@@ -670,7 +677,7 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
         const SizedBox(width: 10),
         Expanded(child: Text(msg)),
       ]),
-      backgroundColor: isError ? Colors.red.shade700 : const Color(0xFF0D7377),
+      backgroundColor: isError ? Colors.red.shade700 : AdC.tealDark,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ));
@@ -685,7 +692,7 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
     return await showDialog<bool>(
           context: context,
           builder: (_) => AlertDialog(
-            backgroundColor: const Color(0xFF111827),
+            backgroundColor: AdC.surface,
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: Row(children: [
@@ -693,30 +700,29 @@ class _AdminResortCitiesScreenState extends State<AdminResortCitiesScreen>
                 isDestructive
                     ? Icons.warning_amber_rounded
                     : Icons.help_outline_rounded,
-                color: isDestructive ? Colors.redAccent : Colors.white54,
+                color: isDestructive ? Colors.redAccent : AdC.textMute,
                 size: 22,
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(title,
-                    style: const TextStyle(color: Colors.white, fontSize: 16)),
+                    style: TextStyle(color: AdC.textPri, fontSize: 16)),
               ),
             ]),
             content: Text(body,
-                style: const TextStyle(
-                    color: Colors.white54, fontSize: 13, height: 1.5)),
+                style:
+                    TextStyle(color: AdC.textMute, fontSize: 13, height: 1.5)),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel',
-                    style: TextStyle(color: Colors.white54)),
+                child: Text(context.tr('common_cancel'),
+                    style: TextStyle(color: AdC.textMute)),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: isDestructive
-                      ? Colors.red.shade700
-                      : const Color(0xFF14FFEC),
+                  backgroundColor:
+                      isDestructive ? Colors.red.shade700 : AdC.teal,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8)),
@@ -780,8 +786,6 @@ class _CityCard extends StatefulWidget {
 class _CityCardState extends State<_CityCard> {
   bool _hovering = false;
 
-  static const _accentColor = Color(0xFF0D7377);
-
   @override
   Widget build(BuildContext context) {
     final c = widget.city;
@@ -791,20 +795,20 @@ class _CityCardState extends State<_CityCard> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         decoration: BoxDecoration(
-          color: const Color(0xFF111827),
+          color: AdC.surface,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: _hovering
-                ? _accentColor.withValues(alpha: 0.6)
+                ? AdC.tealDark.withValues(alpha: 0.6)
                 : (c.isActive
-                    ? _accentColor.withValues(alpha: 0.25)
-                    : Colors.white12),
+                    ? AdC.tealDark.withValues(alpha: 0.25)
+                    : AdC.overlay(0.12)),
             width: _hovering ? 1.5 : 1,
           ),
           boxShadow: _hovering
               ? [
                   BoxShadow(
-                      color: _accentColor.withValues(alpha: 0.2),
+                      color: AdC.tealDark.withValues(alpha: 0.2),
                       blurRadius: 20)
                 ]
               : [],
@@ -834,10 +838,10 @@ class _CityCardState extends State<_CityCard> {
                           width: 44 * scale,
                           height: 44 * scale,
                           decoration: BoxDecoration(
-                            color: _accentColor.withValues(alpha: 0.15),
+                            color: AdC.tealDark.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(10 * scale),
                             border: Border.all(
-                                color: _accentColor.withValues(alpha: 0.3)),
+                                color: AdC.tealDark.withValues(alpha: 0.3)),
                           ),
                           child: c.coverImage.isNotEmpty
                               ? ClipRRect(
@@ -848,13 +852,13 @@ class _CityCardState extends State<_CityCard> {
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, __, ___) => Icon(
                                       Icons.location_city_rounded,
-                                      color: _accentColor,
+                                      color: AdC.tealDark,
                                       size: 22 * scale,
                                     ),
                                   ),
                                 )
                               : Icon(Icons.location_city_rounded,
-                                  color: _accentColor, size: 22 * scale),
+                                  color: AdC.tealDark, size: 22 * scale),
                         ),
                         SizedBox(width: 10 * scale),
                         // Name + country/region — Expanded prevents overflow
@@ -867,7 +871,7 @@ class _CityCardState extends State<_CityCard> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                    color: Colors.white,
+                                    color: AdC.textPri,
                                     fontWeight: FontWeight.bold,
                                     fontSize:
                                         (15 * scale).clamp(11, 17).toDouble()),
@@ -875,7 +879,7 @@ class _CityCardState extends State<_CityCard> {
                               const SizedBox(height: 2),
                               Row(children: [
                                 Icon(Icons.public_rounded,
-                                    size: 10 * scale, color: Colors.white38),
+                                    size: 10 * scale, color: AdC.textMute),
                                 SizedBox(width: 3 * scale),
                                 Flexible(
                                   child: Text(
@@ -883,7 +887,7 @@ class _CityCardState extends State<_CityCard> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                        color: Colors.white38,
+                                        color: AdC.textMute,
                                         fontSize: (10 * scale)
                                             .clamp(9, 12)
                                             .toDouble()),
@@ -907,11 +911,11 @@ class _CityCardState extends State<_CityCard> {
                           width: 30,
                           height: 30,
                           child: PopupMenuButton<String>(
-                            icon: const Icon(Icons.more_vert,
-                                color: Colors.white38, size: 16),
+                            icon: Icon(Icons.more_vert,
+                                color: AdC.textMute, size: 16),
                             iconSize: 16,
                             padding: EdgeInsets.zero,
-                            color: const Color(0xFF1F2937),
+                            color: AdC.surface,
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10)),
                             onSelected: (v) {
@@ -926,25 +930,35 @@ class _CityCardState extends State<_CityCard> {
                               if (v == 'delete') widget.onDelete();
                             },
                             itemBuilder: (_) => [
-                              const PopupMenuItem(
+                              PopupMenuItem(
                                   value: 'places',
                                   child: _PopItem(
-                                      Icons.place_rounded, 'View Places')),
-                              const PopupMenuItem(
+                                      Icons.place_rounded,
+                                      context
+                                          .tr('admin_resort_pop_view_places'))),
+                              PopupMenuItem(
                                   value: 'categories',
-                                  child: _PopItem(Icons.category_rounded,
-                                      'View by Category')),
-                              const PopupMenuItem(
+                                  child: _PopItem(
+                                      Icons.category_rounded,
+                                      context.tr(
+                                          'admin_resort_pop_view_by_category'))),
+                              PopupMenuItem(
                                   value: 'edit',
                                   child: _PopItem(
-                                      Icons.edit_rounded, 'Edit City')),
+                                      Icons.edit_rounded,
+                                      context
+                                          .tr('admin_resort_pop_edit_city'))),
                               PopupMenuItem(
                                   value: 'toggle',
                                   child: _PopItem(
                                     c.isActive
                                         ? Icons.visibility_off_rounded
                                         : Icons.visibility_rounded,
-                                    c.isActive ? 'Set Inactive' : 'Set Active',
+                                    c.isActive
+                                        ? context
+                                            .tr('admin_resort_pop_set_inactive')
+                                        : context
+                                            .tr('admin_resort_pop_set_active'),
                                   )),
                               PopupMenuItem(
                                   value: 'feature',
@@ -953,17 +967,21 @@ class _CityCardState extends State<_CityCard> {
                                         ? Icons.star_rounded
                                         : Icons.star_outline_rounded,
                                     widget.featured
-                                        ? 'Unfeature City'
-                                        : 'Feature City',
+                                        ? context.tr(
+                                            'admin_resort_pop_unfeature_city')
+                                        : context.tr(
+                                            'admin_resort_pop_feature_city'),
                                   )),
-                              const PopupMenuItem(
+                              PopupMenuItem(
                                   value: 'sortOrder',
-                                  child: _PopItem(Icons.swap_vert_rounded,
-                                      'Set Sort Order')),
-                              const PopupMenuItem(
-                                  value: 'delete',
                                   child: _PopItem(
-                                      Icons.delete_rounded, 'Delete',
+                                      Icons.swap_vert_rounded,
+                                      context.tr(
+                                          'admin_resort_pop_set_sort_order'))),
+                              PopupMenuItem(
+                                  value: 'delete',
+                                  child: _PopItem(Icons.delete_rounded,
+                                      context.tr('common_delete'),
                                       color: Colors.red)),
                             ],
                           ),
@@ -979,7 +997,7 @@ class _CityCardState extends State<_CityCard> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          color: Colors.white54,
+                          color: AdC.textMute,
                           fontSize: (11 * scale).clamp(10, 13).toDouble(),
                           height: 1.4),
                     ),
@@ -1015,13 +1033,13 @@ class _CityCardState extends State<_CityCard> {
                         _StatPill(
                           icon: Icons.place_rounded,
                           value: '${c.totalPlaces}',
-                          label: 'Places',
+                          label: context.tr('admin_resort_stat_places'),
                           scale: scale,
                         ),
                         _StatPill(
                           icon: Icons.event_rounded,
                           value: '${c.totalEvents}',
-                          label: 'Events',
+                          label: context.tr('admin_resort_stat_events'),
                           scale: scale,
                         ),
                         if (c.categoryCounts != null &&
@@ -1029,7 +1047,7 @@ class _CityCardState extends State<_CityCard> {
                           _StatPill(
                             icon: Icons.layers_rounded,
                             value: '${c.categoryCounts!.length}',
-                            label: 'Cats',
+                            label: context.tr('admin_resort_stat_cats'),
                             scale: scale,
                           ),
                       ],
@@ -1047,12 +1065,12 @@ class _CityCardState extends State<_CityCard> {
                         icon: Icon(Icons.place_rounded,
                             size: (13 * scale).clamp(11, 15).toDouble()),
                         label: Text(
-                          'View Places',
+                          context.tr('admin_resort_pop_view_places'),
                           style: TextStyle(
                               fontSize: (12 * scale).clamp(10, 13).toDouble()),
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _accentColor.withValues(alpha: 0.85),
+                          backgroundColor: AdC.tealDark.withValues(alpha: 0.85),
                           foregroundColor: Colors.white,
                           padding: EdgeInsets.symmetric(
                               vertical: (8 * scale).clamp(6, 10).toDouble()),
@@ -1199,8 +1217,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
           'Ensure Firebase.initializeApp() completes before opening this dialog.');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text(
-              'Firebase Storage is unavailable. Check Firebase initialisation.'),
+          content: Text(context.tr('admin_resort_error_storage_unavailable')),
           backgroundColor: Colors.red.shade700,
           behavior: SnackBarBehavior.floating,
         ));
@@ -1285,7 +1302,8 @@ class _CityFormDialogState extends State<_CityFormDialog> {
           _uploadProgress = 0.0;
         });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Image upload failed: $e'),
+          content: Text(
+              '${context.tr('admin_resort_error_image_upload_prefix')} $e'),
           backgroundColor: Colors.red.shade700,
           behavior: SnackBarBehavior.floating,
         ));
@@ -1323,9 +1341,10 @@ class _CityFormDialogState extends State<_CityFormDialog> {
     final lat = double.tryParse(_latitude.text.trim());
     final lng = double.tryParse(_longitude.text.trim());
     if (lat == null || lng == null) {
+      final validNumberMsg = context.tr('admin_resort_error_valid_number');
       setState(() {
-        if (lat == null) _fieldErrors['latitude'] = 'Must be a valid number';
-        if (lng == null) _fieldErrors['longitude'] = 'Must be a valid number';
+        if (lat == null) _fieldErrors['latitude'] = validNumberMsg;
+        if (lng == null) _fieldErrors['longitude'] = validNumberMsg;
       });
       return;
     }
@@ -1392,7 +1411,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
       if (mounted) {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('An unexpected error occurred.'),
+          content: Text(context.tr('admin_resort_error_unexpected')),
           backgroundColor: Colors.red.shade700,
           behavior: SnackBarBehavior.floating,
         ));
@@ -1410,7 +1429,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
     final dialogMaxW = (mq.size.width * 0.92).clamp(280.0, 620.0);
 
     return Dialog(
-      backgroundColor: const Color(0xFF111827),
+      backgroundColor: AdC.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -1427,14 +1446,14 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0D7377).withValues(alpha: 0.15),
+                    color: AdC.tealDark.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
                     isEdit
                         ? Icons.edit_location_alt_rounded
                         : Icons.add_location_alt_rounded,
-                    color: const Color(0xFF0D7377),
+                    color: AdC.tealDark,
                     size: 22,
                   ),
                 ),
@@ -1444,29 +1463,30 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        isEdit ? 'Edit Resort City' : 'Add Resort City',
-                        style: const TextStyle(
-                            color: Colors.white,
+                        isEdit
+                            ? context.tr('admin_resort_edit_city_title')
+                            : context.tr('admin_resort_add_city_title'),
+                        style: TextStyle(
+                            color: AdC.textPri,
                             fontSize: 18,
                             fontWeight: FontWeight.bold),
                       ),
                       if (isEdit)
                         Text(
-                          'ID: ${widget.existing!.id}',
-                          style: const TextStyle(
-                              color: Colors.white38, fontSize: 11),
+                          '${context.tr('admin_resort_id_prefix')} ${widget.existing!.id}',
+                          style: TextStyle(color: AdC.textMute, fontSize: 11),
                         ),
                     ],
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white38),
+                  icon: Icon(Icons.close, color: AdC.textMute),
                   onPressed: _saving ? null : () => Navigator.pop(context),
                 ),
               ]),
 
               const SizedBox(height: 16),
-              const Divider(color: Colors.white12),
+              Divider(color: AdC.overlay(0.12)),
               const SizedBox(height: 12),
 
               // ── Form body (scrollable) ─────────────────────────────────
@@ -1477,16 +1497,18 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _sectionHeader('Basic Information'),
+                        _sectionHeader(
+                            context.tr('admin_resort_section_basic_info')),
 
                         _FormField(
-                          label: 'City Name',
-                          hint: 'e.g. Nairobi',
+                          label: context.tr('admin_resort_field_city_name'),
+                          hint: context.tr('admin_resort_field_city_name_hint'),
                           controller: _name,
                           required: true,
                           apiError: _fieldErrors['name'],
                           validator: (v) => (v == null || v.trim().isEmpty)
-                              ? 'City name is required'
+                              ? context
+                                  .tr('admin_resort_error_city_name_required')
                               : null,
                         ),
 
@@ -1495,26 +1517,28 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                           if (c.maxWidth < 340) {
                             return Column(children: [
                               _FormField(
-                                label: 'Country',
-                                hint: 'e.g. Kenya',
+                                label: context.tr('admin_resort_field_country'),
+                                hint: context
+                                    .tr('admin_resort_field_country_hint'),
                                 controller: _country,
                                 required: true,
                                 apiError: _fieldErrors['country'],
-                                validator: (v) =>
-                                    (v == null || v.trim().isEmpty)
-                                        ? 'Required'
-                                        : null,
+                                validator: (v) => (v == null ||
+                                        v.trim().isEmpty)
+                                    ? context.tr('admin_resort_error_required')
+                                    : null,
                               ),
                               _FormField(
-                                label: 'Region / County',
-                                hint: 'e.g. Coast',
+                                label: context.tr('admin_resort_field_region'),
+                                hint: context
+                                    .tr('admin_resort_field_region_hint'),
                                 controller: _region,
                                 required: true,
                                 apiError: _fieldErrors['region'],
-                                validator: (v) =>
-                                    (v == null || v.trim().isEmpty)
-                                        ? 'Required'
-                                        : null,
+                                validator: (v) => (v == null ||
+                                        v.trim().isEmpty)
+                                    ? context.tr('admin_resort_error_required')
+                                    : null,
                               ),
                             ]);
                           }
@@ -1523,28 +1547,34 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                             children: [
                               Expanded(
                                 child: _FormField(
-                                  label: 'Country',
-                                  hint: 'e.g. Kenya',
+                                  label:
+                                      context.tr('admin_resort_field_country'),
+                                  hint: context
+                                      .tr('admin_resort_field_country_hint'),
                                   controller: _country,
                                   required: true,
                                   apiError: _fieldErrors['country'],
                                   validator: (v) =>
                                       (v == null || v.trim().isEmpty)
-                                          ? 'Required'
+                                          ? context
+                                              .tr('admin_resort_error_required')
                                           : null,
                                 ),
                               ),
                               const SizedBox(width: 14),
                               Expanded(
                                 child: _FormField(
-                                  label: 'Region / County',
-                                  hint: 'e.g. Coast',
+                                  label:
+                                      context.tr('admin_resort_field_region'),
+                                  hint: context
+                                      .tr('admin_resort_field_region_hint'),
                                   controller: _region,
                                   required: true,
                                   apiError: _fieldErrors['region'],
                                   validator: (v) =>
                                       (v == null || v.trim().isEmpty)
-                                          ? 'Required'
+                                          ? context
+                                              .tr('admin_resort_error_required')
                                           : null,
                                 ),
                               ),
@@ -1553,41 +1583,46 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                         }),
 
                         _FormField(
-                          label: 'Slug',
-                          hint: 'e.g. nairobi  (auto-generated from name)',
+                          label: context.tr('admin_resort_field_slug'),
+                          hint: context.tr('admin_resort_field_slug_hint'),
                           helperText:
-                              'URL-safe identifier — lowercase, hyphens only.',
+                              context.tr('admin_resort_field_slug_helper'),
                           controller: _slug,
                           required: true,
                           apiError: _fieldErrors['slug'],
                           prefixIcon: Icons.tag_rounded,
                           validator: (v) {
                             if (v == null || v.trim().isEmpty) {
-                              return 'Slug is required';
+                              return context
+                                  .tr('admin_resort_error_slug_required');
                             }
                             if (!RegExp(r'^[a-z0-9-]+$').hasMatch(v.trim())) {
-                              return 'Only lowercase letters, digits and hyphens';
+                              return context
+                                  .tr('admin_resort_error_slug_format');
                             }
                             return null;
                           },
                         ),
 
-                        _sectionHeader('Description'),
+                        _sectionHeader(
+                            context.tr('admin_resort_section_description')),
 
                         _FormField(
-                          label: 'Description',
+                          label: context.tr('admin_resort_field_description'),
                           hint:
-                              'A short description of the city shown to users',
+                              context.tr('admin_resort_field_description_hint'),
                           controller: _description,
                           maxLines: 3,
                           required: true,
                           apiError: _fieldErrors['description'],
                           validator: (v) => (v == null || v.trim().isEmpty)
-                              ? 'Description is required'
+                              ? context
+                                  .tr('admin_resort_error_description_required')
                               : null,
                         ),
 
-                        _sectionHeader('Media'),
+                        _sectionHeader(
+                            context.tr('admin_resort_section_media')),
 
                         // ── Cover Image upload section ─────────────────────
                         _CoverImageUploadSection(
@@ -1602,7 +1637,8 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                           urlApiError: _fieldErrors['coverImage'],
                         ),
 
-                        _sectionHeader('Location Coordinates'),
+                        _sectionHeader(
+                            context.tr('admin_resort_section_location')),
 
                         // ── Map picker launch button ───────────────────────
                         SizedBox(
@@ -1610,14 +1646,13 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                           child: OutlinedButton.icon(
                             onPressed: _openMapPicker,
                             icon: const Icon(Icons.map_rounded, size: 16),
-                            label: const Text('Pick on Map',
-                                style: TextStyle(
+                            label: Text(context.tr('admin_resort_pick_on_map'),
+                                style: const TextStyle(
                                     fontWeight: FontWeight.w600, fontSize: 13)),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF14FFEC),
+                              foregroundColor: AdC.teal,
                               side: BorderSide(
-                                  color: const Color(0xFF14FFEC)
-                                      .withValues(alpha: 0.4)),
+                                  color: AdC.teal.withValues(alpha: 0.4)),
                               padding: const EdgeInsets.symmetric(vertical: 12),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(9)),
@@ -1625,16 +1660,15 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                           ),
                         ),
                         const SizedBox(height: 6),
-                        const Row(children: [
+                        Row(children: [
                           Icon(Icons.lightbulb_outline_rounded,
-                              color: Colors.white38, size: 12),
-                          SizedBox(width: 6),
+                              color: AdC.textMute, size: 12),
+                          const SizedBox(width: 6),
                           Expanded(
                             child: Text(
-                              'Search by name, tap the map, or drag the pin — '
-                              'or enter coordinates manually below.',
+                              context.tr('admin_resort_map_hint'),
                               style: TextStyle(
-                                  color: Colors.white38,
+                                  color: AdC.textMute,
                                   fontSize: 11,
                                   height: 1.4),
                             ),
@@ -1647,8 +1681,10 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                           if (c.maxWidth < 340) {
                             return Column(children: [
                               _FormField(
-                                label: 'Latitude',
-                                hint: 'e.g. -1.2921',
+                                label:
+                                    context.tr('admin_resort_field_latitude'),
+                                hint: context
+                                    .tr('admin_resort_field_latitude_hint'),
                                 controller: _latitude,
                                 required: true,
                                 apiError: _fieldErrors['latitude'],
@@ -1663,8 +1699,10 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                                 validator: _latValidator,
                               ),
                               _FormField(
-                                label: 'Longitude',
-                                hint: 'e.g. 36.8219',
+                                label:
+                                    context.tr('admin_resort_field_longitude'),
+                                hint: context
+                                    .tr('admin_resort_field_longitude_hint'),
                                 controller: _longitude,
                                 required: true,
                                 apiError: _fieldErrors['longitude'],
@@ -1685,8 +1723,10 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                             children: [
                               Expanded(
                                 child: _FormField(
-                                  label: 'Latitude',
-                                  hint: 'e.g. -1.2921',
+                                  label:
+                                      context.tr('admin_resort_field_latitude'),
+                                  hint: context
+                                      .tr('admin_resort_field_latitude_hint'),
                                   controller: _latitude,
                                   required: true,
                                   apiError: _fieldErrors['latitude'],
@@ -1704,8 +1744,10 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                               const SizedBox(width: 14),
                               Expanded(
                                 child: _FormField(
-                                  label: 'Longitude',
-                                  hint: 'e.g. 36.8219',
+                                  label: context
+                                      .tr('admin_resort_field_longitude'),
+                                  hint: context
+                                      .tr('admin_resort_field_longitude_hint'),
                                   controller: _longitude,
                                   required: true,
                                   apiError: _fieldErrors['longitude'],
@@ -1724,16 +1766,17 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                           );
                         }),
 
-                        _sectionHeader('Visibility'),
+                        _sectionHeader(
+                            context.tr('admin_resort_section_visibility')),
 
                         Container(
                           margin: const EdgeInsets.only(bottom: 16),
                           padding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 14),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF0D1117),
+                            color: AdC.bg,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.white12),
+                            border: Border.all(color: AdC.overlay(0.12)),
                           ),
                           child: Material(
                             color: Colors.transparent,
@@ -1744,7 +1787,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                                     : Icons.visibility_off_rounded,
                                 color: _isActive
                                     ? Colors.greenAccent
-                                    : Colors.white38,
+                                    : AdC.textMute,
                                 size: 20,
                               ),
                               const SizedBox(width: 14),
@@ -1752,20 +1795,24 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text('Active / Visible',
+                                    Text(
+                                        context
+                                            .tr('admin_resort_active_visible'),
                                         style: TextStyle(
-                                            color: Colors.white70,
+                                            color: AdC.textSec,
                                             fontSize: 13,
                                             fontWeight: FontWeight.w500)),
                                     Text(
                                       _isActive
-                                          ? 'City is published and visible to browsing users.'
-                                          : 'City is hidden from browsing users.',
+                                          ? context
+                                              .tr('admin_resort_visible_desc')
+                                          : context
+                                              .tr('admin_resort_hidden_desc'),
                                       style: TextStyle(
                                           color: _isActive
                                               ? Colors.greenAccent
                                                   .withValues(alpha: 0.8)
-                                              : Colors.white38,
+                                              : AdC.textMute,
                                           fontSize: 11),
                                     ),
                                   ],
@@ -1789,7 +1836,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
               ),
 
               const SizedBox(height: 16),
-              const Divider(color: Colors.white12),
+              Divider(color: AdC.overlay(0.12)),
               const SizedBox(height: 14),
 
               // ── Dialog actions ─────────────────────────────────────────
@@ -1798,13 +1845,13 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                   child: OutlinedButton(
                     onPressed: _saving ? null : () => Navigator.pop(context),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white54,
-                      side: const BorderSide(color: Colors.white24),
+                      foregroundColor: AdC.textMute,
+                      side: BorderSide(color: AdC.overlay(0.24)),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
                     ),
-                    child: const Text('Cancel'),
+                    child: Text(context.tr('common_cancel')),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1813,7 +1860,7 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                   child: ElevatedButton(
                     onPressed: _saving ? null : _save,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0D7377),
+                      backgroundColor: AdC.tealDark,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
@@ -1834,7 +1881,9 @@ class _CityFormDialogState extends State<_CityFormDialog> {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                isEdit ? 'Save Changes' : 'Create City',
+                                isEdit
+                                    ? context.tr('admin_resort_save_changes')
+                                    : context.tr('admin_resort_create_city'),
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold, fontSize: 14),
                               ),
@@ -1851,18 +1900,22 @@ class _CityFormDialogState extends State<_CityFormDialog> {
   }
 
   String? _latValidator(String? v) {
-    if (v == null || v.trim().isEmpty) return 'Required';
+    if (v == null || v.trim().isEmpty) {
+      return context.tr('admin_resort_error_required');
+    }
     final d = double.tryParse(v.trim());
-    if (d == null) return 'Must be a number';
-    if (d < -90 || d > 90) return 'Between -90 and 90';
+    if (d == null) return context.tr('admin_resort_error_must_be_number');
+    if (d < -90 || d > 90) return context.tr('admin_resort_error_lat_range');
     return null;
   }
 
   String? _lngValidator(String? v) {
-    if (v == null || v.trim().isEmpty) return 'Required';
+    if (v == null || v.trim().isEmpty) {
+      return context.tr('admin_resort_error_required');
+    }
     final d = double.tryParse(v.trim());
-    if (d == null) return 'Must be a number';
-    if (d < -180 || d > 180) return 'Between -180 and 180';
+    if (d == null) return context.tr('admin_resort_error_must_be_number');
+    if (d < -180 || d > 180) return context.tr('admin_resort_error_lng_range');
     return null;
   }
 
@@ -1890,17 +1943,18 @@ class _CityFormDialogState extends State<_CityFormDialog> {
   Widget _sectionHeader(String title) => Padding(
         padding: const EdgeInsets.only(top: 6, bottom: 14),
         child: Row(children: [
-          const Expanded(
-              child:
-                  Divider(color: Colors.white12, endIndent: 10, thickness: 1)),
+          Expanded(
+              child: Divider(
+                  color: AdC.overlay(0.12), endIndent: 10, thickness: 1)),
           Text(title,
-              style: const TextStyle(
-                  color: Colors.white38,
+              style: TextStyle(
+                  color: AdC.textMute,
                   fontSize: 11,
                   letterSpacing: 1,
                   fontWeight: FontWeight.w500)),
-          const Expanded(
-              child: Divider(color: Colors.white12, indent: 10, thickness: 1)),
+          Expanded(
+              child:
+                  Divider(color: AdC.overlay(0.12), indent: 10, thickness: 1)),
         ]),
       );
 }
@@ -1947,24 +2001,22 @@ class _CoverImageUploadSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // ── Section label ──────────────────────────────────────────────
-          const Text(
-            'Cover Image',
+          Text(
+            context.tr('admin_resort_cover_image_label'),
             style: TextStyle(
-                color: Colors.white70,
-                fontSize: 13,
-                fontWeight: FontWeight.w500),
+                color: AdC.textSec, fontSize: 13, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 8),
 
           // ── Preview + upload area ──────────────────────────────────────
           Container(
             decoration: BoxDecoration(
-              color: const Color(0xFF0D1117),
+              color: AdC.bg,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: uploading
-                    ? const Color(0xFF14FFEC).withValues(alpha: 0.4)
-                    : Colors.white12,
+                    ? AdC.teal.withValues(alpha: 0.4)
+                    : AdC.overlay(0.12),
               ),
             ),
             clipBehavior: Clip.antiAlias,
@@ -1990,16 +2042,14 @@ class _CoverImageUploadSection extends StatelessWidget {
                           child: LinearProgressIndicator(
                             value: uploadProgress,
                             minHeight: 5,
-                            backgroundColor: Colors.white12,
-                            valueColor:
-                                const AlwaysStoppedAnimation(Color(0xFF14FFEC)),
+                            backgroundColor: AdC.overlay(0.12),
+                            valueColor: const AlwaysStoppedAnimation(AdC.teal),
                           ),
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Uploading… ${(uploadProgress * 100).toStringAsFixed(0)}%',
-                          style: const TextStyle(
-                              color: Colors.white38, fontSize: 11),
+                          '${context.tr('admin_resort_uploading_prefix')} ${(uploadProgress * 100).toStringAsFixed(0)}%',
+                          style: TextStyle(color: AdC.textMute, fontSize: 11),
                         ),
                       ],
                     ),
@@ -2016,25 +2066,23 @@ class _CoverImageUploadSection extends StatelessWidget {
                             ? Icons.change_circle_rounded
                             : Icons.upload_file_rounded,
                         size: 16,
-                        color: onPickTap != null
-                            ? const Color(0xFF14FFEC)
-                            : Colors.white24,
+                        color: onPickTap != null ? AdC.teal : AdC.textMute,
                       ),
                       label: Text(
-                        _hasPreview ? 'Change Image' : 'Select & Upload Image',
+                        _hasPreview
+                            ? context.tr('admin_resort_change_image')
+                            : context.tr('admin_resort_select_upload_image'),
                         style: TextStyle(
                           fontSize: 13,
-                          color: onPickTap != null
-                              ? const Color(0xFF14FFEC)
-                              : Colors.white24,
+                          color: onPickTap != null ? AdC.teal : AdC.textMute,
                         ),
                       ),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 10),
                         side: BorderSide(
                           color: onPickTap != null
-                              ? const Color(0xFF14FFEC).withValues(alpha: 0.6)
-                              : Colors.white12,
+                              ? AdC.teal.withValues(alpha: 0.6)
+                              : AdC.overlay(0.12),
                         ),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8)),
@@ -2052,11 +2100,11 @@ class _CoverImageUploadSection extends StatelessWidget {
 
           // ── URL field (autofilled; still editable as fallback) ─────────
           _FormField(
-            label: 'Cover Image URL',
-            hint: 'Auto-filled after upload — or paste a URL directly',
+            label: context.tr('admin_resort_field_cover_image_url'),
+            hint: context.tr('admin_resort_field_cover_image_url_hint'),
             helperText: uploading
-                ? 'Uploading image to Firebase Storage…'
-                : 'Select an image above to upload, or enter a URL manually.',
+                ? context.tr('admin_resort_cover_image_uploading_helper')
+                : context.tr('admin_resort_cover_image_helper'),
             controller: urlController,
             apiError: urlApiError,
             prefixIcon: Icons.link_rounded,
@@ -2064,7 +2112,7 @@ class _CoverImageUploadSection extends StatelessWidget {
             validator: (v) {
               if (v != null && v.trim().isNotEmpty) {
                 if (!v.trim().startsWith('http')) {
-                  return 'Must be a full URL starting with http';
+                  return context.tr('admin_resort_error_url_format');
                 }
               }
               return null;
@@ -2094,14 +2142,14 @@ class _CoverImageUploadSection extends StatelessWidget {
         loadingBuilder: (_, child, progress) => progress == null
             ? child
             : Container(
-                color: Colors.white.withValues(alpha: 0.04),
+                color: AdC.overlay(0.04),
                 child: Center(
                   child: CircularProgressIndicator(
                     value: progress.expectedTotalBytes != null
                         ? progress.cumulativeBytesLoaded /
                             progress.expectedTotalBytes!
                         : null,
-                    color: const Color(0xFF14FFEC),
+                    color: AdC.teal,
                     strokeWidth: 2,
                   ),
                 ),
@@ -2114,10 +2162,10 @@ class _CoverImageUploadSection extends StatelessWidget {
   }
 
   Widget _brokenPlaceholder() => Container(
-        color: Colors.white.withValues(alpha: 0.04),
-        child: const Center(
+        color: AdC.overlay(0.04),
+        child: Center(
           child:
-              Icon(Icons.broken_image_rounded, color: Colors.white24, size: 40),
+              Icon(Icons.broken_image_rounded, color: AdC.textMute, size: 40),
         ),
       );
 }
@@ -2162,13 +2210,12 @@ class _FormField extends StatelessWidget {
         children: [
           Row(children: [
             Text(label,
-                style: const TextStyle(
-                    color: Colors.white70,
+                style: TextStyle(
+                    color: AdC.textSec,
                     fontSize: 13,
                     fontWeight: FontWeight.w500)),
             if (required)
-              const Text(' *',
-                  style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+              const Text(' *', style: TextStyle(color: AdC.teal, fontSize: 13)),
           ]),
           const SizedBox(height: 8),
           TextFormField(
@@ -2176,35 +2223,33 @@ class _FormField extends StatelessWidget {
             maxLines: maxLines,
             keyboardType: keyboardType,
             inputFormatters: inputFormatters,
-            style: const TextStyle(color: Colors.white, fontSize: 14),
+            style: TextStyle(color: AdC.textPri, fontSize: 14),
             decoration: InputDecoration(
               hintText: hint,
-              hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+              hintStyle: TextStyle(color: AdC.textMute, fontSize: 13),
               helperText: apiError != null ? null : helperText,
-              helperStyle: const TextStyle(color: Colors.white38, fontSize: 11),
+              helperStyle: TextStyle(color: AdC.textMute, fontSize: 11),
               errorText: apiError,
               prefixIcon: prefixIcon != null
-                  ? Icon(prefixIcon, size: 16, color: Colors.white38)
+                  ? Icon(prefixIcon, size: 16, color: AdC.textMute)
                   : null,
               filled: true,
-              fillColor: const Color(0xFF0D1117),
+              fillColor: AdC.bg,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Colors.white12),
+                borderSide: BorderSide(color: AdC.overlay(0.12)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
                 borderSide: BorderSide(
                     color: apiError != null
                         ? Colors.redAccent.withValues(alpha: 0.5)
-                        : Colors.white12),
+                        : AdC.overlay(0.12)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
                 borderSide: BorderSide(
-                    color: apiError != null
-                        ? Colors.redAccent
-                        : const Color(0xFF14FFEC)),
+                    color: apiError != null ? Colors.redAccent : AdC.teal),
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -2258,7 +2303,9 @@ class _ActiveBadge extends StatelessWidget {
           ),
           SizedBox(width: (4 * scale).clamp(3, 6).toDouble()),
           Text(
-            isActive ? 'Active' : 'Inactive',
+            isActive
+                ? context.tr('admin_resort_active_badge')
+                : context.tr('admin_resort_inactive_badge'),
             style: TextStyle(
               fontSize: (9 * scale).clamp(8, 11).toDouble(),
               fontWeight: FontWeight.w600,
@@ -2282,18 +2329,17 @@ class _MetaChip extends StatelessWidget {
             horizontal: (7 * scale).clamp(5, 9).toDouble(),
             vertical: (3 * scale).clamp(2, 5).toDouble()),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
+          color: AdC.overlay(0.05),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.white12),
+          border: Border.all(color: AdC.overlay(0.12)),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(icon,
-              size: (10 * scale).clamp(9, 12).toDouble(),
-              color: Colors.white38),
+              size: (10 * scale).clamp(9, 12).toDouble(), color: AdC.textMute),
           SizedBox(width: (4 * scale).clamp(3, 6).toDouble()),
           Text(label,
               style: TextStyle(
-                  color: Colors.white54,
+                  color: AdC.textMute,
                   fontSize: (10 * scale).clamp(9, 12).toDouble())),
         ]),
       );
@@ -2317,20 +2363,18 @@ class _StatPill extends StatelessWidget {
             horizontal: (8 * scale).clamp(6, 10).toDouble(),
             vertical: (4 * scale).clamp(3, 6).toDouble()),
         decoration: BoxDecoration(
-          color: const Color(0xFF0D7377).withValues(alpha: 0.1),
+          color: AdC.tealDark.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
-          border:
-              Border.all(color: const Color(0xFF0D7377).withValues(alpha: 0.2)),
+          border: Border.all(color: AdC.tealDark.withValues(alpha: 0.2)),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(icon,
-              size: (11 * scale).clamp(9, 13).toDouble(),
-              color: const Color(0xFF14FFEC)),
+              size: (11 * scale).clamp(9, 13).toDouble(), color: AdC.teal),
           SizedBox(width: (4 * scale).clamp(3, 6).toDouble()),
           Text(
             '$value $label',
             style: TextStyle(
-                color: Colors.white60,
+                color: AdC.textMute,
                 fontSize: (10 * scale).clamp(9, 12).toDouble()),
           ),
         ]),
@@ -2350,7 +2394,7 @@ class _FilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = color ?? const Color(0xFF14FFEC);
+    final c = color ?? AdC.teal;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -2360,14 +2404,14 @@ class _FilterChip extends StatelessWidget {
           color: selected ? c.withValues(alpha: 0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: selected ? c.withValues(alpha: 0.5) : Colors.white12,
+            color: selected ? c.withValues(alpha: 0.5) : AdC.overlay(0.12),
           ),
         ),
         child: Text(
           label,
           style: TextStyle(
             fontSize: 12,
-            color: selected ? c : Colors.white38,
+            color: selected ? c : AdC.textMute,
             fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
@@ -2384,9 +2428,9 @@ class _PopItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(children: [
-        Icon(icon, size: 15, color: color ?? Colors.white54),
+        Icon(icon, size: 15, color: color ?? AdC.textMute),
         const SizedBox(width: 10),
         Text(label,
-            style: TextStyle(color: color ?? Colors.white70, fontSize: 13)),
+            style: TextStyle(color: color ?? AdC.textSec, fontSize: 13)),
       ]);
 }

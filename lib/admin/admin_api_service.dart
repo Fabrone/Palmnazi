@@ -63,9 +63,13 @@ abstract class _Ep {
   // Dining
   static String placeMenuSections(String placeId) =>
       '/api/places/$placeId/menu-sections';
-  static String placeMenuItems(String placeId) =>
-      '/api/places/$placeId/menu-items';
-  static String menuItemById(String itemId) => '/api/menu-items/$itemId';
+  static String menuSectionById(String placeId, String sectionId) =>
+      '/api/places/$placeId/menu-sections/$sectionId';
+  static String placeMenuSectionItems(String placeId, String sectionId) =>
+      '/api/places/$placeId/menu-sections/$sectionId/items';
+  static String menuSectionItemById(
+          String placeId, String sectionId, String itemId) =>
+      '/api/places/$placeId/menu-sections/$sectionId/items/$itemId';
 
   // Entertainment
   static String placeShows(String placeId) => '/api/places/$placeId/shows';
@@ -197,6 +201,8 @@ class AdminApiService {
         'artifacts',
         'menuSections',
         'menuItems',
+        'sections',
+        'items',
       ]) {
         if (data is Map && data.containsKey(key)) return data[key] as List;
         if (body.containsKey(key)) return body[key] as List;
@@ -525,10 +531,43 @@ class AdminApiService {
 
   // ── Accommodation ──────────────────────────────────────────────────────────
 
+  // Backend bug workaround: GET /api/places/:id/rooms without a `roomType`
+  // filter 500s server-side (Prisma builds a `roomType: { equals: undefined
+  // }` where-clause regardless of whether the query param was supplied). The
+  // endpoint works fine when `roomType` is explicitly one of the enum
+  // values, so fan out across every RoomType and merge the results instead
+  // of relying on the (currently broken) unfiltered call.
+  static const List<String> _allRoomTypes = [
+    'SINGLE',
+    'DOUBLE',
+    'TWIN',
+    'SUITE',
+    'FAMILY',
+    'PENTHOUSE',
+    'DORMITORY',
+  ];
+
   Future<List<Map<String, dynamic>>> getRooms(String placeId) async {
     final ep = _Ep.placeRooms(placeId);
-    final list = _unwrapList(await ApiClient.authGet(ep), 'GET', ep);
-    return list.cast<Map<String, dynamic>>();
+    final results = await Future.wait(_allRoomTypes.map((roomType) async {
+      try {
+        final response = await ApiClient.authGetWithParams(ep,
+            queryParams: {'roomType': roomType});
+        return _unwrapList(response, 'GET', ep).cast<Map<String, dynamic>>();
+      } catch (e, st) {
+        _adminLog.w('   ↳ GET $ep?roomType=$roomType failed',
+            error: e, stackTrace: st);
+        return <Map<String, dynamic>>[];
+      }
+    }));
+    final merged = <String, Map<String, dynamic>>{};
+    for (final rooms in results) {
+      for (final room in rooms) {
+        final id = room['id']?.toString();
+        if (id != null) merged[id] = room;
+      }
+    }
+    return merged.values.toList();
   }
 
   Future<List<Map<String, dynamic>>> createRooms(
@@ -559,34 +598,80 @@ class AdminApiService {
     return list.cast<Map<String, dynamic>>();
   }
 
-  Future<void> createMenuSections(
+  /// Returns the server-assigned sections (id + name at minimum) so callers
+  /// can merge real ids back onto their locally-tracked section list —
+  /// mirrors how createRooms's response is used to backfill ids.
+  Future<List<Map<String, dynamic>>> createMenuSections(
       String placeId, List<Map<String, dynamic>> sections) async {
     final ep = _Ep.placeMenuSections(placeId);
-    await ApiClient.authPost(ep, body: {'sections': sections});
-  }
-
-  Future<List<Map<String, dynamic>>> getMenuItems(String placeId) async {
-    final ep = _Ep.placeMenuItems(placeId);
-    final list = _unwrapList(await ApiClient.authGet(ep), 'GET', ep);
+    final response = await ApiClient.authPost(ep, body: {'sections': sections});
+    final list = _unwrapList(response, 'POST', ep);
     return list.cast<Map<String, dynamic>>();
   }
 
-  Future<void> createMenuItems(
-      String placeId, List<Map<String, dynamic>> items) async {
-    final ep = _Ep.placeMenuItems(placeId);
-    await ApiClient.authPost(ep, body: {'menuItems': items});
-  }
-
-  Future<Map<String, dynamic>> updateMenuItem(
-      String itemId, Map<String, dynamic> payload) async {
-    final ep = _Ep.menuItemById(itemId);
+  Future<Map<String, dynamic>> updateMenuSection(
+      String placeId, String sectionId, Map<String, dynamic> payload) async {
+    final ep = _Ep.menuSectionById(placeId, sectionId);
     return _unwrapObject(
         await ApiClient.authPatch(ep, body: payload), 'PATCH', ep);
   }
 
-  Future<void> deleteMenuItem(String itemId) async {
-    final ep = _Ep.menuItemById(itemId);
+  Future<void> deleteMenuSection(String placeId, String sectionId) async {
+    final ep = _Ep.menuSectionById(placeId, sectionId);
     _unwrapDelete(await ApiClient.authDelete(ep), 'DELETE', ep);
+  }
+
+  Future<List<Map<String, dynamic>>> getMenuSectionItems(
+      String placeId, String sectionId) async {
+    final ep = _Ep.placeMenuSectionItems(placeId, sectionId);
+    final list = _unwrapList(await ApiClient.authGet(ep), 'GET', ep);
+    return list.cast<Map<String, dynamic>>();
+  }
+
+  Future<List<Map<String, dynamic>>> createMenuSectionItems(String placeId,
+      String sectionId, List<Map<String, dynamic>> items) async {
+    final ep = _Ep.placeMenuSectionItems(placeId, sectionId);
+    final response = await ApiClient.authPost(ep, body: {'items': items});
+    final list = _unwrapList(response, 'POST', ep);
+    return list.cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>> updateMenuSectionItem(String placeId,
+      String sectionId, String itemId, Map<String, dynamic> payload) async {
+    final ep = _Ep.menuSectionItemById(placeId, sectionId, itemId);
+    return _unwrapObject(
+        await ApiClient.authPatch(ep, body: payload), 'PATCH', ep);
+  }
+
+  Future<void> deleteMenuSectionItem(
+      String placeId, String sectionId, String itemId) async {
+    final ep = _Ep.menuSectionItemById(placeId, sectionId, itemId);
+    _unwrapDelete(await ApiClient.authDelete(ep), 'DELETE', ep);
+  }
+
+  // Backend bug workaround: GET /api/places/:id/menu-items (the flat, global
+  // list) 500s server-side — "The column DiningMenuItem.category does not
+  // exist in the current database". Confirmed live before this was written.
+  // Every menu item is section-scoped anyway, so read via sections instead:
+  // list sections, then fan out one items-GET per section and merge. Each
+  // returned item is tagged with its section's name for display grouping.
+  Future<List<Map<String, dynamic>>> getMenuItems(String placeId) async {
+    final sections = await getMenuSections(placeId);
+    final results = await Future.wait(sections.map((section) async {
+      final sectionId = section['id']?.toString();
+      if (sectionId == null) return <Map<String, dynamic>>[];
+      try {
+        final items = await getMenuSectionItems(placeId, sectionId);
+        return items
+            .map((item) => {...item, 'sectionName': section['name']})
+            .toList();
+      } catch (e, st) {
+        _adminLog.w('   ↳ GET items for section $sectionId failed',
+            error: e, stackTrace: st);
+        return <Map<String, dynamic>>[];
+      }
+    }));
+    return results.expand((items) => items).toList();
   }
 
   // ── Entertainment ──────────────────────────────────────────────────────────

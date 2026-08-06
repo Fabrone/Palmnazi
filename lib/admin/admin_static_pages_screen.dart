@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
 import 'package:palmnazi/admin/admin_shared_widgets.dart';
 import 'package:palmnazi/models/static_page_model.dart';
+import 'package:palmnazi/services/admin_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/audit_log_service.dart';
 import 'package:palmnazi/services/static_page_service.dart';
 
@@ -26,16 +28,31 @@ final Logger _log = Logger(
   ),
 );
 
-const _kSurface = Color(0xFF111827);
-const _kTeal = Color(0xFF14FFEC);
-const _kRed = Color(0xFFCF6679);
-
-const Map<String, String> _pageLabels = {
+// English-only seed values for a page's initial title (used only to
+// pre-fill the editable "Page Title" field before an admin has saved
+// anything for that slug) — not a display-only chrome label, so it isn't
+// run through context.tr here.
+const Map<String, String> _pageLabelsEn = {
   'about': 'About Us',
   'privacy-policy': 'Privacy Policy',
   'terms-of-service': 'Terms of Service',
   'cookie-policy': 'Cookie Policy',
 };
+
+String _pageLabel(BuildContext context, String slug) {
+  switch (slug) {
+    case 'about':
+      return context.tr('admin_static_pages_label_about');
+    case 'privacy-policy':
+      return context.tr('admin_static_pages_label_privacy');
+    case 'terms-of-service':
+      return context.tr('admin_static_pages_label_terms');
+    case 'cookie-policy':
+      return context.tr('admin_static_pages_label_cookie');
+    default:
+      return slug;
+  }
+}
 
 class AdminStaticPagesScreen extends StatelessWidget {
   const AdminStaticPagesScreen({super.key});
@@ -67,38 +84,38 @@ class _PageTile extends StatelessWidget {
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: _kSurface,
+            color: AdC.surface,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.white12),
+            border: Border.all(color: AdC.overlay(0.12)),
           ),
           child: Row(children: [
             Container(
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: _kTeal.withValues(alpha: 0.1),
+                color: AdC.teal.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.description_outlined,
-                  color: _kTeal, size: 18),
+                  color: AdC.teal, size: 18),
             ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_pageLabels[slug] ?? slug,
-                      style: const TextStyle(
-                          color: Colors.white,
+                  Text(_pageLabel(context, slug),
+                      style: TextStyle(
+                          color: AdC.textPri,
                           fontSize: 14,
                           fontWeight: FontWeight.w600)),
                   const SizedBox(height: 3),
                   Text(
                     page == null
-                        ? 'Not edited yet — showing built-in default copy'
-                        : 'Last edited by ${page.updatedByEmail ?? "unknown"}'
+                        ? context.tr('admin_static_pages_not_edited_yet')
+                        : '${context.tr('admin_static_pages_last_edited_by_prefix')} ${page.updatedByEmail ?? context.tr('admin_static_pages_unknown_editor')}'
                             '${page.updatedAt != null ? " · ${_fmt(page.updatedAt!)}" : ""}',
-                    style: const TextStyle(color: Colors.white38, fontSize: 11),
+                    style: TextStyle(color: AdC.textMute, fontSize: 11),
                   ),
                 ],
               ),
@@ -106,10 +123,10 @@ class _PageTile extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: () => _openEditor(context, slug, page),
               icon: const Icon(Icons.edit_rounded, size: 14),
-              label: const Text('Edit'),
+              label: Text(context.tr('admin_static_pages_edit_button')),
               style: OutlinedButton.styleFrom(
-                foregroundColor: _kTeal,
-                side: BorderSide(color: _kTeal.withValues(alpha: 0.4)),
+                foregroundColor: AdC.teal,
+                side: BorderSide(color: AdC.teal.withValues(alpha: 0.4)),
               ),
             ),
           ]),
@@ -151,8 +168,8 @@ class _StaticPageEditorScreenState extends State<_StaticPageEditorScreen> {
   void initState() {
     super.initState();
     final p = widget.initial;
-    _titleCtrl =
-        TextEditingController(text: p?.title ?? _pageLabels[widget.slug] ?? '');
+    _titleCtrl = TextEditingController(
+        text: p?.title ?? _pageLabelsEn[widget.slug] ?? '');
     _subtitleCtrl = TextEditingController(text: p?.subtitle ?? '');
     _lastUpdatedCtrl = TextEditingController(text: p?.lastUpdatedLabel ?? '');
     if (p != null && p.sections.isNotEmpty) {
@@ -174,6 +191,7 @@ class _StaticPageEditorScreenState extends State<_StaticPageEditorScreen> {
   }
 
   Future<void> _save() async {
+    final pageLabel = _pageLabel(context, widget.slug);
     setState(() => _saving = true);
     try {
       final page = StaticPageModel(
@@ -193,15 +211,16 @@ class _StaticPageEditorScreenState extends State<_StaticPageEditorScreen> {
           action: 'update',
           module: 'StaticPage',
           targetId: widget.slug,
-          targetLabel: _pageLabels[widget.slug] ?? widget.slug);
+          targetLabel: pageLabel);
       _log.i('✅ [AdminStaticPagesScreen] Saved ${widget.slug}');
       if (mounted) Navigator.pop(context);
     } catch (e) {
       _log.e('❌ [AdminStaticPagesScreen] Save failed', error: e);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Could not save: $e'),
-          backgroundColor: _kRed,
+          content: Text(
+              '${context.tr('admin_static_pages_error_save_failed_prefix')} $e'),
+          backgroundColor: AdC.red,
         ));
       }
     } finally {
@@ -212,12 +231,13 @@ class _StaticPageEditorScreenState extends State<_StaticPageEditorScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
+      backgroundColor: AdC.bg,
       appBar: AppBar(
-        backgroundColor: _kSurface,
-        title: Text('Edit ${_pageLabels[widget.slug] ?? widget.slug}',
-            style: const TextStyle(color: Colors.white, fontSize: 16)),
-        iconTheme: const IconThemeData(color: Colors.white),
+        backgroundColor: AdC.surface,
+        title: Text(
+            '${context.tr('admin_static_pages_edit_title_prefix')} ${_pageLabel(context, widget.slug)}',
+            style: TextStyle(color: AdC.textPri, fontSize: 16)),
+        iconTheme: IconThemeData(color: AdC.textPri),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -226,19 +246,21 @@ class _StaticPageEditorScreenState extends State<_StaticPageEditorScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              AdminField(ctrl: _titleCtrl, label: 'Page Title'),
+              AdminField(
+                  ctrl: _titleCtrl,
+                  label: context.tr('admin_static_pages_field_page_title')),
               AdminField(
                   ctrl: _subtitleCtrl,
-                  label: 'Subtitle / Tagline',
-                  helperText: 'Optional — used on About Us only'),
+                  label: context.tr('admin_static_pages_field_subtitle'),
+                  helperText: context.tr('admin_static_pages_subtitle_helper')),
               AdminField(
                   ctrl: _lastUpdatedCtrl,
-                  label: 'Last Updated Label',
-                  hint: 'e.g. July 2026'),
+                  label: context.tr('admin_static_pages_field_last_updated'),
+                  hint: context.tr('admin_static_pages_hint_last_updated')),
               const SizedBox(height: 12),
-              const Text('Sections',
+              Text(context.tr('admin_static_pages_sections_heading'),
                   style: TextStyle(
-                      color: Colors.white,
+                      color: AdC.textPri,
                       fontSize: 14,
                       fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
@@ -246,20 +268,21 @@ class _StaticPageEditorScreenState extends State<_StaticPageEditorScreen> {
                     margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: _kSurface,
+                      color: AdC.surface,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white12),
+                      border: Border.all(color: AdC.overlay(0.12)),
                     ),
                     child: Column(children: [
                       Row(children: [
                         Expanded(
-                          child: Text('Section ${e.key + 1}',
-                              style: const TextStyle(
-                                  color: Colors.white54, fontSize: 12)),
+                          child: Text(
+                              '${context.tr('admin_static_pages_section_prefix')} ${e.key + 1}',
+                              style:
+                                  TextStyle(color: AdC.textMute, fontSize: 12)),
                         ),
                         IconButton(
                           icon: const Icon(Icons.delete_outline_rounded,
-                              color: _kRed, size: 18),
+                              color: AdC.red, size: 18),
                           onPressed: _sections.length == 1
                               ? null
                               : () => setState(
@@ -268,18 +291,21 @@ class _StaticPageEditorScreenState extends State<_StaticPageEditorScreen> {
                       ]),
                       AdminField(
                           ctrl: e.value.headingCtrl,
-                          label: 'Heading',
-                          helperText: 'Leave blank for a plain paragraph'),
+                          label: context.tr('admin_static_pages_field_heading'),
+                          helperText:
+                              context.tr('admin_static_pages_heading_helper')),
                       AdminField(
-                          ctrl: e.value.bodyCtrl, label: 'Body', maxLines: 5),
+                          ctrl: e.value.bodyCtrl,
+                          label: context.tr('admin_static_pages_field_body'),
+                          maxLines: 5),
                     ]),
                   )),
               TextButton.icon(
                 onPressed: () =>
                     setState(() => _sections.add(_SectionEditRow())),
-                icon: const Icon(Icons.add_rounded, color: _kTeal, size: 18),
-                label:
-                    const Text('Add section', style: TextStyle(color: _kTeal)),
+                icon: const Icon(Icons.add_rounded, color: AdC.teal, size: 18),
+                label: Text(context.tr('admin_static_pages_add_section'),
+                    style: const TextStyle(color: AdC.teal)),
               ),
               const SizedBox(height: 20),
               SizedBox(
@@ -293,9 +319,11 @@ class _StaticPageEditorScreenState extends State<_StaticPageEditorScreen> {
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.black38))
                       : const Icon(Icons.save_rounded, size: 18),
-                  label: Text(_saving ? 'Saving…' : 'Save Page'),
+                  label: Text(_saving
+                      ? context.tr('admin_static_pages_saving')
+                      : context.tr('admin_static_pages_save_page')),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _kTeal,
+                    backgroundColor: AdC.teal,
                     foregroundColor: Colors.black,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:palmnazi/services/app_colors.dart';
 
 /// A robust image widget that handles asset images with proper loading and error states
 class RobustAssetImage extends StatelessWidget {
@@ -97,7 +98,7 @@ class RobustAssetImage extends StatelessWidget {
         child: CircularProgressIndicator(
           strokeWidth: 2,
           valueColor: AlwaysStoppedAnimation<Color>(
-            fallbackColor ?? const Color(0xFF14FFEC),
+            fallbackColor ?? AC.teal,
           ),
         ),
       ),
@@ -113,8 +114,8 @@ class RobustAssetImage extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            fallbackColor ?? const Color(0xFF0D7377),
-            (fallbackColor ?? const Color(0xFF0D7377)).withValues(alpha: 0.7),
+            fallbackColor ?? AC.tealDark,
+            (fallbackColor ?? AC.tealDark).withValues(alpha: 0.7),
           ],
         ),
       ),

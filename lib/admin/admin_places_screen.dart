@@ -7,6 +7,8 @@ import 'package:palmnazi/admin/admin_shared_widgets.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/place_model.dart';
+import 'package:palmnazi/services/admin_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/audit_log_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -99,13 +101,14 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
     'SUSPENDED',
     'ARCHIVED'
   ];
-  static const _statusLabels = [
-    'All',
-    'Active',
-    'Pending',
-    'Suspended',
-    'Archived'
-  ];
+
+  List<String> _statusLabels(BuildContext context) => [
+        context.tr('category_subcat_all'),
+        context.tr('admin_places_status_active'),
+        context.tr('admin_places_status_pending'),
+        context.tr('admin_places_status_suspended'),
+        context.tr('admin_places_status_archived'),
+      ];
 
   @override
   void initState() {
@@ -247,13 +250,20 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
   Future<void> _delete(PlaceModel place) async {
     debugPrint(
         '🗑️ [PlacesScreen] Delete requested — placeId=${place.id}  name="${place.name}"  isActive=${place.isActive}');
+    final titlePrefix =
+        context.tr('admin_categories_delete_confirm_title_prefix');
+    final activeBody = context.tr('admin_places_delete_confirm_active_body');
+    final defaultBody =
+        context.tr('admin_categories_delete_confirm_body_default');
+    final deleteLabel = context.tr('common_delete');
+    final deletedPrefix = context.tr('admin_places_snack_deleted_prefix');
+    final deleteFailedPrefix =
+        context.tr('admin_places_snack_delete_failed_prefix');
     final confirmed = await adminConfirm(
       context,
-      'Delete "${place.name}"?',
-      place.isActive
-          ? 'This place is currently ACTIVE. Deleting it will remove it from the app. This cannot be undone.'
-          : 'This action cannot be undone.',
-      confirmLabel: 'Delete',
+      '$titlePrefix "${place.name}"?',
+      place.isActive ? activeBody : defaultBody,
+      confirmLabel: deleteLabel,
     );
     if (!confirmed) {
       debugPrint('   ↳ Delete cancelled by user for placeId=${place.id}');
@@ -269,7 +279,7 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
           targetLabel: place.name);
       debugPrint(
           '✅ [PlacesScreen] Deleted place "${place.name}" (${place.id})');
-      _snack('Deleted ${place.name}', isError: false);
+      _snack('$deletedPrefix ${place.name}', isError: false);
       _fetchPlaces();
     } on AdminApiException catch (e) {
       debugPrint(
@@ -277,7 +287,7 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
       _snack(e.message, isError: true);
     } catch (e, st) {
       debugPrint('💥 [PlacesScreen] deletePlaceById unexpected error: $e\n$st');
-      _snack('Delete failed: $e', isError: true);
+      _snack('$deleteFailedPrefix $e', isError: true);
     }
   }
 
@@ -285,6 +295,10 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
     final next = !place.isFeatured;
     debugPrint(
         '⭐ [PlacesScreen] Toggle feature — placeId=${place.id}  next=$next');
+    final featuredSuffix = context.tr('admin_places_snack_featured_suffix');
+    final unfeaturedSuffix = context.tr('admin_places_snack_unfeatured_suffix');
+    final updateFailedPrefix =
+        context.tr('admin_places_snack_update_failed_prefix');
     try {
       // PATCH replaces the whole attributes map, so merge rather than
       // overwrite — this list endpoint's attributes may be a lean subset,
@@ -300,7 +314,9 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
           targetLabel: place.name,
           details: next ? 'Marked featured' : 'Unfeatured');
       _snack(
-        next ? '${place.name} is now featured' : '${place.name} unfeatured',
+        next
+            ? '${place.name} $featuredSuffix'
+            : '${place.name} $unfeaturedSuffix',
         isError: false,
       );
       _fetchPlaces();
@@ -311,7 +327,7 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
     } catch (e, st) {
       debugPrint(
           '💥 [PlacesScreen] updatePlaceAttributes unexpected error: $e\n$st');
-      _snack('Could not update: $e', isError: true);
+      _snack('$updateFailedPrefix $e', isError: true);
     }
   }
 
@@ -332,7 +348,7 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
     if (_cities.isEmpty || _categories.isEmpty) {
       debugPrint(
           '   ↳ Cities/categories not loaded yet — running _loadAll first');
-      _snack('Loading data…', isError: false);
+      _snack(context.tr('admin_places_snack_loading_data'), isError: false);
       await _loadAll();
     }
     if (!mounted) return;
@@ -416,19 +432,21 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildTitleBlock(),
+                    _buildTitleBlock(context),
                     const SizedBox(height: 10),
                     SizedBox(
                       width: double.infinity,
                       child: AdminAddButton(
-                          label: 'Add Place', onTap: () => _openWizard()),
+                          label: context.tr('admin_places_add_button'),
+                          onTap: () => _openWizard()),
                     ),
                   ],
                 )
               : Row(children: [
-                  Expanded(child: _buildTitleBlock()),
+                  Expanded(child: _buildTitleBlock(context)),
                   AdminAddButton(
-                      label: 'Add Place', onTap: () => _openWizard()),
+                      label: context.tr('admin_places_add_button'),
+                      onTap: () => _openWizard()),
                 ]),
           const SizedBox(height: 14),
 
@@ -473,18 +491,18 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
           TextField(
             controller: _searchCtrl,
             onChanged: _onSearchChanged,
-            style: const TextStyle(color: Colors.white, fontSize: 14),
+            style: TextStyle(color: AdC.textPri, fontSize: 14),
             decoration: InputDecoration(
               hintText: isNarrow
-                  ? 'Search places…'
-                  : 'Search by name, city, or address…',
-              hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
-              prefixIcon: const Icon(Icons.search_rounded,
-                  color: Colors.white38, size: 18),
+                  ? context.tr('admin_places_search_hint_narrow')
+                  : context.tr('admin_places_search_hint_wide'),
+              hintStyle: TextStyle(color: AdC.textMute, fontSize: 13),
+              prefixIcon:
+                  Icon(Icons.search_rounded, color: AdC.textMute, size: 18),
               suffixIcon: _search.isNotEmpty
                   ? IconButton(
-                      icon: const Icon(Icons.clear_rounded,
-                          color: Colors.white38, size: 16),
+                      icon: Icon(Icons.clear_rounded,
+                          color: AdC.textMute, size: 16),
                       onPressed: () {
                         _searchDebounce?.cancel();
                         _searchCtrl.clear();
@@ -494,13 +512,13 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
                     )
                   : null,
               filled: true,
-              fillColor: const Color(0xFF111827),
+              fillColor: AdC.surface,
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Colors.white12)),
+                  borderSide: BorderSide(color: AdC.overlay(0.12))),
               enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Colors.white12)),
+                  borderSide: BorderSide(color: AdC.overlay(0.12))),
               focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: const BorderSide(color: Color(0xFF9C27B0))),
@@ -517,7 +535,7 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
               itemCount: _statusTabs.length,
               separatorBuilder: (_, __) => const SizedBox(width: 6),
               itemBuilder: (_, i) => _StatusTab(
-                label: _statusLabels[i],
+                label: _statusLabels(context)[i],
                 selected: _statusFilter == _statusTabs[i],
                 onTap: () {
                   setState(() => _statusFilter = _statusTabs[i]);
@@ -529,38 +547,38 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
           const SizedBox(height: 14),
 
           // ── Body ─────────────────────────────────────────────────────
-          Expanded(child: _buildBody()),
+          Expanded(child: _buildBody(context)),
         ],
       ),
     );
   }
 
-  Widget _buildTitleBlock() {
+  Widget _buildTitleBlock(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Places',
+        Text(
+          context.tr('admin_places_page_title'),
           style: TextStyle(
-              color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+              color: AdC.textPri, fontSize: 20, fontWeight: FontWeight.bold),
         ),
         Text(
-          _buildSubtitle(),
-          style: const TextStyle(color: Colors.white38, fontSize: 12),
+          _buildSubtitle(context),
+          style: TextStyle(color: AdC.textMute, fontSize: 12),
         ),
       ],
     );
   }
 
-  String _buildSubtitle() {
+  String _buildSubtitle(BuildContext context) {
     final parts = <String>[];
     if (_cityFilter != null) parts.add(_cityFilter!.name);
     if (_categoryFilter != null) parts.add(_categoryFilter!.name);
-    if (parts.isEmpty) return 'All places across all cities';
-    return 'Filtered by: ${parts.join(' · ')}';
+    if (parts.isEmpty) return context.tr('admin_places_subtitle_all');
+    return '${context.tr('admin_places_subtitle_filtered_prefix')} ${parts.join(' · ')}';
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(BuildContext context) {
     if (_loading) return const AdminLoader();
     if (_error != null) {
       return AdminErrorView(error: _error!, onRetry: _loadAll);
@@ -570,11 +588,15 @@ class _AdminPlacesScreenState extends State<AdminPlacesScreen> {
     if (filtered.isEmpty) {
       return AdminEmptyState(
         icon: Icons.place_rounded,
-        title: _places.isEmpty ? 'No places yet' : 'No matches',
+        title: _places.isEmpty
+            ? context.tr('admin_places_empty_title_none')
+            : context.tr('admin_places_empty_title_no_matches'),
         body: _places.isEmpty
-            ? 'Create your first place using the wizard.\nFill in basic info, location, media, and link it to categories.'
-            : 'Try a different search or filter.',
-        actionLabel: _places.isEmpty ? 'Add First Place' : null,
+            ? context.tr('admin_places_empty_body_none')
+            : context.tr('admin_places_empty_body_no_matches'),
+        actionLabel: _places.isEmpty
+            ? context.tr('admin_places_empty_action_add_first')
+            : null,
         onAction: _places.isEmpty ? () => _openWizard() : null,
       );
     }
@@ -657,14 +679,14 @@ class _ActiveFilterBar extends StatelessWidget {
             _RemovableChip(
               icon: Icons.location_city_rounded,
               label: cityFilter!.name,
-              color: const Color(0xFF0D7377),
+              color: AdC.tealDark,
               onRemove: onClearCity,
             ),
           if (categoryFilter != null)
             _RemovableChip(
               icon: Icons.category_rounded,
               label: categoryFilter!.name,
-              color: const Color(0xFF2196F3),
+              color: AdC.blue,
               onRemove: onClearCategory,
             ),
         ],
@@ -736,7 +758,7 @@ class _FilterRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cityDropdown = _FilterDropdown<CityModel>(
-      hint: 'All cities',
+      hint: context.tr('admin_places_filter_all_cities'),
       icon: Icons.location_city_rounded,
       value: selectedCity,
       items: cities
@@ -749,7 +771,7 @@ class _FilterRow extends StatelessWidget {
     );
 
     final categoryDropdown = _FilterDropdown<CategoryModel>(
-      hint: 'All categories',
+      hint: context.tr('admin_places_filter_all_categories'),
       icon: Icons.category_rounded,
       value: selectedCategory,
       items: categories
@@ -815,30 +837,29 @@ class _FilterDropdown<T> extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFF111827),
+        color: AdC.surface,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
             color: safeValue != null
                 ? const Color(0xFF9C27B0).withValues(alpha: 0.4)
-                : Colors.white12),
+                : AdC.overlay(0.12)),
       ),
       child: DropdownButton<T>(
         value: safeValue,
         isExpanded: true,
-        dropdownColor: const Color(0xFF1F2937),
-        style: const TextStyle(color: Colors.white70, fontSize: 13),
+        dropdownColor: AdC.surface,
+        style: TextStyle(color: AdC.textSec, fontSize: 13),
         underline: const SizedBox.shrink(),
         hint: Row(children: [
-          Icon(icon, size: 13, color: Colors.white38),
+          Icon(icon, size: 13, color: AdC.textMute),
           const SizedBox(width: 6),
-          Text(hint,
-              style: const TextStyle(color: Colors.white24, fontSize: 13)),
+          Text(hint, style: TextStyle(color: AdC.textMute, fontSize: 13)),
         ]),
         onChanged: onChanged,
         items: [
           DropdownMenuItem<T>(
             value: null,
-            child: Text(hint, style: const TextStyle(color: Colors.white54)),
+            child: Text(hint, style: TextStyle(color: AdC.textMute)),
           ),
           ...items,
         ],
@@ -870,13 +891,14 @@ class _StatusTab extends StatelessWidget {
           color: selected ? accent.withValues(alpha: 0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-              color: selected ? accent.withValues(alpha: 0.5) : Colors.white12),
+              color:
+                  selected ? accent.withValues(alpha: 0.5) : AdC.overlay(0.12)),
         ),
         child: Text(
           label,
           style: TextStyle(
             fontSize: 12,
-            color: selected ? accent : Colors.white38,
+            color: selected ? accent : AdC.textMute,
             fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
@@ -931,10 +953,11 @@ class _PlaceCardState extends State<_PlaceCard> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         decoration: BoxDecoration(
-          color: const Color(0xFF111827),
+          color: AdC.surface,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: _hovering ? accent.withValues(alpha: 0.5) : Colors.white12,
+            color:
+                _hovering ? accent.withValues(alpha: 0.5) : AdC.overlay(0.12),
             width: _hovering ? 1.5 : 1,
           ),
           boxShadow: _hovering
@@ -976,8 +999,8 @@ class _PlaceCardState extends State<_PlaceCard> {
                           width: (42 * scale).clamp(32, 48).toDouble(),
                           height: (42 * scale).clamp(32, 48).toDouble(),
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.05),
-                            border: Border.all(color: Colors.white12),
+                            color: AdC.overlay(0.05),
+                            border: Border.all(color: AdC.overlay(0.12)),
                           ),
                           child: _safeImageUrl(p.coverImage) != null
                               ? Image.network(
@@ -985,13 +1008,13 @@ class _PlaceCardState extends State<_PlaceCard> {
                                   fit: BoxFit.cover,
                                   errorBuilder: (_, __, ___) => Icon(
                                     Icons.broken_image_rounded,
-                                    color: Colors.white24,
+                                    color: AdC.textMute,
                                     size: (20 * scale).clamp(16, 22).toDouble(),
                                   ),
                                 )
                               : Icon(
                                   Icons.image_rounded,
-                                  color: Colors.white24,
+                                  color: AdC.textMute,
                                   size: (20 * scale).clamp(16, 22).toDouble(),
                                 ),
                         ),
@@ -1008,7 +1031,7 @@ class _PlaceCardState extends State<_PlaceCard> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                  color: Colors.white,
+                                  color: AdC.textPri,
                                   fontWeight: FontWeight.w600,
                                   fontSize:
                                       (13 * scale).clamp(11, 15).toDouble()),
@@ -1019,7 +1042,7 @@ class _PlaceCardState extends State<_PlaceCard> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                    color: Colors.white38,
+                                    color: AdC.textMute,
                                     fontSize:
                                         (10 * scale).clamp(9, 12).toDouble()),
                               ),
@@ -1040,11 +1063,11 @@ class _PlaceCardState extends State<_PlaceCard> {
                         width: 28,
                         height: 28,
                         child: PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert_rounded,
-                              color: Colors.white38, size: 15),
+                          icon: Icon(Icons.more_vert_rounded,
+                              color: AdC.textMute, size: 15),
                           iconSize: 15,
                           padding: EdgeInsets.zero,
-                          color: const Color(0xFF1F2937),
+                          color: AdC.surface,
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10)),
                           onSelected: (v) {
@@ -1053,10 +1076,12 @@ class _PlaceCardState extends State<_PlaceCard> {
                             if (v == 'delete') widget.onDelete();
                           },
                           itemBuilder: (_) => [
-                            const PopupMenuItem(
+                            PopupMenuItem(
                                 value: 'edit',
                                 child: AdminPopItem(
-                                    Icons.edit_rounded, 'Edit / Continue')),
+                                    Icons.edit_rounded,
+                                    context.tr(
+                                        'admin_places_menu_edit_continue'))),
                             PopupMenuItem(
                                 value: 'feature',
                                 child: AdminPopItem(
@@ -1064,13 +1089,15 @@ class _PlaceCardState extends State<_PlaceCard> {
                                         ? Icons.star_rounded
                                         : Icons.star_border_rounded,
                                     p.isFeatured
-                                        ? 'Unfeature'
-                                        : 'Feature on homepage/category',
+                                        ? context
+                                            .tr('admin_places_menu_unfeature')
+                                        : context
+                                            .tr('admin_places_menu_feature'),
                                     color: const Color(0xFFFFC107))),
-                            const PopupMenuItem(
+                            PopupMenuItem(
                                 value: 'delete',
-                                child: AdminPopItem(
-                                    Icons.delete_rounded, 'Delete',
+                                child: AdminPopItem(Icons.delete_rounded,
+                                    context.tr('common_delete'),
                                     color: Colors.redAccent)),
                           ],
                         ),
@@ -1088,7 +1115,7 @@ class _PlaceCardState extends State<_PlaceCard> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          color: Colors.white38,
+                          color: AdC.textMute,
                           fontSize: (10 * scale).clamp(9, 12).toDouble(),
                           height: 1.4),
                     ),
@@ -1116,7 +1143,7 @@ class _PlaceCardState extends State<_PlaceCard> {
                                       ? '${link.parentName} › ${link.categoryName}'
                                       : link.categoryName,
                                   style: TextStyle(
-                                      color: Colors.white38,
+                                      color: AdC.textMute,
                                       fontSize:
                                           (9 * scale).clamp(8, 10).toDouble()),
                                 ),
@@ -1138,9 +1165,9 @@ class _PlaceCardState extends State<_PlaceCard> {
                           children: [
                             Row(children: [
                               Text(
-                                '${p.completionPercent}% complete',
+                                '${p.completionPercent}${context.tr('admin_places_completion_suffix')}',
                                 style: TextStyle(
-                                    color: Colors.white38,
+                                    color: AdC.textMute,
                                     fontSize:
                                         (9 * scale).clamp(8, 11).toDouble()),
                               ),
@@ -1154,8 +1181,9 @@ class _PlaceCardState extends State<_PlaceCard> {
                                         .withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(3),
                                   ),
-                                  child: const Text('DRAFT',
-                                      style: TextStyle(
+                                  child: Text(
+                                      context.tr('admin_places_draft_badge'),
+                                      style: const TextStyle(
                                           color: Colors.blueAccent,
                                           fontSize: 9,
                                           fontWeight: FontWeight.bold)),
@@ -1167,7 +1195,7 @@ class _PlaceCardState extends State<_PlaceCard> {
                               borderRadius: BorderRadius.circular(3),
                               child: LinearProgressIndicator(
                                 value: p.completionPercent / 100,
-                                backgroundColor: Colors.white12,
+                                backgroundColor: AdC.overlay(0.12),
                                 color: p.isActive
                                     ? Colors.greenAccent
                                     : p.isDraft
@@ -1204,7 +1232,9 @@ class _PlaceCardState extends State<_PlaceCard> {
                             ),
                             SizedBox(width: (3 * scale).clamp(2, 5).toDouble()),
                             Text(
-                              p.isDraft ? 'Continue' : 'Edit',
+                              p.isDraft
+                                  ? context.tr('admin_places_continue_button')
+                                  : context.tr('admin_places_edit_button'),
                               style: TextStyle(
                                   color: accent,
                                   fontSize:

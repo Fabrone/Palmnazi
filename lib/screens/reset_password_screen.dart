@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/services/app_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LOGGER
@@ -310,7 +312,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
             ),
           ],
         ),
-        backgroundColor: const Color(0xFFB00020),
+        backgroundColor: AC.errorRed,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(16),
@@ -339,14 +341,14 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
         children: [
           // ── Background ─────────────────────────────────────────────────
           Container(
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Color(0xFF0A1128),
-                  Color(0xFF1E3A5F),
-                  Color(0xFF0D7377),
+                  AC.navyDeep,
+                  AC.surface,
+                  AC.tealDark,
                 ],
               ),
             ),
@@ -362,18 +364,18 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
           if (_isLoading)
             Container(
               color: Colors.black.withValues(alpha: 0.5),
-              child: const Center(
+              child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircularProgressIndicator(
-                      color: Color(0xFF14FFEC),
+                    const CircularProgressIndicator(
+                      color: AC.teal,
                       strokeWidth: 3,
                     ),
-                    SizedBox(height: 20),
+                    const SizedBox(height: 20),
                     Text(
-                      'Resetting your password…',
-                      style: TextStyle(
+                      context.tr('reset_password_loading_message'),
+                      style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 14,
                         letterSpacing: 0.5,
@@ -434,14 +436,13 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
               icon: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
+                  color: AC.overlay(0.1),
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.2),
+                    color: AC.overlay(0.2),
                   ),
                 ),
-                child:
-                    const Icon(Icons.arrow_back, color: Colors.white, size: 18),
+                child: Icon(Icons.arrow_back, color: AC.textPri, size: 18),
               ),
             ),
         ],
@@ -456,9 +457,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
       key: const ValueKey('form'),
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.07),
+        color: AC.overlay(0.07),
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+        border: Border.all(color: AC.overlay(0.15)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.35),
@@ -480,26 +481,26 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
               child: Column(
                 children: [
                   ShaderMask(
-                    shaderCallback: (bounds) => const LinearGradient(
-                      colors: [Color(0xFF14FFEC), Colors.white],
+                    shaderCallback: (bounds) => LinearGradient(
+                      colors: [AC.teal, AC.textPri],
                     ).createShader(bounds),
-                    child: const Text(
-                      'Create New Password',
+                    child: Text(
+                      context.tr('reset_password_title'),
                       style: TextStyle(
                         fontSize: 26,
                         fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: AC.textPri,
                         letterSpacing: 0.5,
                       ),
                     ),
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'Enter the reset code from your email\nand choose a strong new password.',
+                    context.tr('reset_password_subtitle'),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.white.withValues(alpha: 0.65),
+                      color: AC.textSec,
                       height: 1.5,
                     ),
                   ),
@@ -509,25 +510,26 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
             const SizedBox(height: 36),
 
             // ── Reset token field ───────────────────────────────────────────
-            _buildSectionLabel('Reset Code', Icons.vpn_key_outlined),
+            _buildSectionLabel(context.tr('reset_password_label_reset_code'),
+                Icons.vpn_key_outlined),
             const SizedBox(height: 10),
             TextFormField(
               controller: _tokenController,
               enabled: !_isLoading,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: AC.textPri,
                 fontFamily: 'monospace',
                 letterSpacing: 1.2,
                 fontSize: 13,
               ),
               decoration: _fieldDecoration(
-                label: 'Paste your reset code here',
+                label: context.tr('reset_password_hint_reset_code'),
                 icon: Icons.vpn_key_outlined,
                 suffixIcon: _tokenController.text.isNotEmpty
                     ? IconButton(
                         icon: Icon(
                           Icons.clear,
-                          color: Colors.white.withValues(alpha: 0.5),
+                          color: AC.overlay(0.5),
                           size: 18,
                         ),
                         onPressed: () {
@@ -538,10 +540,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
               ),
               validator: (v) {
                 if (v == null || v.trim().isEmpty) {
-                  return 'Please enter the reset code from your email';
+                  return context.tr('reset_password_err_code_required');
                 }
                 if (v.trim().length < 8) {
-                  return 'Reset code appears too short — please check your email';
+                  return context.tr('reset_password_err_code_short');
                 }
                 return null;
               },
@@ -553,10 +555,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0xFF14FFEC).withValues(alpha: 0.07),
+                color: AC.teal.withValues(alpha: 0.07),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: const Color(0xFF14FFEC).withValues(alpha: 0.2),
+                  color: AC.teal.withValues(alpha: 0.2),
                 ),
               ),
               child: Row(
@@ -564,17 +566,16 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
                 children: [
                   const Icon(
                     Icons.info_outline,
-                    color: Color(0xFF14FFEC),
+                    color: AC.teal,
                     size: 16,
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Open the reset email we sent you and copy the full '
-                      'reset code, then paste it in the field above.',
+                      context.tr('reset_password_hint_box_text'),
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.white.withValues(alpha: 0.65),
+                        color: AC.textSec,
                         height: 1.45,
                       ),
                     ),
@@ -585,22 +586,23 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
             const SizedBox(height: 28),
 
             // ── New password field ──────────────────────────────────────────
-            _buildSectionLabel('New Password', Icons.lock_outlined),
+            _buildSectionLabel(context.tr('reset_password_label_new_password'),
+                Icons.lock_outlined),
             const SizedBox(height: 10),
             TextFormField(
               controller: _passwordController,
               obscureText: _obscurePassword,
               enabled: !_isLoading,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: AC.textPri),
               decoration: _fieldDecoration(
-                label: 'Enter new password',
+                label: context.tr('reset_password_hint_new_password'),
                 icon: Icons.lock_outlined,
                 suffixIcon: IconButton(
                   icon: Icon(
                     _obscurePassword
                         ? Icons.visibility_outlined
                         : Icons.visibility_off_outlined,
-                    color: Colors.white54,
+                    color: AC.textMute,
                     size: 20,
                   ),
                   onPressed: () =>
@@ -609,10 +611,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
               ),
               validator: (v) {
                 if (v == null || v.isEmpty) {
-                  return 'Please enter a new password';
+                  return context.tr('reset_password_err_password_required');
                 }
                 if (v.length < 8) {
-                  return 'Password must be at least 8 characters';
+                  return context.tr('reset_password_err_password_length');
                 }
                 return null;
               },
@@ -620,22 +622,23 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
             const SizedBox(height: 16),
 
             // ── Confirm password field ──────────────────────────────────────
-            _buildSectionLabel('Confirm Password', Icons.lock_outlined),
+            _buildSectionLabel(
+                context.tr('auth_field_confirm_password'), Icons.lock_outlined),
             const SizedBox(height: 10),
             TextFormField(
               controller: _confirmPasswordController,
               obscureText: _obscureConfirmPassword,
               enabled: !_isLoading,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: AC.textPri),
               decoration: _fieldDecoration(
-                label: 'Re-enter new password',
+                label: context.tr('reset_password_hint_confirm_password'),
                 icon: Icons.lock_outlined,
                 suffixIcon: IconButton(
                   icon: Icon(
                     _obscureConfirmPassword
                         ? Icons.visibility_outlined
                         : Icons.visibility_off_outlined,
-                    color: Colors.white54,
+                    color: AC.textMute,
                     size: 20,
                   ),
                   onPressed: () => setState(
@@ -645,10 +648,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
               ),
               validator: (v) {
                 if (v == null || v.isEmpty) {
-                  return 'Please confirm your password';
+                  return context.tr('auth_err_confirm_password_required');
                 }
                 if (v != _passwordController.text) {
-                  return 'Passwords do not match';
+                  return context.tr('auth_err_passwords_mismatch');
                 }
                 return null;
               },
@@ -666,10 +669,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
               child: ElevatedButton(
                 onPressed: _isLoading ? null : _handleResetPassword,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF14FFEC),
-                  foregroundColor: const Color(0xFF0A1128),
-                  disabledBackgroundColor:
-                      const Color(0xFF14FFEC).withValues(alpha: 0.4),
+                  backgroundColor: AC.teal,
+                  foregroundColor: AC.navyDeep,
+                  disabledBackgroundColor: AC.teal.withValues(alpha: 0.4),
                   padding: const EdgeInsets.symmetric(vertical: 18),
                   elevation: 0,
                   shape: RoundedRectangleBorder(
@@ -677,22 +679,22 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
                   ),
                 ),
                 child: _isLoading
-                    ? const SizedBox(
+                    ? SizedBox(
                         height: 22,
                         width: 22,
                         child: CircularProgressIndicator(
                           strokeWidth: 2.5,
-                          color: Color(0xFF0A1128),
+                          color: AC.navyDeep,
                         ),
                       )
-                    : const Row(
+                    : Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.lock_reset_rounded, size: 20),
-                          SizedBox(width: 10),
+                          const Icon(Icons.lock_reset_rounded, size: 20),
+                          const SizedBox(width: 10),
                           Text(
-                            'Reset Password',
-                            style: TextStyle(
+                            context.tr('reset_password_btn_submit'),
+                            style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                               letterSpacing: 0.5,
@@ -714,13 +716,13 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
                     Icon(
                       Icons.arrow_back_ios_new,
                       size: 13,
-                      color: const Color(0xFF14FFEC).withValues(alpha: 0.8),
+                      color: AC.teal.withValues(alpha: 0.8),
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      'Back to Login',
+                      context.tr('reset_password_back_to_login'),
                       style: TextStyle(
-                        color: const Color(0xFF14FFEC).withValues(alpha: 0.85),
+                        color: AC.teal.withValues(alpha: 0.85),
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),
@@ -746,14 +748,14 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
           key: const ValueKey('success'),
           padding: const EdgeInsets.all(40),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.07),
+            color: AC.overlay(0.07),
             borderRadius: BorderRadius.circular(28),
             border: Border.all(
-              color: const Color(0xFF14FFEC).withValues(alpha: 0.3),
+              color: AC.teal.withValues(alpha: 0.3),
             ),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF14FFEC).withValues(alpha: 0.08),
+                color: AC.teal.withValues(alpha: 0.08),
                 blurRadius: 40,
                 spreadRadius: 4,
               ),
@@ -780,11 +782,11 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
                     gradient: const LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [Color(0xFF14FFEC), Color(0xFF0D7377)],
+                      colors: [AC.teal, AC.tealDark],
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF14FFEC).withValues(alpha: 0.45),
+                        color: AC.teal.withValues(alpha: 0.45),
                         blurRadius: 30,
                         spreadRadius: 4,
                       ),
@@ -801,15 +803,15 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
 
               // Title
               ShaderMask(
-                shaderCallback: (bounds) => const LinearGradient(
-                  colors: [Color(0xFF14FFEC), Colors.white],
+                shaderCallback: (bounds) => LinearGradient(
+                  colors: [AC.teal, AC.textPri],
                 ).createShader(bounds),
-                child: const Text(
-                  'Password Reset!',
+                child: Text(
+                  context.tr('reset_password_success_title'),
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    color: AC.textPri,
                     letterSpacing: 0.5,
                   ),
                 ),
@@ -817,12 +819,11 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
               const SizedBox(height: 14),
 
               Text(
-                'Your password has been updated successfully.\n'
-                'You can now log in with your new password.',
+                context.tr('reset_password_success_body'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 15,
-                  color: Colors.white.withValues(alpha: 0.7),
+                  color: AC.textSec,
                   height: 1.6,
                 ),
               ),
@@ -834,17 +835,17 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
                 child: ElevatedButton.icon(
                   onPressed: _navigateToLogin,
                   icon: const Icon(Icons.login_rounded, size: 20),
-                  label: const Text(
-                    'Back to Login',
-                    style: TextStyle(
+                  label: Text(
+                    context.tr('reset_password_back_to_login'),
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 0.5,
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF14FFEC),
-                    foregroundColor: const Color(0xFF0A1128),
+                    backgroundColor: AC.teal,
+                    foregroundColor: AC.navyDeep,
                     padding: const EdgeInsets.symmetric(vertical: 18),
                     elevation: 0,
                     shape: RoundedRectangleBorder(
@@ -871,11 +872,11 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF14FFEC), Color(0xFF0D7377)],
+          colors: [AC.teal, AC.tealDark],
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF14FFEC).withValues(alpha: 0.4),
+            color: AC.teal.withValues(alpha: 0.4),
             blurRadius: 25,
             spreadRadius: 4,
           ),
@@ -892,14 +893,14 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
   Widget _buildSectionLabel(String label, IconData icon) {
     return Row(
       children: [
-        Icon(icon, size: 15, color: const Color(0xFF14FFEC)),
+        Icon(icon, size: 15, color: AC.teal),
         const SizedBox(width: 7),
         Text(
           label,
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: Colors.white.withValues(alpha: 0.75),
+            color: AC.textSec,
             letterSpacing: 0.5,
           ),
         ),
@@ -914,32 +915,32 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
   }) {
     return InputDecoration(
       labelText: label,
-      labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
-      prefixIcon: Icon(icon, color: const Color(0xFF14FFEC), size: 20),
+      labelStyle: TextStyle(color: AC.overlay(0.6)),
+      prefixIcon: Icon(icon, color: AC.teal, size: 20),
       suffixIcon: suffixIcon,
       filled: true,
-      fillColor: Colors.white.withValues(alpha: 0.07),
+      fillColor: AC.overlay(0.07),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.25)),
+        borderSide: BorderSide(color: AC.overlay(0.25)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.25)),
+        borderSide: BorderSide(color: AC.overlay(0.25)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFF14FFEC), width: 2),
+        borderSide: const BorderSide(color: AC.teal, width: 2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFCF6679), width: 1.5),
+        borderSide: const BorderSide(color: AC.coral, width: 1.5),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFCF6679), width: 2),
+        borderSide: const BorderSide(color: AC.coral, width: 2),
       ),
-      errorStyle: const TextStyle(color: Color(0xFFCF6679)),
+      errorStyle: const TextStyle(color: AC.coral),
     );
   }
 
@@ -964,9 +965,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
                 margin: EdgeInsets.only(right: i < 3 ? 4 : 0),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(2),
-                  color: i < segments
-                      ? color
-                      : Colors.white.withValues(alpha: 0.15),
+                  color: i < segments ? color : AC.overlay(0.15),
                 ),
               ),
             );
@@ -974,7 +973,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
         ),
         const SizedBox(height: 6),
         Text(
-          'Strength: $label',
+          '${context.tr('reset_password_strength_prefix')} $label',
           style: TextStyle(
             fontSize: 11,
             color: color,
@@ -1003,26 +1002,26 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen>
   String _strengthLabel(int strength) {
     switch (strength) {
       case 1:
-        return 'Weak';
+        return context.tr('reset_password_strength_weak');
       case 2:
-        return 'Fair';
+        return context.tr('reset_password_strength_fair');
       case 3:
-        return 'Good';
+        return context.tr('reset_password_strength_good');
       default:
-        return 'Strong';
+        return context.tr('reset_password_strength_strong');
     }
   }
 
   Color _strengthColor(int strength) {
     switch (strength) {
       case 1:
-        return const Color(0xFFCF6679);
+        return AC.coral;
       case 2:
-        return const Color(0xFFFFB300);
+        return AC.warning;
       case 3:
-        return const Color(0xFF14FFEC);
+        return AC.teal;
       default:
-        return const Color(0xFF00E676);
+        return AC.success;
     }
   }
 }
@@ -1035,7 +1034,7 @@ class _DiagonalGridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.03)
+      ..color = AC.overlay(0.03)
       ..strokeWidth = 1
       ..style = PaintingStyle.stroke;
 
@@ -1048,7 +1047,7 @@ class _DiagonalGridPainter extends CustomPainter {
     final dotPaint = Paint()..style = PaintingStyle.fill;
     for (double x = 0; x < size.width; x += spacing) {
       for (double y = 0; y < size.height; y += spacing) {
-        dotPaint.color = const Color(0xFF14FFEC).withValues(alpha: 0.12);
+        dotPaint.color = AC.teal.withValues(alpha: 0.12);
         canvas.drawCircle(Offset(x, y), 1.5, dotPaint);
       }
     }

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:palmnazi/services/app_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 
 class ParallaxHeader extends StatefulWidget {
   final double scrollOffset;
@@ -70,9 +72,9 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      const Color(0xFF1E3A5F).withValues(alpha: 0.6),
-                      const Color(0xFF0D7377).withValues(alpha: 0.8),
-                      const Color(0xFF0A1128).withValues(alpha: 0.9),
+                      AC.surface.withValues(alpha: 0.6),
+                      AC.tealDark.withValues(alpha: 0.8),
+                      AC.navyDeep.withValues(alpha: 0.9),
                     ],
                   ),
                 ),
@@ -117,18 +119,17 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                               height: 140,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                gradient: const LinearGradient(
+                                gradient: LinearGradient(
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
                                   colors: [
-                                    Color(0xFF14FFEC),
-                                    Color(0xFF0D7377),
+                                    AC.teal,
+                                    AC.tealDark,
                                   ],
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: const Color(0xFF14FFEC)
-                                        .withValues(alpha: 0.6),
+                                    color: AC.teal.withValues(alpha: 0.6),
                                     blurRadius: 50,
                                     spreadRadius: 15,
                                   ),
@@ -174,11 +175,16 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                         child: Column(
                           children: [
                             ShaderMask(
+                              // Shimmer peak goes teal -> AC.textPri -> teal
+                              // (not a hardcoded white) so the traveling
+                              // highlight stays visible against a light
+                              // page background instead of flashing
+                              // white-on-white.
                               shaderCallback: (bounds) => LinearGradient(
-                                colors: const [
-                                  Color(0xFF14FFEC),
-                                  Colors.white,
-                                  Color(0xFF14FFEC),
+                                colors: [
+                                  AC.teal,
+                                  AC.textPri,
+                                  AC.teal,
                                 ],
                                 stops: [
                                   (_pulseController.value - 0.3)
@@ -189,7 +195,11 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                                 ],
                               ).createShader(bounds),
                               child: Text(
-                                'PALMNAZI',
+                                context.tr('widget_parallax_header_brand'),
+                                // NOTE: required by ShaderMask's default
+                                // BlendMode.modulate — the shader above
+                                // supplies the real, theme-aware colors;
+                                // changing this would tint them.
                                 style: Theme.of(context)
                                     .textTheme
                                     .displayLarge
@@ -204,14 +214,14 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              'RESORT CITIES',
+                              context.tr('widget_parallax_header_subtitle'),
                               style: Theme.of(context)
                                   .textTheme
                                   .headlineMedium
                                   ?.copyWith(
                                     letterSpacing: 10,
                                     fontWeight: FontWeight.w300,
-                                    color: Colors.white70,
+                                    color: AC.textSec,
                                   ),
                               textAlign: TextAlign.center,
                             ),
@@ -235,12 +245,12 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 48),
                         child: Text(
-                          'Discover Kenya\'s Most Exquisite Resort Destinations',
+                          context.tr('widget_parallax_header_tagline'),
                           style:
                               Theme.of(context).textTheme.bodyLarge?.copyWith(
                                     fontSize: 20,
                                     fontWeight: FontWeight.w400,
-                                    color: const Color(0xFF14FFEC),
+                                    color: AC.teal,
                                     letterSpacing: 0.5,
                                   ),
                           textAlign: TextAlign.center,
@@ -268,8 +278,7 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                           borderRadius: BorderRadius.circular(50),
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFF14FFEC)
-                                  .withValues(alpha: 0.5),
+                              color: AC.teal.withValues(alpha: 0.5),
                               blurRadius: 30,
                               spreadRadius: 5,
                             ),
@@ -278,17 +287,17 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                         child: ElevatedButton.icon(
                           onPressed: widget.onExplore,
                           icon: const Icon(Icons.explore, size: 28),
-                          label: const Text(
-                            'Explore Destinations',
-                            style: TextStyle(
+                          label: Text(
+                            context.tr('widget_parallax_header_cta'),
+                            style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
                               letterSpacing: 1,
                             ),
                           ),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF14FFEC),
-                            foregroundColor: const Color(0xFF1E3A5F),
+                            backgroundColor: AC.teal,
+                            foregroundColor: AC.surface,
                             padding: const EdgeInsets.symmetric(
                               horizontal: 48,
                               vertical: 24,
@@ -316,9 +325,10 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                             child: Column(
                               children: [
                                 Text(
-                                  'Scroll to discover more',
+                                  context
+                                      .tr('widget_parallax_header_scroll_hint'),
                                   style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.7),
+                                    color: AC.textSec,
                                     fontSize: 12,
                                     letterSpacing: 2,
                                   ),
@@ -326,8 +336,7 @@ class _ParallaxHeaderState extends State<ParallaxHeader>
                                 const SizedBox(height: 8),
                                 Icon(
                                   Icons.keyboard_arrow_down,
-                                  color: const Color(0xFF14FFEC)
-                                      .withValues(alpha: 0.8),
+                                  color: AC.teal.withValues(alpha: 0.8),
                                   size: 32,
                                 ),
                               ],
@@ -364,8 +373,7 @@ class CirclesPainter extends CustomPainter {
     // Draw multiple circles with different sizes and positions
     for (int i = 0; i < 5; i++) {
       final radius = (size.width / 4) + (i * 50) + (animationValue * 20);
-      paint.color =
-          const Color(0xFF14FFEC).withValues(alpha: 0.05 - (i * 0.01));
+      paint.color = AC.teal.withValues(alpha: 0.05 - (i * 0.01));
 
       canvas.drawCircle(
         Offset(size.width * 0.3, size.height * 0.4),

@@ -9,6 +9,8 @@ import 'package:palmnazi/admin/booking_stats.dart';
 import 'package:palmnazi/models/booking_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/city_model.dart';
+import 'package:palmnazi/services/admin_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/booking_service.dart';
 import 'package:palmnazi/services/page_view_service.dart';
 
@@ -25,9 +27,6 @@ import 'package:palmnazi/services/page_view_service.dart';
 //   • CSV export of everything on this screen
 // Read-only; nothing here writes anything except the export file.
 // ─────────────────────────────────────────────────────────────────────────────
-
-const _kSurface = Color(0xFF111827);
-const _kTeal = Color(0xFF14FFEC);
 
 class AdminReportsScreen extends StatefulWidget {
   final AdminApiService apiService;
@@ -75,23 +74,53 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
   Future<void> _exportCsv(
       BookingStats stats, List<DailyPageViews> views) async {
+    final section = context.tr('admin_reports_csv_section_bookings');
+    final trafficSection =
+        context.tr('admin_reports_csv_section_visitor_traffic');
+    final citySection =
+        context.tr('admin_reports_csv_section_businesses_per_city');
+    final channelSection =
+        context.tr('admin_reports_csv_section_businesses_per_channel');
     final rows = <List<String>>[
-      ['Section', 'Label', 'Value'],
-      ['Bookings', 'Total', '${stats.total}'],
-      ['Bookings', 'Pending', '${stats.pending}'],
-      ['Bookings', 'Confirmed', '${stats.confirmed}'],
-      ['Bookings', 'Completed', '${stats.completed}'],
-      ['Bookings', 'Cancelled', '${stats.cancelled}'],
-      ['Bookings', 'Estimated Revenue', stats.revenue.toStringAsFixed(2)],
       [
-        'Visitor Traffic',
-        'Total Page Views (30d)',
+        context.tr('admin_reports_csv_header_section'),
+        context.tr('admin_reports_csv_header_label'),
+        context.tr('admin_reports_csv_header_value'),
+      ],
+      [section, context.tr('admin_reports_csv_label_total'), '${stats.total}'],
+      [
+        section,
+        context.tr('admin_reports_csv_label_pending'),
+        '${stats.pending}'
+      ],
+      [
+        section,
+        context.tr('admin_reports_csv_label_confirmed'),
+        '${stats.confirmed}'
+      ],
+      [
+        section,
+        context.tr('admin_reports_csv_label_completed'),
+        '${stats.completed}'
+      ],
+      [
+        section,
+        context.tr('admin_reports_csv_label_cancelled'),
+        '${stats.cancelled}'
+      ],
+      [
+        section,
+        context.tr('admin_reports_csv_label_estimated_revenue'),
+        stats.revenue.toStringAsFixed(2)
+      ],
+      [
+        trafficSection,
+        context.tr('admin_reports_csv_label_total_page_views'),
         '${views.fold<int>(0, (a, b) => a + b.count)}'
       ],
-      for (final c in _cities)
-        ['Businesses per City', c.name, '${c.totalPlaces}'],
+      for (final c in _cities) [citySection, c.name, '${c.totalPlaces}'],
       for (final c in _allCategories)
-        ['Businesses per Channel', c.name, '${c.placeLinksCount}'],
+        [channelSection, c.name, '${c.placeLinksCount}'],
     ];
     final csv = rows
         .map((r) => r.map((c) => '"${c.replaceAll('"', '""')}"').join(','))
@@ -126,81 +155,83 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               children: [
                 Row(children: [
                   Expanded(
-                    child: Text('Reports',
-                        style: const TextStyle(
-                            color: Colors.white,
+                    child: Text(context.tr('admin_reports_page_title'),
+                        style: TextStyle(
+                            color: AdC.textPri,
                             fontSize: 20,
                             fontWeight: FontWeight.bold)),
                   ),
                   OutlinedButton.icon(
                     onPressed: () => _exportCsv(stats, views),
                     icon: const Icon(Icons.download_rounded, size: 14),
-                    label: const Text('Export CSV'),
+                    label: Text(context.tr('admin_reports_export_button')),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: _kTeal,
-                      side: BorderSide(color: _kTeal.withValues(alpha: 0.4)),
+                      foregroundColor: AdC.teal,
+                      side: BorderSide(color: AdC.teal.withValues(alpha: 0.4)),
                     ),
                   ),
                 ]),
                 const SizedBox(height: 24),
 
                 // ── Bookings ──────────────────────────────────────────────
-                const Text('Bookings — System Wide',
+                Text(context.tr('admin_reports_bookings_heading'),
                     style: TextStyle(
-                        color: Colors.white,
+                        color: AdC.textPri,
                         fontSize: 15,
                         fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
-                const Text('Live totals across every place on the platform.',
-                    style: TextStyle(color: Colors.white38, fontSize: 12)),
+                Text(context.tr('admin_reports_bookings_subtitle'),
+                    style: TextStyle(color: AdC.textMute, fontSize: 12)),
                 const SizedBox(height: 16),
                 Wrap(spacing: 12, runSpacing: 12, children: [
                   _StatCard(
-                      label: 'Total Bookings',
+                      label: context.tr('admin_reports_stat_total_bookings'),
                       value: '${stats.total}',
-                      color: Colors.white70),
+                      color: AdC.textSec),
                   _StatCard(
-                      label: 'Pending',
+                      label: context.tr('admin_reports_csv_label_pending'),
                       value: '${stats.pending}',
-                      color: const Color(0xFFFF9800)),
+                      color: AdC.orange),
                   _StatCard(
-                      label: 'Confirmed',
+                      label: context.tr('admin_reports_csv_label_confirmed'),
                       value: '${stats.confirmed}',
-                      color: _kTeal),
+                      color: AdC.teal),
                   _StatCard(
-                      label: 'Completed',
+                      label: context.tr('admin_reports_csv_label_completed'),
                       value: '${stats.completed}',
-                      color: const Color(0xFF00C853)),
+                      color: AdC.green),
                   _StatCard(
-                      label: 'Cancelled',
+                      label: context.tr('admin_reports_csv_label_cancelled'),
                       value: '${stats.cancelled}',
-                      color: const Color(0xFFCF6679)),
+                      color: AdC.red),
                   _StatCard(
-                      label: 'Paid via M-Pesa',
+                      label: context.tr('admin_reports_stat_paid_via_mpesa'),
                       value: '${stats.paidViaMpesa}',
-                      color: const Color(0xFF00C853)),
+                      color: AdC.green),
                   _StatCard(
-                      label: 'Simulated Payments',
+                      label:
+                          context.tr('admin_reports_stat_simulated_payments'),
                       value: '${stats.simulatedPayments}',
-                      color: Colors.white54),
+                      color: AdC.textMute),
                   _StatCard(
-                      label: 'Estimated Revenue',
+                      label: context
+                          .tr('admin_reports_csv_label_estimated_revenue'),
                       value: stats.revenue.toStringAsFixed(0),
                       color: const Color(0xFFFFD600)),
                 ]),
                 const SizedBox(height: 28),
 
-                const Text('Top Places by Bookings',
+                Text(context.tr('admin_reports_top_places_heading'),
                     style: TextStyle(
-                        color: Colors.white,
+                        color: AdC.textPri,
                         fontSize: 16,
                         fontWeight: FontWeight.bold)),
                 const SizedBox(height: 12),
                 if (stats.topPlaces.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Text('No bookings yet.',
-                        style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(context.tr('admin_reports_no_bookings_yet'),
+                        style: TextStyle(color: AdC.textMute, fontSize: 12)),
                   )
                 else
                   ...stats.topPlaces.map((e) => Padding(
@@ -208,33 +239,29 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                         child: _RankRow(
                             label: e.key,
                             value:
-                                '${e.value} booking${e.value == 1 ? '' : 's'}'),
+                                '${e.value} ${e.value == 1 ? context.tr('admin_reports_booking_singular') : context.tr('admin_reports_booking_plural')}'),
                       )),
 
                 const SizedBox(height: 32),
 
                 // ── Visitor traffic ──────────────────────────────────────
-                const Text('Visitor Traffic — Last 30 Days',
+                Text(context.tr('admin_reports_visitor_traffic_heading'),
                     style: TextStyle(
-                        color: Colors.white,
+                        color: AdC.textPri,
                         fontSize: 15,
                         fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
-                const Text(
-                    'Landing page loads, tracked by this app (a separate '
-                    'copy is also sent to Google Analytics — GA4 data '
-                    'itself isn\'t readable back from the app).',
-                    style: TextStyle(color: Colors.white38, fontSize: 11.5)),
+                Text(context.tr('admin_reports_visitor_traffic_subtitle'),
+                    style: TextStyle(color: AdC.textMute, fontSize: 11.5)),
                 const SizedBox(height: 16),
                 SizedBox(
                   height: 180,
                   child: views.length < 2
-                      ? const Center(
+                      ? Center(
                           child: Text(
-                              'Not enough traffic history yet — check back '
-                              'after a few days.',
-                              style: TextStyle(
-                                  color: Colors.white38, fontSize: 12)),
+                              context.tr('admin_reports_traffic_not_enough'),
+                              style:
+                                  TextStyle(color: AdC.textMute, fontSize: 12)),
                         )
                       : _ViewsBarChart(views: views),
                 ),
@@ -242,17 +269,18 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 const SizedBox(height: 32),
 
                 // ── Businesses per city / channel ────────────────────────
-                const Text('Businesses per City',
+                Text(
+                    context.tr('admin_reports_csv_section_businesses_per_city'),
                     style: TextStyle(
-                        color: Colors.white,
+                        color: AdC.textPri,
                         fontSize: 15,
                         fontWeight: FontWeight.bold)),
                 const SizedBox(height: 12),
                 if (_loadingCatalogue)
                   const AdminLoader()
                 else if (_cities.isEmpty)
-                  const Text('No resort cities yet.',
-                      style: TextStyle(color: Colors.white38, fontSize: 12))
+                  Text(context.tr('admin_reports_no_cities_yet'),
+                      style: TextStyle(color: AdC.textMute, fontSize: 12))
                 else
                   ...(_cities.toList()
                         ..sort(
@@ -262,21 +290,23 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                             child: _RankRow(
                                 label: c.name,
                                 value:
-                                    '${c.totalPlaces} place${c.totalPlaces == 1 ? '' : 's'}'),
+                                    '${c.totalPlaces} ${c.totalPlaces == 1 ? context.tr('admin_reports_place_singular') : context.tr('admin_reports_place_plural')}'),
                           )),
 
                 const SizedBox(height: 28),
-                const Text('Businesses per Channel',
+                Text(
+                    context
+                        .tr('admin_reports_csv_section_businesses_per_channel'),
                     style: TextStyle(
-                        color: Colors.white,
+                        color: AdC.textPri,
                         fontSize: 15,
                         fontWeight: FontWeight.bold)),
                 const SizedBox(height: 12),
                 if (_loadingCatalogue)
                   const AdminLoader()
                 else if (_allCategories.isEmpty)
-                  const Text('No categories yet.',
-                      style: TextStyle(color: Colors.white38, fontSize: 12))
+                  Text(context.tr('admin_reports_no_categories_yet'),
+                      style: TextStyle(color: AdC.textMute, fontSize: 12))
                 else
                   ...(_allCategories.toList()
                         ..sort((a, b) =>
@@ -286,7 +316,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                             child: _RankRow(
                                 label: c.name,
                                 value:
-                                    '${c.placeLinksCount} place${c.placeLinksCount == 1 ? '' : 's'}'),
+                                    '${c.placeLinksCount} ${c.placeLinksCount == 1 ? context.tr('admin_reports_place_singular') : context.tr('admin_reports_place_plural')}'),
                           )),
               ],
             );
@@ -311,7 +341,7 @@ class _ViewsBarChart extends StatelessWidget {
           show: true,
           drawVerticalLine: false,
           getDrawingHorizontalLine: (_) =>
-              FlLine(color: Colors.white10, strokeWidth: 1),
+              FlLine(color: AdC.overlay(0.1), strokeWidth: 1),
         ),
         borderData: FlBorderData(show: false),
         titlesData: FlTitlesData(
@@ -324,7 +354,7 @@ class _ViewsBarChart extends StatelessWidget {
               showTitles: true,
               reservedSize: 30,
               getTitlesWidget: (v, meta) => Text('${v.toInt()}',
-                  style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                  style: TextStyle(color: AdC.textMute, fontSize: 10)),
             ),
           ),
           bottomTitles: AxisTitles(
@@ -339,8 +369,7 @@ class _ViewsBarChart extends StatelessWidget {
                 return Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Text('${d.day}/${d.month}',
-                      style:
-                          const TextStyle(color: Colors.white38, fontSize: 10)),
+                      style: TextStyle(color: AdC.textMute, fontSize: 10)),
                 );
               },
             ),
@@ -351,7 +380,7 @@ class _ViewsBarChart extends StatelessWidget {
           (i) => BarChartGroupData(x: i, barRods: [
             BarChartRodData(
               toY: views[i].count.toDouble(),
-              color: _kTeal,
+              color: AdC.teal,
               width: (600 / views.length).clamp(3, 14).toDouble(),
               borderRadius: BorderRadius.circular(3),
             ),
@@ -371,18 +400,18 @@ class _RankRow extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: _kSurface,
+          color: AdC.surface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          border: Border.all(color: AdC.overlay(0.08)),
         ),
         child: Row(children: [
           Expanded(
-            child: Text(label,
-                style: const TextStyle(color: Colors.white, fontSize: 13)),
+            child:
+                Text(label, style: TextStyle(color: AdC.textPri, fontSize: 13)),
           ),
           Text(value,
               style: const TextStyle(
-                  color: _kTeal, fontSize: 12, fontWeight: FontWeight.w600)),
+                  color: AdC.teal, fontSize: 12, fontWeight: FontWeight.w600)),
         ]),
       );
 }
@@ -399,7 +428,7 @@ class _StatCard extends StatelessWidget {
         width: 160,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: _kSurface,
+          color: AdC.surface,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: color.withValues(alpha: 0.25)),
         ),
@@ -410,8 +439,7 @@ class _StatCard extends StatelessWidget {
                 style: TextStyle(
                     color: color, fontSize: 26, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            Text(label,
-                style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            Text(label, style: TextStyle(color: AdC.textMute, fontSize: 12)),
           ],
         ),
       );

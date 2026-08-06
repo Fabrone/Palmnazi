@@ -4,6 +4,8 @@ import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/favorite_model.dart';
 import 'package:palmnazi/screens/place_details_screen.dart';
+import 'package:palmnazi/services/app_settings_controller.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/favorite_service.dart';
 import 'package:palmnazi/services/place_lookup_service.dart';
 
@@ -19,9 +21,24 @@ import 'package:palmnazi/services/place_lookup_service.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 abstract final class _P {
+  static bool get _isDark =>
+      AppSettingsController.instance.resolvedBrightness == Brightness.dark;
+
   static const Color aquaBright = Color(0xFF00E5FF);
-  static const Color deepNavy = Color(0xFF01263F);
-  static const Color deepBlue = Color(0xFF071829);
+  static Color get deepNavy =>
+      _isDark ? const Color(0xFF01263F) : const Color(0xFFF5F7FA);
+  static Color get deepBlue =>
+      _isDark ? const Color(0xFF071829) : const Color(0xFFE8EDF2);
+
+  static Color get textPri => _isDark ? Colors.white : const Color(0xFF121F2E);
+  static Color get textMute =>
+      _isDark ? Colors.white38 : const Color(0xFF7C93A8);
+
+  /// Subtle fill for input/button backgrounds that used to be a flat
+  /// `Colors.white.withValues(alpha: x)` — invisible once the surface
+  /// behind it turns light.
+  static Color overlay(double alpha) =>
+      (_isDark ? Colors.white : Colors.black).withValues(alpha: alpha);
 }
 
 class MyFavoritesScreen extends StatelessWidget {
@@ -35,14 +52,14 @@ class MyFavoritesScreen extends StatelessWidget {
       backgroundColor: _P.deepBlue,
       appBar: AppBar(
         backgroundColor: _P.deepNavy,
-        title:
-            const Text('My Favorites', style: TextStyle(color: Colors.white)),
-        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(context.tr('account_my_favorites'),
+            style: TextStyle(color: _P.textPri)),
+        iconTheme: IconThemeData(color: _P.textPri),
       ),
       body: uid == null
-          ? const Center(
-              child: Text('Sign in to view your favorites.',
-                  style: TextStyle(color: Colors.white54)))
+          ? Center(
+              child: Text(context.tr('my_favorites_signin_required'),
+                  style: TextStyle(color: _P.textMute)))
           : StreamBuilder<List<FavoriteModel>>(
               stream: FavoriteService.streamForUser(uid),
               builder: (context, snap) {
@@ -52,19 +69,20 @@ class MyFavoritesScreen extends StatelessWidget {
                 }
                 if (snap.hasError) {
                   return Center(
-                    child: Text('Could not load favorites: ${snap.error}',
-                        style: const TextStyle(color: Colors.white54)),
+                    child: Text(
+                        '${context.tr('my_favorites_error_load_prefix')} ${snap.error}',
+                        style: TextStyle(color: _P.textMute)),
                   );
                 }
                 final favorites = snap.data ?? const <FavoriteModel>[];
                 if (favorites.isEmpty) {
-                  return const Center(
+                  return Center(
                     child: Padding(
-                      padding: EdgeInsets.all(24),
+                      padding: const EdgeInsets.all(24),
                       child: Text(
-                        'No favorites yet. Tap the heart icon on any listing to save it here.',
+                        context.tr('my_favorites_empty'),
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.white54),
+                        style: TextStyle(color: _P.textMute),
                       ),
                     ),
                   );
@@ -100,7 +118,7 @@ class _FavoriteCardState extends State<_FavoriteCard> {
     setState(() => _opening = false);
     if (place == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This place is no longer available.')),
+        SnackBar(content: Text(context.tr('my_favorites_place_unavailable'))),
       );
       return;
     }
@@ -158,7 +176,7 @@ class _FavoriteCardState extends State<_FavoriteCard> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
+        color: _P.overlay(0.06),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _P.aquaBright.withValues(alpha: 0.25)),
       ),
@@ -189,14 +207,13 @@ class _FavoriteCardState extends State<_FavoriteCard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(f.placeName,
-                        style: const TextStyle(
-                            color: Colors.white,
+                        style: TextStyle(
+                            color: _P.textPri,
                             fontSize: 15,
                             fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
                     Text(f.cityName,
-                        style: const TextStyle(
-                            color: Colors.white54, fontSize: 12)),
+                        style: TextStyle(color: _P.textMute, fontSize: 12)),
                   ],
                 ),
               ),
@@ -210,7 +227,7 @@ class _FavoriteCardState extends State<_FavoriteCard> {
               else
                 IconButton(
                   onPressed: _remove,
-                  tooltip: 'Remove from favorites',
+                  tooltip: context.tr('place_details_tooltip_remove_favorite'),
                   icon: const Icon(Icons.favorite,
                       color: Color(0xFFFF6B6B), size: 22),
                 ),
@@ -224,7 +241,7 @@ class _FavoriteCardState extends State<_FavoriteCard> {
   Widget _placeholderThumb() => Container(
         width: 64,
         height: 64,
-        color: Colors.white10,
-        child: const Icon(Icons.place_outlined, color: Colors.white38),
+        color: _P.overlay(0.10),
+        child: Icon(Icons.place_outlined, color: _P.textMute),
       );
 }

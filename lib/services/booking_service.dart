@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:palmnazi/models/booking_model.dart';
+import 'package:palmnazi/services/backend_booking_sync.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BookingService
@@ -17,6 +20,9 @@ class BookingService {
 
   static Future<String> create(BookingModel booking) async {
     final ref = await _collection.add(booking.toCreateMap());
+    // Fire-and-forget — Firestore above is already authoritative; this can
+    // never block, delay, or fail the booking. See BackendBookingSync.
+    unawaited(BackendBookingSync.pushSilently(booking));
     return ref.id;
   }
 

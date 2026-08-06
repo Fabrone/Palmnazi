@@ -62,6 +62,14 @@ enum AppFontChoice {
 // tree via AppSettingsScope so any screen can read or change it.
 // ─────────────────────────────────────────────────────────────────────────────
 class AppSettingsController extends ChangeNotifier {
+  AppSettingsController._internal();
+
+  /// Single instance for the app's lifetime — lets non-context code (e.g.
+  /// the shared RC color palette in landing_page.dart) read the resolved
+  /// brightness without needing a BuildContext.
+  static final AppSettingsController instance =
+      AppSettingsController._internal();
+
   static const _kThemeModeKey = 'pn_theme_mode';
   static const _kFontKey = 'pn_font_choice';
   static const _kLocaleKey = 'pn_locale';
@@ -69,6 +77,12 @@ class AppSettingsController extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.dark;
   AppFontChoice _fontChoice = AppFontChoice.poppins;
   Locale _locale = const Locale('en');
+
+  /// Set once per frame by the root widget's build (which has a
+  /// BuildContext to resolve ThemeMode.system against MediaQuery). Read by
+  /// RC's getters so every existing `RC.xxx` call site across the app
+  /// reacts to theme changes without being individually rewritten.
+  Brightness resolvedBrightness = Brightness.dark;
 
   ThemeMode get themeMode => _themeMode;
   AppFontChoice get fontChoice => _fontChoice;

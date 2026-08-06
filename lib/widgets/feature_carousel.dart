@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:palmnazi/services/app_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 
 class FeatureCarousel extends StatefulWidget {
   final Function(String) onFeatureTap;
@@ -18,63 +20,58 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
   int _currentPage = 0;
   Timer? _timer;
 
-  final List<FeatureItem> _features = [
-    FeatureItem(
-      icon: Icons.king_bed_outlined,
-      title: 'Premium Accommodation',
-      description:
-          'Experience world-class hospitality in Kenya\'s finest resort cities. From luxurious beachfront villas to serene mountain lodges, discover handpicked accommodations that offer exceptional comfort, breathtaking views, and personalized service.',
-      gradient: const LinearGradient(
-        colors: [Color(0xFF0D7377), Color(0xFF1E3A5F)],
-      ),
-      imagePath: 'assets/images/feature_accommodation.png',
-      channelName: 'Accommodation',
-    ),
-    FeatureItem(
-      icon: Icons.restaurant_menu,
-      title: 'Exquisite Dining',
-      description:
-          'Embark on a culinary adventure through Kenya with our curated collection of world-class restaurants and authentic local eateries. From fresh ocean catches to traditional Kenyan delicacies, savor dishes crafted with passion.',
-      gradient: const LinearGradient(
-        colors: [Color(0xFFE91E63), Color(0xFF880E4F)],
-      ),
-      imagePath: 'assets/images/feature_dining.jpg',
-      channelName: 'Dining',
-    ),
-    FeatureItem(
-      icon: Icons.celebration,
-      title: 'Cultural Events',
-      description:
-          'Immerse yourself in vibrant cultural celebrations, music festivals, and traditional ceremonies. Connect with local communities, witness age-old traditions, and participate in events that unite people across cultures.',
-      gradient: const LinearGradient(
-        colors: [Color(0xFFFF9800), Color(0xFFE65100)],
-      ),
-      imagePath: 'assets/images/feature_events.png',
-      channelName: 'Events',
-    ),
-    FeatureItem(
-      icon: Icons.shopping_bag_outlined,
-      title: 'Artisan Shopping',
-      description:
-          'Discover authentic Kenyan craftsmanship at vibrant local markets and boutique shops. Find one-of-a-kind souvenirs, handcrafted jewelry, traditional textiles, and contemporary art that tells a meaningful story.',
-      gradient: const LinearGradient(
-        colors: [Color(0xFF9C27B0), Color(0xFF4A148C)],
-      ),
-      imagePath: 'assets/images/feature_shopping.jpg',
-      channelName: 'Shopping',
-    ),
-    FeatureItem(
-      icon: Icons.terrain,
-      title: 'Adventure & Nature',
-      description:
-          'Explore breathtaking landscapes from pristine beaches to majestic mountains. Engage in safari adventures, mountain hiking, water sports, and unforgettable wildlife encounters through sustainable tourism.',
-      gradient: const LinearGradient(
-        colors: [Color(0xFF2196F3), Color(0xFF0D47A1)],
-      ),
-      imagePath: 'assets/images/feature_nature.jpg',
-      channelName: 'Adventure',
-    ),
-  ];
+  List<FeatureItem> _features(BuildContext context) => [
+        FeatureItem(
+          icon: Icons.king_bed_outlined,
+          title: context.tr('widget_feature_carousel_accommodation_title'),
+          description: context.tr('widget_feature_carousel_accommodation_desc'),
+          gradient: LinearGradient(
+            colors: [AC.tealDark, AC.surface],
+          ),
+          imagePath: 'assets/images/feature_accommodation.png',
+          channelName: 'Accommodation',
+        ),
+        FeatureItem(
+          icon: Icons.restaurant_menu,
+          title: context.tr('widget_feature_carousel_dining_title'),
+          description: context.tr('widget_feature_carousel_dining_desc'),
+          gradient: const LinearGradient(
+            colors: [Color(0xFFE91E63), Color(0xFF880E4F)],
+          ),
+          imagePath: 'assets/images/feature_dining.jpg',
+          channelName: 'Dining',
+        ),
+        FeatureItem(
+          icon: Icons.celebration,
+          title: context.tr('widget_feature_carousel_events_title'),
+          description: context.tr('widget_feature_carousel_events_desc'),
+          gradient: LinearGradient(
+            colors: [AC.orange, const Color(0xFFE65100)],
+          ),
+          imagePath: 'assets/images/feature_events.png',
+          channelName: 'Events',
+        ),
+        FeatureItem(
+          icon: Icons.shopping_bag_outlined,
+          title: context.tr('widget_feature_carousel_shopping_title'),
+          description: context.tr('widget_feature_carousel_shopping_desc'),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF9C27B0), Color(0xFF4A148C)],
+          ),
+          imagePath: 'assets/images/feature_shopping.jpg',
+          channelName: 'Shopping',
+        ),
+        FeatureItem(
+          icon: Icons.terrain,
+          title: context.tr('widget_feature_carousel_adventure_title'),
+          description: context.tr('widget_feature_carousel_adventure_desc'),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF2196F3), Color(0xFF0D47A1)],
+          ),
+          imagePath: 'assets/images/feature_nature.jpg',
+          channelName: 'Adventure',
+        ),
+      ];
 
   @override
   void initState() {
@@ -85,7 +82,7 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
 
   void _startAutoScroll() {
     _timer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      if (_currentPage < _features.length - 1) {
+      if (_currentPage < _features(context).length - 1) {
         _currentPage++;
       } else {
         _currentPage = 0;
@@ -113,6 +110,8 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
     final screenHeight = MediaQuery.of(context).size.height;
     final carouselHeight = (screenHeight * 0.5).clamp(350.0, 450.0);
 
+    final features = _features(context);
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 30, horizontal: 0),
       child: Column(
@@ -122,11 +121,18 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
             child: Column(
               children: [
                 ShaderMask(
-                  shaderCallback: (bounds) => const LinearGradient(
-                    colors: [Color(0xFF14FFEC), Colors.white],
+                  // Gradient goes teal -> AC.textPri (not a hardcoded white)
+                  // so the trailing end of the headline stays visible
+                  // against a light page background.
+                  shaderCallback: (bounds) => LinearGradient(
+                    colors: [AC.teal, AC.textPri],
                   ).createShader(bounds),
                   child: Text(
-                    'What We Offer',
+                    context.tr('widget_feature_carousel_title'),
+                    // NOTE: required by ShaderMask's default
+                    // BlendMode.modulate — the shader above supplies the
+                    // real, theme-aware colors; changing this would tint
+                    // them.
                     style: Theme.of(context).textTheme.displayMedium?.copyWith(
                           fontSize: 36,
                           fontWeight: FontWeight.bold,
@@ -137,7 +143,7 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Explore curated services for an unforgettable resort experience',
+                  context.tr('widget_feature_carousel_subtitle'),
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         fontSize: 14,
                       ),
@@ -156,7 +162,7 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
                   _currentPage = index;
                 });
               },
-              itemCount: _features.length,
+              itemCount: features.length,
               itemBuilder: (context, index) {
                 return AnimatedBuilder(
                   animation: _pageController,
@@ -174,13 +180,13 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
                       ),
                     );
                   },
-                  child: _buildFeatureCard(_features[index], index),
+                  child: _buildFeatureCard(features[index], index),
                 );
               },
             ),
           ),
           const SizedBox(height: 20),
-          _buildPageIndicator(),
+          _buildPageIndicator(features.length),
         ],
       ),
     );
@@ -298,13 +304,14 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
                               vertical: 9,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF14FFEC),
+                              color: AC.teal,
                               borderRadius: BorderRadius.circular(18),
                             ),
                             child: Row(
                               children: [
                                 Text(
-                                  'Explore',
+                                  context.tr(
+                                      'widget_feature_carousel_explore_cta'),
                                   style: TextStyle(
                                     color: feature.gradient.colors.last,
                                     fontWeight: FontWeight.w700,
@@ -333,11 +340,11 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
     );
   }
 
-  Widget _buildPageIndicator() {
+  Widget _buildPageIndicator(int featureCount) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: List.generate(
-        _features.length,
+        featureCount,
         (index) => AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -345,13 +352,11 @@ class _FeatureCarouselState extends State<FeatureCarousel> {
           height: 8,
           decoration: BoxDecoration(
             gradient: _currentPage == index
-                ? const LinearGradient(
-                    colors: [Color(0xFF14FFEC), Color(0xFF0D7377)],
+                ? LinearGradient(
+                    colors: [AC.teal, AC.tealDark],
                   )
                 : null,
-            color: _currentPage == index
-                ? null
-                : Colors.white.withValues(alpha: 0.3),
+            color: _currentPage == index ? null : AC.overlay(0.3),
             borderRadius: BorderRadius.circular(4),
           ),
         ),

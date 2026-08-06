@@ -11,6 +11,8 @@ import 'package:logger/logger.dart';
 import 'package:palmnazi/screens/landing_page.dart';
 import 'package:palmnazi/screens/reset_password_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/services/app_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/firebase_email_link_service.dart';
 import 'package:palmnazi/services/firebase_mfa_service.dart';
 import 'package:palmnazi/services/firebase_service.dart';
@@ -972,15 +974,14 @@ class _AuthScreenState extends State<AuthScreen>
                   EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
               child: Container(
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
+                  gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [Color(0xFF1E3A5F), Color(0xFF0A1128)],
+                    colors: AC.heroGradient,
                   ),
                   borderRadius:
                       const BorderRadius.vertical(top: Radius.circular(28)),
-                  border:
-                      Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                  border: Border.all(color: AC.overlay(0.15)),
                 ),
                 padding: const EdgeInsets.fromLTRB(28, 20, 28, 36),
                 child: Column(
@@ -992,18 +993,18 @@ class _AuthScreenState extends State<AuthScreen>
                       width: 44,
                       height: 4,
                       decoration: BoxDecoration(
-                          color: Colors.white30,
+                          color: AC.overlay(0.3),
                           borderRadius: BorderRadius.circular(2)),
                     )),
                     const SizedBox(height: 24),
-                    const Row(children: [
-                      Icon(Icons.phone_android_rounded,
-                          color: Color(0xFF14FFEC), size: 28),
-                      SizedBox(width: 12),
+                    Row(children: [
+                      const Icon(Icons.phone_android_rounded,
+                          color: AC.teal, size: 28),
+                      const SizedBox(width: 12),
                       Expanded(
                           child: Text('Two-Factor Verification',
                               style: TextStyle(
-                                  color: Colors.white,
+                                  color: AC.textPri,
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold))),
                     ]),
@@ -1014,24 +1015,21 @@ class _AuthScreenState extends State<AuthScreen>
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Color(0xFF14FFEC))),
+                                strokeWidth: 2, color: AC.teal)),
                         const SizedBox(width: 10),
                         Text('Sending SMS to $maskedPhone…',
                             style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.65),
-                                fontSize: 13)),
+                                color: AC.overlay(0.65), fontSize: 13)),
                       ])
                     else if (sendErrorMsg != null)
                       Text(
                           'Could not send code: $sendErrorMsg\nTap "Resend code" below to try again.',
                           style: const TextStyle(
-                              color: Color(0xFFCF6679),
-                              fontSize: 13,
-                              height: 1.4))
+                              color: AC.coral, fontSize: 13, height: 1.4))
                     else
                       Text('Enter the 6-digit code sent to $maskedPhone.',
                           style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.65),
+                              color: AC.overlay(0.65),
                               fontSize: 13,
                               height: 1.4)),
                     const SizedBox(height: 24),
@@ -1046,8 +1044,8 @@ class _AuthScreenState extends State<AuthScreen>
                           inputFormatters: [
                             FilteringTextInputFormatter.digitsOnly
                           ],
-                          style: const TextStyle(
-                              color: Colors.white,
+                          style: TextStyle(
+                              color: AC.textPri,
                               fontSize: 28,
                               letterSpacing: 12),
                           textAlign: TextAlign.center,
@@ -1055,32 +1053,29 @@ class _AuthScreenState extends State<AuthScreen>
                             counterText: '',
                             hintText: '• • • • • •',
                             hintStyle: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.25),
+                                color: AC.overlay(0.25),
                                 fontSize: 20,
                                 letterSpacing: 8),
                             filled: true,
-                            fillColor: Colors.white.withValues(alpha: 0.08),
+                            fillColor: AC.overlay(0.08),
                             border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12)),
                             enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.3))),
+                                borderSide: BorderSide(color: AC.overlay(0.3))),
                             focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                borderSide: const BorderSide(
-                                    color: Color(0xFF14FFEC), width: 2)),
+                                borderSide:
+                                    const BorderSide(color: AC.teal, width: 2)),
                             errorBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: const BorderSide(
-                                    color: Color(0xFFCF6679), width: 1.5)),
+                                    color: AC.coral, width: 1.5)),
                             focusedErrorBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: const BorderSide(
-                                    color: Color(0xFFCF6679), width: 2)),
-                            errorStyle:
-                                const TextStyle(color: Color(0xFFCF6679)),
+                                    color: AC.coral, width: 2)),
+                            errorStyle: const TextStyle(color: AC.coral),
                           ),
                           validator: (v) => (v == null || v.trim().length != 6)
                               ? 'Please enter the full 6-digit code'
@@ -1117,18 +1112,18 @@ class _AuthScreenState extends State<AuthScreen>
                                   }
                                 },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF14FFEC),
-                            foregroundColor: const Color(0xFF1E3A5F),
+                            backgroundColor: AC.teal,
+                            foregroundColor: AC.surface,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12)),
                           ),
                           child: sheetLoading
-                              ? const SizedBox(
+                              ? SizedBox(
                                   height: 20,
                                   width: 20,
                                   child: CircularProgressIndicator(
-                                      strokeWidth: 2, color: Color(0xFF1E3A5F)))
+                                      strokeWidth: 2, color: AC.surface))
                               : const Text('Verify & Sign In',
                                   style:
                                       TextStyle(fontWeight: FontWeight.w600)),
@@ -1174,10 +1169,9 @@ class _AuthScreenState extends State<AuthScreen>
                                 );
                               },
                         icon: const Icon(Icons.refresh_rounded,
-                            color: Color(0xFF14FFEC), size: 16),
+                            color: AC.teal, size: 16),
                         label: const Text('Resend code',
-                            style: TextStyle(
-                                color: Color(0xFF14FFEC), fontSize: 13)),
+                            style: TextStyle(color: AC.teal, fontSize: 13)),
                       )),
                     ],
                     const SizedBox(height: 16),
@@ -1186,9 +1180,8 @@ class _AuthScreenState extends State<AuthScreen>
                       onPressed:
                           sheetLoading ? null : () => Navigator.pop(sheetCtx),
                       child: Text('Cancel Sign In',
-                          style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.45),
-                              fontSize: 13)),
+                          style:
+                              TextStyle(color: AC.overlay(0.45), fontSize: 13)),
                     )),
                   ],
                 ),
@@ -1212,30 +1205,27 @@ class _AuthScreenState extends State<AuthScreen>
     await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E3A5F),
+        backgroundColor: AC.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(children: [
-          Icon(Icons.security_outlined, color: Color(0xFF14FFEC)),
-          SizedBox(width: 10),
+        title: Row(children: [
+          const Icon(Icons.security_outlined, color: AC.teal),
+          const SizedBox(width: 10),
           Text('Secure Your Account',
               style: TextStyle(
-                  color: Colors.white,
+                  color: AC.textPri,
                   fontSize: 17,
                   fontWeight: FontWeight.bold)),
         ]),
         content: Text(
           'Add phone two-factor authentication for extra security. '
           'Enable it any time from your account settings.',
-          style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.75),
-              fontSize: 13,
-              height: 1.5),
+          style: TextStyle(color: AC.overlay(0.75), fontSize: 13, height: 1.5),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Maybe Later',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+            child:
+                Text('Maybe Later', style: TextStyle(color: AC.overlay(0.6))),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -1243,8 +1233,8 @@ class _AuthScreenState extends State<AuthScreen>
               await _showMfaEnrollmentSheet();
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF14FFEC),
-              foregroundColor: const Color(0xFF1E3A5F),
+              backgroundColor: AC.teal,
+              foregroundColor: AC.surface,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),
             ),
@@ -1291,14 +1281,14 @@ class _AuthScreenState extends State<AuthScreen>
               EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: Container(
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Color(0xFF1E3A5F), Color(0xFF0A1128)],
+                colors: AC.heroGradient,
               ),
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(28)),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+              border: Border.all(color: AC.overlay(0.15)),
             ),
             padding: const EdgeInsets.fromLTRB(28, 20, 28, 36),
             child: Column(
@@ -1310,20 +1300,20 @@ class _AuthScreenState extends State<AuthScreen>
                   width: 44,
                   height: 4,
                   decoration: BoxDecoration(
-                      color: Colors.white30,
+                      color: AC.overlay(0.3),
                       borderRadius: BorderRadius.circular(2)),
                 )),
                 const SizedBox(height: 24),
                 Row(children: [
                   const Icon(Icons.phone_android_rounded,
-                      color: Color(0xFF14FFEC), size: 28),
+                      color: AC.teal, size: 28),
                   const SizedBox(width: 12),
                   Text(
                       smsSent
                           ? 'Enter Verification Code'
                           : 'Enable Phone Two-Factor Auth',
-                      style: const TextStyle(
-                          color: Colors.white,
+                      style: TextStyle(
+                          color: AC.textPri,
                           fontSize: 18,
                           fontWeight: FontWeight.bold)),
                 ]),
@@ -1333,9 +1323,7 @@ class _AuthScreenState extends State<AuthScreen>
                       ? 'Enter the 6-digit code sent to ${_maskPhone(phoneController.text)}.'
                       : 'Enter your phone number with country code (e.g. +254 712 345 678).',
                   style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.65),
-                      fontSize: 13,
-                      height: 1.4),
+                      color: AC.overlay(0.65), fontSize: 13, height: 1.4),
                 ),
                 const SizedBox(height: 24),
 
@@ -1347,33 +1335,30 @@ class _AuthScreenState extends State<AuthScreen>
                       controller: phoneController,
                       keyboardType: TextInputType.phone,
                       enabled: !sheetLoading,
-                      style: const TextStyle(color: Colors.white),
+                      style: TextStyle(color: AC.textPri),
                       decoration: InputDecoration(
                         labelText: 'Phone Number',
                         hintText: '+254 712 345 678',
-                        labelStyle: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.7)),
-                        hintStyle: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.3)),
-                        prefixIcon: const Icon(Icons.phone_outlined,
-                            color: Color(0xFF14FFEC)),
+                        labelStyle: TextStyle(color: AC.overlay(0.7)),
+                        hintStyle: TextStyle(color: AC.overlay(0.3)),
+                        prefixIcon:
+                            const Icon(Icons.phone_outlined, color: AC.teal),
                         filled: true,
-                        fillColor: Colors.white.withValues(alpha: 0.08),
+                        fillColor: AC.overlay(0.08),
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12)),
                         enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                                color: Colors.white.withValues(alpha: 0.3))),
+                            borderSide: BorderSide(color: AC.overlay(0.3))),
                         focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                                color: Color(0xFF14FFEC), width: 2)),
+                            borderSide:
+                                const BorderSide(color: AC.teal, width: 2)),
                         errorBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                                color: Color(0xFFCF6679), width: 1.5)),
-                        errorStyle: const TextStyle(color: Color(0xFFCF6679)),
+                            borderSide:
+                                const BorderSide(color: AC.coral, width: 1.5)),
+                        errorStyle: const TextStyle(color: AC.coral),
                       ),
                       validator: (v) {
                         if (v == null || v.trim().isEmpty) {
@@ -1391,11 +1376,11 @@ class _AuthScreenState extends State<AuthScreen>
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       icon: sheetLoading
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 18,
                               height: 18,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Color(0xFF1E3A5F)))
+                                  strokeWidth: 2, color: AC.surface))
                           : const Icon(Icons.send_rounded, size: 18),
                       label: Text(sheetLoading ? 'Sending…' : 'Send Code'),
                       onPressed: sheetLoading
@@ -1444,8 +1429,8 @@ class _AuthScreenState extends State<AuthScreen>
                               );
                             },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF14FFEC),
-                        foregroundColor: const Color(0xFF1E3A5F),
+                        backgroundColor: AC.teal,
+                        foregroundColor: AC.surface,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
@@ -1465,32 +1450,30 @@ class _AuthScreenState extends State<AuthScreen>
                       autofocus: true,
                       enabled: !sheetLoading,
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 22, letterSpacing: 10),
+                      style: TextStyle(
+                          color: AC.textPri, fontSize: 22, letterSpacing: 10),
                       textAlign: TextAlign.center,
                       decoration: InputDecoration(
                         counterText: '',
                         hintText: '------',
-                        hintStyle: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.3),
-                            letterSpacing: 8),
+                        hintStyle:
+                            TextStyle(color: AC.overlay(0.3), letterSpacing: 8),
                         filled: true,
-                        fillColor: Colors.white.withValues(alpha: 0.08),
+                        fillColor: AC.overlay(0.08),
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12)),
                         enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                                color: Colors.white.withValues(alpha: 0.3))),
+                            borderSide: BorderSide(color: AC.overlay(0.3))),
                         focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                                color: Color(0xFF14FFEC), width: 2)),
+                            borderSide:
+                                const BorderSide(color: AC.teal, width: 2)),
                         errorBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                                color: Color(0xFFCF6679), width: 1.5)),
-                        errorStyle: const TextStyle(color: Color(0xFFCF6679)),
+                            borderSide:
+                                const BorderSide(color: AC.coral, width: 1.5)),
+                        errorStyle: const TextStyle(color: AC.coral),
                       ),
                       validator: (v) => (v == null || v.trim().length != 6)
                           ? 'Please enter the full 6-digit code'
@@ -1521,18 +1504,18 @@ class _AuthScreenState extends State<AuthScreen>
                               }
                             },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF14FFEC),
-                        foregroundColor: const Color(0xFF1E3A5F),
+                        backgroundColor: AC.teal,
+                        foregroundColor: AC.surface,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
                       ),
                       child: sheetLoading
-                          ? const SizedBox(
+                          ? SizedBox(
                               height: 20,
                               width: 20,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Color(0xFF1E3A5F)))
+                                  strokeWidth: 2, color: AC.surface))
                           : const Text('Confirm & Enable MFA',
                               style: TextStyle(fontWeight: FontWeight.w600)),
                     ),
@@ -1548,10 +1531,9 @@ class _AuthScreenState extends State<AuthScreen>
                               otpController.clear();
                             }),
                     icon: const Icon(Icons.arrow_back_rounded,
-                        color: Color(0xFF14FFEC), size: 16),
+                        color: AC.teal, size: 16),
                     label: const Text('Change phone number',
-                        style:
-                            TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+                        style: TextStyle(color: AC.teal, fontSize: 13)),
                   )),
                 ],
 
@@ -1561,9 +1543,7 @@ class _AuthScreenState extends State<AuthScreen>
                   onPressed:
                       sheetLoading ? null : () => Navigator.pop(sheetCtx),
                   child: Text('Skip for now',
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.45),
-                          fontSize: 13)),
+                      style: TextStyle(color: AC.overlay(0.45), fontSize: 13)),
                 )),
               ],
             ),
@@ -1605,17 +1585,17 @@ class _AuthScreenState extends State<AuthScreen>
 
         return StatefulBuilder(
             builder: (ctx2, setD) => AlertDialog(
-                  backgroundColor: const Color(0xFF1E3A5F),
+                  backgroundColor: AC.surface,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(20)),
-                  title: const Row(children: [
-                    Icon(Icons.mark_email_unread_outlined,
-                        color: Color(0xFF14FFEC)),
-                    SizedBox(width: 10),
+                  title: Row(children: [
+                    const Icon(Icons.mark_email_unread_outlined,
+                        color: AC.teal),
+                    const SizedBox(width: 10),
                     Expanded(
                         child: Text('Verify Your Email First',
                             style: TextStyle(
-                                color: Colors.white,
+                                color: AC.textPri,
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold))),
                   ]),
@@ -1627,32 +1607,27 @@ class _AuthScreenState extends State<AuthScreen>
                         'Phone two-factor authentication requires a verified email address. '
                         'Please verify $email before enabling MFA.',
                         style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.75),
-                            fontSize: 13,
-                            height: 1.5),
+                            color: AC.overlay(0.75), fontSize: 13, height: 1.5),
                       ),
                       if (sent) ...[
                         const SizedBox(height: 12),
                         Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color:
-                                const Color(0xFF14FFEC).withValues(alpha: 0.1),
+                            color: AC.teal.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                                color: const Color(0xFF14FFEC)
-                                    .withValues(alpha: 0.3)),
+                                color: AC.teal.withValues(alpha: 0.3)),
                           ),
                           child: Row(children: [
                             const Icon(Icons.check_circle_outline,
-                                color: Color(0xFF14FFEC), size: 16),
+                                color: AC.teal, size: 16),
                             const SizedBox(width: 8),
                             Expanded(
                                 child: Text(
                                     'Verification link sent! Check your inbox and tap the link.',
                                     style: TextStyle(
-                                        color: Colors.white
-                                            .withValues(alpha: 0.85),
+                                        color: AC.textSec,
                                         fontSize: 12,
                                         height: 1.4))),
                           ]),
@@ -1664,17 +1639,16 @@ class _AuthScreenState extends State<AuthScreen>
                     TextButton(
                       onPressed: () => Navigator.pop(ctx2),
                       child: Text('Close',
-                          style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.6))),
+                          style: TextStyle(color: AC.overlay(0.6))),
                     ),
                     if (!sent)
                       ElevatedButton.icon(
                         icon: sending
-                            ? const SizedBox(
+                            ? SizedBox(
                                 width: 14,
                                 height: 14,
                                 child: CircularProgressIndicator(
-                                    strokeWidth: 2, color: Color(0xFF1E3A5F)))
+                                    strokeWidth: 2, color: AC.surface))
                             : const Icon(Icons.send_rounded, size: 16),
                         label: Text(
                             sending ? 'Sending…' : 'Resend Verification Link'),
@@ -1701,8 +1675,8 @@ class _AuthScreenState extends State<AuthScreen>
                                 }
                               },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF14FFEC),
-                          foregroundColor: const Color(0xFF1E3A5F),
+                          backgroundColor: AC.teal,
+                          foregroundColor: AC.surface,
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10)),
                         ),
@@ -1730,8 +1704,7 @@ class _AuthScreenState extends State<AuthScreen>
                     fontSize: 14,
                     fontWeight: FontWeight.w500))),
       ]),
-      backgroundColor:
-          result.isSuccess ? const Color(0xFF0D7377) : const Color(0xFFB00020),
+      backgroundColor: result.isSuccess ? AC.tealDark : AC.errorRed,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       margin: const EdgeInsets.all(16),
@@ -1746,15 +1719,11 @@ class _AuthScreenState extends State<AuthScreen>
       body: Stack(
         children: [
           Container(
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF0A1128),
-                  Color(0xFF1E3A5F),
-                  Color(0xFF0D7377)
-                ],
+                colors: [AC.navyDeep, AC.surface, AC.tealDark],
               ),
             ),
           ),
@@ -1762,8 +1731,8 @@ class _AuthScreenState extends State<AuthScreen>
             Container(
               color: Colors.black.withValues(alpha: 0.45),
               child: const Center(
-                child: CircularProgressIndicator(
-                    color: Color(0xFF14FFEC), strokeWidth: 3),
+                child:
+                    CircularProgressIndicator(color: AC.teal, strokeWidth: 3),
               ),
             ),
           SafeArea(
@@ -1775,7 +1744,7 @@ class _AuthScreenState extends State<AuthScreen>
                     IconButton(
                       onPressed:
                           _isLoading ? null : () => Navigator.pop(context),
-                      icon: const Icon(Icons.arrow_back, color: Colors.white),
+                      icon: Icon(Icons.arrow_back, color: AC.textPri),
                     ),
                   ]),
                 ),
@@ -1787,10 +1756,9 @@ class _AuthScreenState extends State<AuthScreen>
                         margin: const EdgeInsets.all(24),
                         padding: const EdgeInsets.all(32),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.08),
+                          color: AC.overlay(0.08),
                           borderRadius: BorderRadius.circular(24),
-                          border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.2)),
+                          border: Border.all(color: AC.overlay(0.2)),
                           boxShadow: [
                             BoxShadow(
                                 color: Colors.black.withValues(alpha: 0.3),
@@ -1809,8 +1777,7 @@ class _AuthScreenState extends State<AuthScreen>
                                   shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(
-                                        color: const Color(0xFF14FFEC)
-                                            .withValues(alpha: 0.5),
+                                        color: AC.teal.withValues(alpha: 0.5),
                                         blurRadius: 20,
                                         spreadRadius: 5)
                                   ]),
@@ -1824,10 +1791,8 @@ class _AuthScreenState extends State<AuthScreen>
                                   width: 80,
                                   height: 80,
                                   decoration: const BoxDecoration(
-                                      gradient: LinearGradient(colors: [
-                                        Color(0xFF14FFEC),
-                                        Color(0xFF0D7377)
-                                      ]),
+                                      gradient: LinearGradient(
+                                          colors: [AC.teal, AC.tealDark]),
                                       shape: BoxShape.circle),
                                   child: const Icon(
                                       Icons.travel_explore_rounded,
@@ -1845,11 +1810,11 @@ class _AuthScreenState extends State<AuthScreen>
                                         fontSize: 30,
                                         fontWeight: FontWeight.bold,
                                         letterSpacing: 2,
-                                        color: Colors.white)),
+                                        color: AC.textPri)),
                             const SizedBox(height: 8),
                             Text('Resort Cities',
                                 style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.7),
+                                    color: AC.overlay(0.7),
                                     fontSize: 14,
                                     letterSpacing: 3)),
                             const SizedBox(height: 32),
@@ -1857,28 +1822,27 @@ class _AuthScreenState extends State<AuthScreen>
                             // ── Tab bar: Login | Sign Up | Magic Link ──────
                             Container(
                               decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.1),
+                                  color: AC.overlay(0.1),
                                   borderRadius: BorderRadius.circular(30)),
                               child: TabBar(
                                 controller: _tabController,
                                 indicator: BoxDecoration(
-                                    gradient: const LinearGradient(colors: [
-                                      Color(0xFF14FFEC),
-                                      Color(0xFF0D7377)
-                                    ]),
+                                    gradient: LinearGradient(
+                                        colors: [AC.teal, AC.tealDark]),
                                     borderRadius: BorderRadius.circular(30)),
                                 indicatorSize: TabBarIndicatorSize.tab,
                                 dividerColor: Colors.transparent,
                                 labelColor: Colors.white,
-                                unselectedLabelColor: Colors.white70,
+                                unselectedLabelColor: AC.textSec,
                                 labelStyle: const TextStyle(
                                     fontSize: 12, fontWeight: FontWeight.w600),
-                                tabs: const [
-                                  Tab(text: 'Login'),
-                                  Tab(text: 'Sign Up'),
+                                tabs: [
+                                  Tab(text: context.tr('auth_tab_login')),
+                                  Tab(text: context.tr('auth_tab_signup')),
                                   Tab(
-                                      icon: Icon(Icons.link_rounded, size: 18),
-                                      text: 'Magic Link'),
+                                      icon: const Icon(Icons.link_rounded,
+                                          size: 18),
+                                      text: context.tr('auth_tab_magic_link')),
                                 ],
                               ),
                             ),
@@ -1918,7 +1882,7 @@ class _AuthScreenState extends State<AuthScreen>
         children: [
           _buildTextField(
             controller: _loginEmailController,
-            label: 'Email',
+            label: context.tr('auth_field_email'),
             icon: Icons.email_outlined,
             keyboardType: TextInputType.emailAddress,
             validator: _emailValidator,
@@ -1926,29 +1890,30 @@ class _AuthScreenState extends State<AuthScreen>
           const SizedBox(height: 16),
           _buildTextField(
             controller: _loginPasswordController,
-            label: 'Password',
+            label: context.tr('auth_field_password'),
             icon: Icons.lock_outlined,
             obscureText: _obscureLoginPassword,
-            validator: (v) =>
-                (v == null || v.isEmpty) ? 'Please enter your password' : null,
+            validator: (v) => (v == null || v.isEmpty)
+                ? context.tr('auth_err_password_required')
+                : null,
             suffixIcon: IconButton(
               icon: Icon(
                   _obscureLoginPassword
                       ? Icons.visibility_outlined
                       : Icons.visibility_off_outlined,
-                  color: Colors.white70),
+                  color: AC.textSec),
               onPressed: () => setState(
                   () => _obscureLoginPassword = !_obscureLoginPassword),
             ),
           ),
           const SizedBox(height: 24),
-          _buildPrimaryButton(label: 'Login', onPressed: _handleLogin),
+          _buildPrimaryButton(
+              label: context.tr('auth_btn_login'), onPressed: _handleLogin),
           const SizedBox(height: 12),
           TextButton(
             onPressed: _isLoading ? null : _showForgotPasswordSheet,
-            child: Text('Forgot Password?',
-                style: TextStyle(
-                    color: const Color(0xFF14FFEC).withValues(alpha: 0.9))),
+            child: Text(context.tr('auth_forgot_password'),
+                style: TextStyle(color: AC.teal.withValues(alpha: 0.9))),
           ),
           TextButton(
             onPressed: _isLoading
@@ -1957,14 +1922,13 @@ class _AuthScreenState extends State<AuthScreen>
                     context,
                     MaterialPageRoute(
                         builder: (_) => const ResetPasswordScreen())),
-            child: Text('Have a reset code? Set new password →',
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.55), fontSize: 12)),
+            child: Text(context.tr('auth_reset_code_link'),
+                style: TextStyle(color: AC.overlay(0.55), fontSize: 12)),
           ),
           const SizedBox(height: 4),
           _buildDivider(),
           const SizedBox(height: 16),
-          _buildGoogleButton(label: 'Continue with Google'),
+          _buildGoogleButton(label: context.tr('auth_btn_continue_google')),
         ],
       ),
     );
@@ -1979,7 +1943,7 @@ class _AuthScreenState extends State<AuthScreen>
           children: [
             _buildTextField(
               controller: _signUpEmailController,
-              label: 'Email',
+              label: context.tr('auth_field_email'),
               icon: Icons.email_outlined,
               keyboardType: TextInputType.emailAddress,
               validator: _emailValidator,
@@ -1987,7 +1951,7 @@ class _AuthScreenState extends State<AuthScreen>
             const SizedBox(height: 16),
             _buildTextField(
               controller: _signUpPasswordController,
-              label: 'Password',
+              label: context.tr('auth_field_password'),
               icon: Icons.lock_outlined,
               obscureText: _obscureSignUpPassword,
               validator: _passwordValidator,
@@ -1996,7 +1960,7 @@ class _AuthScreenState extends State<AuthScreen>
                     _obscureSignUpPassword
                         ? Icons.visibility_outlined
                         : Icons.visibility_off_outlined,
-                    color: Colors.white70),
+                    color: AC.textSec),
                 onPressed: () => setState(
                     () => _obscureSignUpPassword = !_obscureSignUpPassword),
               ),
@@ -2004,15 +1968,15 @@ class _AuthScreenState extends State<AuthScreen>
             const SizedBox(height: 16),
             _buildTextField(
               controller: _signUpConfirmPasswordController,
-              label: 'Confirm Password',
+              label: context.tr('auth_field_confirm_password'),
               icon: Icons.lock_outlined,
               obscureText: _obscureConfirmPassword,
               validator: (v) {
                 if (v == null || v.isEmpty) {
-                  return 'Please confirm your password';
+                  return context.tr('auth_err_confirm_password_required');
                 }
                 if (v != _signUpPasswordController.text) {
-                  return 'Passwords do not match';
+                  return context.tr('auth_err_passwords_mismatch');
                 }
                 return null;
               },
@@ -2021,18 +1985,19 @@ class _AuthScreenState extends State<AuthScreen>
                     _obscureConfirmPassword
                         ? Icons.visibility_outlined
                         : Icons.visibility_off_outlined,
-                    color: Colors.white70),
+                    color: AC.textSec),
                 onPressed: () => setState(
                     () => _obscureConfirmPassword = !_obscureConfirmPassword),
               ),
             ),
             const SizedBox(height: 24),
             _buildPrimaryButton(
-                label: 'Create Account', onPressed: _handleRegister),
+                label: context.tr('auth_btn_create_account'),
+                onPressed: _handleRegister),
             const SizedBox(height: 16),
             _buildDivider(),
             const SizedBox(height: 16),
-            _buildGoogleButton(label: 'Sign up with Google'),
+            _buildGoogleButton(label: context.tr('auth_btn_continue_google')),
           ],
         ),
       ),
@@ -2050,23 +2015,19 @@ class _AuthScreenState extends State<AuthScreen>
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: const Color(0xFF14FFEC).withValues(alpha: 0.07),
+              color: AC.teal.withValues(alpha: 0.07),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                  color: const Color(0xFF14FFEC).withValues(alpha: 0.25)),
+              border: Border.all(color: AC.teal.withValues(alpha: 0.25)),
             ),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Icon(Icons.auto_awesome_rounded,
-                  color: Color(0xFF14FFEC), size: 18),
+              const Icon(Icons.auto_awesome_rounded, color: AC.teal, size: 18),
               const SizedBox(width: 10),
               Expanded(
                   child: Text(
                 'No password needed. Enter your email and we\'ll send a '
                 'one-tap sign-in link. Tapping it also verifies your email address.',
                 style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.75),
-                    fontSize: 12,
-                    height: 1.5),
+                    color: AC.overlay(0.75), fontSize: 12, height: 1.5),
               )),
             ]),
           ),
@@ -2094,19 +2055,18 @@ class _AuthScreenState extends State<AuthScreen>
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFF0D7377).withValues(alpha: 0.15),
+                color: AC.tealDark.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                    color: const Color(0xFF0D7377).withValues(alpha: 0.4)),
+                border: Border.all(color: AC.tealDark.withValues(alpha: 0.4)),
               ),
               child: Column(
                 children: [
                   const Icon(Icons.mark_email_read_outlined,
-                      color: Color(0xFF14FFEC), size: 40),
+                      color: AC.teal, size: 40),
                   const SizedBox(height: 12),
-                  const Text('Link sent!',
+                  Text('Link sent!',
                       style: TextStyle(
-                          color: Colors.white,
+                          color: AC.textPri,
                           fontSize: 18,
                           fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
@@ -2115,29 +2075,24 @@ class _AuthScreenState extends State<AuthScreen>
                     'Tap the link in the email to sign in — no password needed.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
-                        fontSize: 13,
-                        height: 1.5),
+                        color: AC.overlay(0.7), fontSize: 13, height: 1.5),
                   ),
                   const SizedBox(height: 16),
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.05),
+                      color: AC.overlay(0.05),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Row(children: [
-                      const Icon(Icons.info_outline,
-                          color: Color(0xFF14FFEC), size: 14),
+                      const Icon(Icons.info_outline, color: AC.teal, size: 14),
                       const SizedBox(width: 8),
                       Expanded(
                           child: Text(
                         'The link opens this app directly. If it asks for your email, '
                         'enter ${_magicEmailController.text.trim()}.',
                         style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.55),
-                            fontSize: 11,
-                            height: 1.4),
+                            color: AC.overlay(0.55), fontSize: 11, height: 1.4),
                       )),
                     ]),
                   ),
@@ -2157,8 +2112,8 @@ class _AuthScreenState extends State<AuthScreen>
                         setState(() => _magicLinkSent = false);
                       },
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF14FFEC),
-                  side: const BorderSide(color: Color(0xFF14FFEC)),
+                  foregroundColor: AC.teal,
+                  side: const BorderSide(color: AC.teal),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
@@ -2176,9 +2131,7 @@ class _AuthScreenState extends State<AuthScreen>
             child: TextButton(
               onPressed: () => _tabController.animateTo(0),
               child: Text('Use password instead →',
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.5),
-                      fontSize: 12)),
+                  style: TextStyle(color: AC.overlay(0.5), fontSize: 12)),
             ),
           ),
         ],
@@ -2197,18 +2150,18 @@ class _AuthScreenState extends State<AuthScreen>
       child: ElevatedButton(
         onPressed: _isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF14FFEC),
-          foregroundColor: const Color(0xFF1E3A5F),
+          backgroundColor: AC.teal,
+          foregroundColor: AC.surface,
           padding: const EdgeInsets.symmetric(vertical: 16),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         child: _isLoading
-            ? const SizedBox(
+            ? SizedBox(
                 height: 20,
                 width: 20,
                 child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Color(0xFF1E3A5F)))
+                    strokeWidth: 2, color: AC.surface))
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -2233,9 +2186,8 @@ class _AuthScreenState extends State<AuthScreen>
         icon: const Icon(Icons.g_mobiledata, size: 28),
         label: Text(label),
         style: OutlinedButton.styleFrom(
-          foregroundColor: Colors.white,
-          side:
-              BorderSide(color: Colors.white.withValues(alpha: 0.5), width: 2),
+          foregroundColor: AC.textPri,
+          side: BorderSide(color: AC.overlay(0.5), width: 2),
           padding: const EdgeInsets.symmetric(vertical: 16),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -2246,12 +2198,11 @@ class _AuthScreenState extends State<AuthScreen>
 
   Widget _buildDivider() {
     return Row(children: [
-      Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.3))),
+      Expanded(child: Divider(color: AC.overlay(0.3))),
       Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text('OR',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.6)))),
-      Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.3))),
+          child: Text('OR', style: TextStyle(color: AC.overlay(0.6)))),
+      Expanded(child: Divider(color: AC.overlay(0.3))),
     ]);
   }
 
@@ -2269,30 +2220,30 @@ class _AuthScreenState extends State<AuthScreen>
       obscureText: obscureText,
       keyboardType: keyboardType,
       enabled: !_isLoading,
-      style: const TextStyle(color: Colors.white),
+      style: TextStyle(color: AC.textPri),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
-        prefixIcon: Icon(icon, color: const Color(0xFF14FFEC)),
+        labelStyle: TextStyle(color: AC.overlay(0.7)),
+        prefixIcon: Icon(icon, color: AC.teal),
         suffixIcon: suffixIcon,
         filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.08),
+        fillColor: AC.overlay(0.08),
         border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3))),
+            borderSide: BorderSide(color: AC.overlay(0.3))),
         enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3))),
+            borderSide: BorderSide(color: AC.overlay(0.3))),
         focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF14FFEC), width: 2)),
+            borderSide: const BorderSide(color: AC.teal, width: 2)),
         errorBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFFCF6679), width: 1.5)),
+            borderSide: const BorderSide(color: AC.coral, width: 1.5)),
         focusedErrorBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFFCF6679), width: 2)),
-        errorStyle: const TextStyle(color: Color(0xFFCF6679)),
+            borderSide: const BorderSide(color: AC.coral, width: 2)),
+        errorStyle: const TextStyle(color: AC.coral),
       ),
       validator: validator ??
           (value) {
@@ -2319,13 +2270,13 @@ class _AuthScreenState extends State<AuthScreen>
               EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: Container(
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [Color(0xFF1E3A5F), Color(0xFF0A1128)]),
+                  colors: AC.heroGradient),
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(28)),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+              border: Border.all(color: AC.overlay(0.15)),
             ),
             padding: const EdgeInsets.fromLTRB(28, 20, 28, 36),
             child: Form(
@@ -2339,7 +2290,7 @@ class _AuthScreenState extends State<AuthScreen>
                           width: 44,
                           height: 4,
                           decoration: BoxDecoration(
-                              color: Colors.white30,
+                              color: AC.overlay(0.3),
                               borderRadius: BorderRadius.circular(2)))),
                   const SizedBox(height: 24),
                   Row(children: [
@@ -2348,8 +2299,8 @@ class _AuthScreenState extends State<AuthScreen>
                       height: 48,
                       decoration: const BoxDecoration(
                           shape: BoxShape.circle,
-                          gradient: LinearGradient(
-                              colors: [Color(0xFF14FFEC), Color(0xFF0D7377)])),
+                          gradient:
+                              LinearGradient(colors: [AC.teal, AC.tealDark])),
                       child: const Icon(Icons.lock_reset_rounded,
                           color: Colors.white, size: 24),
                     ),
@@ -2357,46 +2308,43 @@ class _AuthScreenState extends State<AuthScreen>
                     Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Reset Password',
+                          Text('Reset Password',
                               style: TextStyle(
-                                  color: Colors.white,
+                                  color: AC.textPri,
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold)),
                           Text("We'll send a reset link to your email",
                               style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.6),
-                                  fontSize: 13)),
+                                  color: AC.overlay(0.6), fontSize: 13)),
                         ]),
                   ]),
                   const SizedBox(height: 28),
                   TextFormField(
                     controller: forgotEmailController,
                     keyboardType: TextInputType.emailAddress,
-                    style: const TextStyle(color: Colors.white),
+                    style: TextStyle(color: AC.textPri),
                     enabled: !sheetLoading,
                     decoration: InputDecoration(
                       labelText: 'Email Address',
-                      labelStyle:
-                          TextStyle(color: Colors.white.withValues(alpha: 0.7)),
-                      prefixIcon: const Icon(Icons.email_outlined,
-                          color: Color(0xFF14FFEC)),
+                      labelStyle: TextStyle(color: AC.overlay(0.7)),
+                      prefixIcon:
+                          const Icon(Icons.email_outlined, color: AC.teal),
                       filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.08),
+                      fillColor: AC.overlay(0.08),
                       border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12)),
                       enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(
-                              color: Colors.white.withValues(alpha: 0.3))),
+                          borderSide: BorderSide(color: AC.overlay(0.3))),
                       focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                              color: Color(0xFF14FFEC), width: 2)),
+                          borderSide:
+                              const BorderSide(color: AC.teal, width: 2)),
                       errorBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                              color: Color(0xFFCF6679), width: 1.5)),
-                      errorStyle: const TextStyle(color: Color(0xFFCF6679)),
+                          borderSide:
+                              const BorderSide(color: AC.coral, width: 1.5)),
+                      errorStyle: const TextStyle(color: AC.coral),
                     ),
                     validator: (v) {
                       if (v == null || v.isEmpty) {
@@ -2416,9 +2364,8 @@ class _AuthScreenState extends State<AuthScreen>
                       onPressed:
                           sheetLoading ? null : () => Navigator.pop(sheetCtx),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white70,
-                        side: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.3)),
+                        foregroundColor: AC.textSec,
+                        side: BorderSide(color: AC.overlay(0.3)),
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
@@ -2454,18 +2401,18 @@ class _AuthScreenState extends State<AuthScreen>
                                   }
                                 },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF14FFEC),
-                            foregroundColor: const Color(0xFF1E3A5F),
+                            backgroundColor: AC.teal,
+                            foregroundColor: AC.surface,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12)),
                           ),
                           child: sheetLoading
-                              ? const SizedBox(
+                              ? SizedBox(
                                   height: 20,
                                   width: 20,
                                   child: CircularProgressIndicator(
-                                      strokeWidth: 2, color: Color(0xFF1E3A5F)))
+                                      strokeWidth: 2, color: AC.surface))
                               : const Text('Send Reset Link',
                                   style: TextStyle(
                                       fontSize: 15,

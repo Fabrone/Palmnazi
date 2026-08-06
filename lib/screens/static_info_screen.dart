@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:palmnazi/models/static_page_model.dart';
+import 'package:palmnazi/screens/landing_page.dart' show RC;
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/static_page_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -8,18 +10,9 @@ import 'package:palmnazi/services/static_page_service.dart';
 // Reusable title + heading/body sections screen — backs the footer's Legal
 // column (Privacy Policy, Terms of Service, Cookie Policy) on
 // landing_page.dart. Visual language mirrors the landing page's refreshed
-// gold-forward navy palette without importing landing_page.dart directly
-// (each screen keeps its own small palette, matching the convention already
-// used across resort_city_screen.dart / category_screen.dart / etc).
+// gold-forward navy palette, now sharing the RC palette from
+// landing_page.dart directly instead of keeping its own duplicate copy.
 // ─────────────────────────────────────────────────────────────────────────────
-
-abstract final class _P {
-  static const Color navy = Color(0xFF121F2E);
-  static const Color deepBlue = Color(0xFF1C2E42);
-  static const Color gold = Color(0xFFD4AF37);
-  static const Color textSec = Color(0xFFC7D6E3);
-  static const Color textMute = Color(0xFF7C93A8);
-}
 
 class StaticInfoSection {
   final String heading;
@@ -42,11 +35,11 @@ class StaticInfoScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _P.navy,
+      backgroundColor: RC.navy,
       appBar: AppBar(
-        backgroundColor: _P.deepBlue,
-        title: Text(title, style: const TextStyle(color: Colors.white)),
-        iconTheme: const IconThemeData(color: Colors.white),
+        backgroundColor: RC.deepBlue,
+        title: Text(title, style: TextStyle(color: RC.textPri)),
+        iconTheme: IconThemeData(color: RC.textPri),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -57,14 +50,15 @@ class StaticInfoScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title,
-                    style: const TextStyle(
-                        color: Colors.white,
+                    style: TextStyle(
+                        color: RC.textPri,
                         fontSize: 28,
                         fontWeight: FontWeight.bold)),
                 if (lastUpdated != null) ...[
                   const SizedBox(height: 8),
-                  Text('Last updated: $lastUpdated',
-                      style: const TextStyle(color: _P.textMute, fontSize: 13)),
+                  Text(
+                      '${context.tr('static_info_last_updated_prefix')} $lastUpdated',
+                      style: TextStyle(color: RC.textMute, fontSize: 13)),
                 ],
                 const SizedBox(height: 28),
                 ...sections.map((s) => Padding(
@@ -75,14 +69,14 @@ class StaticInfoScreen extends StatelessWidget {
                           if (s.heading.isNotEmpty) ...[
                             Text(s.heading,
                                 style: const TextStyle(
-                                    color: _P.gold,
+                                    color: RC.gold,
                                     fontSize: 17,
                                     fontWeight: FontWeight.w700)),
                             const SizedBox(height: 8),
                           ],
                           Text(s.body,
-                              style: const TextStyle(
-                                  color: _P.textSec,
+                              style: TextStyle(
+                                  color: RC.textSec,
                                   fontSize: 14,
                                   height: 1.7)),
                         ],

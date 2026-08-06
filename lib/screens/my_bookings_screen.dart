@@ -1,6 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:palmnazi/models/booking_model.dart';
+import 'package:palmnazi/services/app_settings_controller.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/booking_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -12,9 +14,26 @@ import 'package:palmnazi/services/booking_service.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 abstract final class _P {
+  static bool get _isDark =>
+      AppSettingsController.instance.resolvedBrightness == Brightness.dark;
+
   static const Color aquaBright = Color(0xFF00E5FF);
-  static const Color deepNavy = Color(0xFF01263F);
-  static const Color deepBlue = Color(0xFF071829);
+  static Color get deepNavy =>
+      _isDark ? const Color(0xFF01263F) : const Color(0xFFF5F7FA);
+  static Color get deepBlue =>
+      _isDark ? const Color(0xFF071829) : const Color(0xFFE8EDF2);
+
+  static Color get textPri => _isDark ? Colors.white : const Color(0xFF121F2E);
+  static Color get textSec =>
+      _isDark ? Colors.white70 : const Color(0xFF3D4F60);
+  static Color get textMute =>
+      _isDark ? Colors.white38 : const Color(0xFF7C93A8);
+
+  /// Subtle fill for input/button backgrounds that used to be a flat
+  /// `Colors.white.withValues(alpha: x)` — invisible once the surface
+  /// behind it turns light.
+  static Color overlay(double alpha) =>
+      (_isDark ? Colors.white : Colors.black).withValues(alpha: alpha);
 }
 
 class MyBookingsScreen extends StatelessWidget {
@@ -28,13 +47,14 @@ class MyBookingsScreen extends StatelessWidget {
       backgroundColor: _P.deepBlue,
       appBar: AppBar(
         backgroundColor: _P.deepNavy,
-        title: const Text('My Bookings', style: TextStyle(color: Colors.white)),
-        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(context.tr('account_my_bookings'),
+            style: TextStyle(color: _P.textPri)),
+        iconTheme: IconThemeData(color: _P.textPri),
       ),
       body: uid == null
-          ? const Center(
-              child: Text('Sign in to view your bookings.',
-                  style: TextStyle(color: Colors.white54)))
+          ? Center(
+              child: Text(context.tr('my_bookings_signin_required'),
+                  style: TextStyle(color: _P.textMute)))
           : StreamBuilder<List<BookingModel>>(
               stream: BookingService.streamForUser(uid),
               builder: (context, snap) {
@@ -44,19 +64,20 @@ class MyBookingsScreen extends StatelessWidget {
                 }
                 if (snap.hasError) {
                   return Center(
-                    child: Text('Could not load bookings: ${snap.error}',
-                        style: const TextStyle(color: Colors.white54)),
+                    child: Text(
+                        '${context.tr('my_bookings_error_load_prefix')} ${snap.error}',
+                        style: TextStyle(color: _P.textMute)),
                   );
                 }
                 final bookings = snap.data ?? const <BookingModel>[];
                 if (bookings.isEmpty) {
-                  return const Center(
+                  return Center(
                     child: Padding(
-                      padding: EdgeInsets.all(24),
+                      padding: const EdgeInsets.all(24),
                       child: Text(
-                        'No bookings yet. Find a place you love and tap "Book Now".',
+                        context.tr('my_bookings_empty'),
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.white54),
+                        style: TextStyle(color: _P.textMute),
                       ),
                     ),
                   );
@@ -86,7 +107,7 @@ class _BookingCard extends StatelessWidget {
       case BookingStatus.cancelled:
         return Colors.redAccent;
       case BookingStatus.completed:
-        return Colors.white54;
+        return _P.textMute;
     }
   }
 
@@ -97,14 +118,15 @@ class _BookingCard extends StatelessWidget {
         context: context,
         builder: (_) => AlertDialog(
           backgroundColor: _P.deepNavy,
-          title: const Text('Cancellation not available',
-              style: TextStyle(color: Colors.white)),
-          content: Text(eligibility.reason,
-              style: const TextStyle(color: Colors.white70)),
+          title: Text(context.tr('my_bookings_dialog_cancel_unavailable_title'),
+              style: TextStyle(color: _P.textPri)),
+          content:
+              Text(eligibility.reason, style: TextStyle(color: _P.textSec)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('OK', style: TextStyle(color: Colors.white54)),
+              child: Text(context.tr('common_ok'),
+                  style: TextStyle(color: _P.textMute)),
             ),
           ],
         ),
@@ -115,20 +137,20 @@ class _BookingCard extends StatelessWidget {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: _P.deepNavy,
-        title: const Text('Cancel booking?',
-            style: TextStyle(color: Colors.white)),
-        content: const Text('This cannot be undone.',
-            style: TextStyle(color: Colors.white70)),
+        title: Text(context.tr('my_bookings_dialog_cancel_title'),
+            style: TextStyle(color: _P.textPri)),
+        content: Text(context.tr('my_bookings_dialog_cancel_body'),
+            style: TextStyle(color: _P.textSec)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child:
-                const Text('Keep it', style: TextStyle(color: Colors.white54)),
+            child: Text(context.tr('my_bookings_button_keep'),
+                style: TextStyle(color: _P.textMute)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Cancel booking',
-                style: TextStyle(color: Colors.redAccent)),
+            child: Text(context.tr('my_bookings_button_cancel_booking'),
+                style: const TextStyle(color: Colors.redAccent)),
           ),
         ],
       ),
@@ -143,7 +165,7 @@ class _BookingCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
+        color: _P.overlay(0.06),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _statusColor.withValues(alpha: 0.35)),
       ),
@@ -153,8 +175,8 @@ class _BookingCard extends StatelessWidget {
           Row(children: [
             Expanded(
               child: Text(booking.placeName,
-                  style: const TextStyle(
-                      color: Colors.white,
+                  style: TextStyle(
+                      color: _P.textPri,
                       fontSize: 16,
                       fontWeight: FontWeight.bold)),
             ),
@@ -175,7 +197,13 @@ class _BookingCard extends StatelessWidget {
           ]),
           const SizedBox(height: 6),
           Text(booking.cityName,
-              style: const TextStyle(color: Colors.white38, fontSize: 12)),
+              style: TextStyle(color: _P.textMute, fontSize: 12)),
+          const SizedBox(height: 6),
+          _infoRow(
+            Icons.confirmation_number_outlined,
+            '${context.tr('my_bookings_reference_prefix')} '
+            '${(booking.id.length > 8 ? booking.id.substring(booking.id.length - 8) : booking.id).toUpperCase()}',
+          ),
           const SizedBox(height: 10),
           if (booking.serviceName != null) ...[
             _infoRow(Icons.room_service_outlined, booking.serviceName!),
@@ -195,12 +223,12 @@ class _BookingCard extends StatelessWidget {
           if (booking.totalAmount != null) ...[
             const SizedBox(height: 6),
             _infoRow(Icons.receipt_long_rounded,
-                '${booking.currency ?? ''} ${booking.totalAmount!.toStringAsFixed(0)} (estimate)'),
+                '${booking.currency ?? ''} ${booking.totalAmount!.toStringAsFixed(0)} ${context.tr('my_bookings_estimate_suffix')}'),
           ],
           if (booking.mpesaReceiptNumber != null) ...[
             const SizedBox(height: 6),
             _infoRow(Icons.check_circle_outline_rounded,
-                'Paid via M-Pesa — receipt ${booking.mpesaReceiptNumber}'),
+                '${context.tr('my_bookings_mpesa_receipt_prefix')} ${booking.mpesaReceiptNumber}'),
           ],
           if (booking.status == BookingStatus.pending) ...[
             const SizedBox(height: 12),
@@ -210,8 +238,9 @@ class _BookingCard extends StatelessWidget {
                 onPressed: () => _cancel(context),
                 icon: const Icon(Icons.close_rounded,
                     size: 16, color: Colors.redAccent),
-                label: const Text('Cancel',
-                    style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                label: Text(context.tr('common_cancel'),
+                    style:
+                        const TextStyle(color: Colors.redAccent, fontSize: 12)),
               ),
             ),
           ],
@@ -224,8 +253,7 @@ class _BookingCard extends StatelessWidget {
         Icon(icon, size: 14, color: _P.aquaBright),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(text,
-              style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          child: Text(text, style: TextStyle(color: _P.textSec, fontSize: 12)),
         ),
       ]);
 }

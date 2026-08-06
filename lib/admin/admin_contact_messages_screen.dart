@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:palmnazi/admin/admin_shared_widgets.dart';
 import 'package:palmnazi/models/contact_message_model.dart';
+import 'package:palmnazi/services/admin_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/contact_message_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,9 +15,6 @@ import 'package:palmnazi/services/contact_message_service.dart';
 // access the same way. No reply workflow in this pass; an admin who wants to
 // respond copies the sender's email and replies externally.
 // ─────────────────────────────────────────────────────────────────────────────
-
-const _kSurface = Color(0xFF111827);
-const _kGold = Color(0xFFD4AF37);
 
 class AdminContactMessagesScreen extends StatelessWidget {
   const AdminContactMessagesScreen({super.key});
@@ -37,18 +36,17 @@ class AdminContactMessagesScreen extends StatelessWidget {
           }
           if (snap.hasError) {
             return AdminErrorView(
-              error: 'Could not load messages: ${snap.error}',
+              error:
+                  '${context.tr('admin_contact_messages_error_load_prefix')} ${snap.error}',
               onRetry: () {},
             );
           }
           final messages = snap.data ?? const <ContactMessageModel>[];
           if (messages.isEmpty) {
-            return const AdminEmptyState(
+            return AdminEmptyState(
               icon: Icons.mail_outline_rounded,
-              title: 'No messages yet',
-              body:
-                  'Submissions from the landing page\'s "Contact Us" form will '
-                  'show up here.',
+              title: context.tr('admin_contact_messages_empty_title'),
+              body: context.tr('admin_contact_messages_empty_body'),
             );
           }
           return ListView.separated(
@@ -76,46 +74,48 @@ class _MessageCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _kSurface,
+        color: AdC.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: AdC.overlay(0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.person_outline_rounded, color: _kGold, size: 18),
+              const Icon(Icons.person_outline_rounded,
+                  color: AdC.gold, size: 18),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(message.name,
-                    style: const TextStyle(
-                        color: Colors.white,
+                    style: TextStyle(
+                        color: AdC.textPri,
                         fontSize: 14,
                         fontWeight: FontWeight.w600)),
               ),
               Text(_formatDate(message.createdAt),
-                  style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                  style: TextStyle(color: AdC.textMute, fontSize: 11)),
             ],
           ),
           const SizedBox(height: 6),
           Row(
             children: [
-              const Icon(Icons.email_outlined, color: Colors.white38, size: 14),
+              Icon(Icons.email_outlined, color: AdC.textMute, size: 14),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(message.email,
-                    style:
-                        const TextStyle(color: Colors.white54, fontSize: 12)),
+                    style: TextStyle(color: AdC.textMute, fontSize: 12)),
               ),
               IconButton(
-                icon: const Icon(Icons.copy_rounded,
-                    color: Colors.white38, size: 16),
-                tooltip: 'Copy email',
+                icon: Icon(Icons.copy_rounded, color: AdC.textMute, size: 16),
+                tooltip:
+                    context.tr('admin_contact_messages_copy_email_tooltip'),
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: message.email));
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Email copied')),
+                    SnackBar(
+                        content: Text(
+                            context.tr('admin_contact_messages_email_copied'))),
                   );
                 },
               ),
@@ -123,8 +123,7 @@ class _MessageCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(message.message,
-              style: const TextStyle(
-                  color: Colors.white70, fontSize: 13, height: 1.5)),
+              style: TextStyle(color: AdC.textSec, fontSize: 13, height: 1.5)),
         ],
       ),
     );

@@ -22,10 +22,8 @@ class BlogPostDetailsService {
     };
   }
 
-  static Stream<BlogPostDetailsModel> stream(String slug) => _collection
-      .doc(slug)
-      .snapshots()
-      .map((snap) => snap.exists
+  static Stream<BlogPostDetailsModel> stream(String slug) =>
+      _collection.doc(slug).snapshots().map((snap) => snap.exists
           ? BlogPostDetailsModel.fromFirestore(snap)
           : BlogPostDetailsModel(slug: slug));
 

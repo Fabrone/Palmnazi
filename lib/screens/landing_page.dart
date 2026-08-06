@@ -30,6 +30,8 @@ import 'package:palmnazi/screens/place_details_screen.dart';
 import 'package:palmnazi/screens/resort_city_screen.dart';
 import 'package:palmnazi/screens/static_info_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/services/app_settings_controller.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/city_details_service.dart';
 import 'package:palmnazi/services/firebase_service.dart';
 import 'package:palmnazi/services/rbac_service.dart';
@@ -52,17 +54,32 @@ final Logger _log = Logger(
 // ─────────────────────────────────────────────────────────────────────────────
 // Design tokens  —  gold-forward navy (premium/corporate refresh)
 //
-// Gold is now the dominant CTA/highlight accent; teal is muted to a
-// secondary/tertiary role (small icons, minor accents) rather than the
-// primary brand color it used to be. Backgrounds are left close to their
-// original values since dozens of call sites across this file lean on them
-// and the requested change is one of accent identity, not a full re-theme.
+// Gold is the dominant CTA/highlight accent; teal is a secondary/tertiary
+// role (small icons, minor accents). Brand accent colors (teal/gold/coral/
+// emerald and their mid/dark variants) stay constant across light and dark
+// mode — only background/surface/text roles swap, driven by
+// AppSettingsController.instance.resolvedBrightness (see main.dart, which
+// sets it once per frame from the active ThemeMode). These are getters
+// rather than `static const` specifically so every existing `RC.xxx` call
+// site across the app (landing_page.dart, account_screen.dart, …) reacts to
+// a theme change without being individually rewritten — screens just need
+// one `context.tr(...)` or `AppSettingsScope.of(context)` call in their
+// build tree to register as a dependent and rebuild when settings change.
 // ─────────────────────────────────────────────────────────────────────────────
 abstract final class RC {
-  static const Color navy = Color(0xFF121F2E);
-  static const Color deepBlue = Color(0xFF1C2E42);
-  static const Color surface = Color(0xFF23374D);
-  static const Color surfaceHi = Color(0xFF2C4258);
+  static bool get _isDark =>
+      AppSettingsController.instance.resolvedBrightness == Brightness.dark;
+
+  static Color get navy =>
+      _isDark ? const Color(0xFF121F2E) : const Color(0xFFF5F7FA);
+  static Color get deepBlue =>
+      _isDark ? const Color(0xFF1C2E42) : const Color(0xFFE8EDF2);
+  static Color get surface =>
+      _isDark ? const Color(0xFF23374D) : const Color(0xFFFFFFFF);
+  static Color get surfaceHi =>
+      _isDark ? const Color(0xFF2C4258) : const Color(0xFFEFF3F7);
+
+  // Brand accents — intentionally identical in both modes.
   static const Color teal = Color(0xFF3FA9C4);
   static const Color tealMid = Color(0xFF2C8598);
   static const Color tealDark = Color(0xFF1D5F6E);
@@ -71,20 +88,42 @@ abstract final class RC {
   static const Color goldDark = Color(0xFF8C6D1F);
   static const Color coral = Color(0xFFFF6B6B);
   static const Color emerald = Color(0xFF00C98A);
-  static const Color textPri = Color(0xFFFFFFFF);
-  static const Color textSec = Color(0xFFC7D6E3);
-  static const Color textMute = Color(0xFF7C93A8);
+
+  static Color get textPri =>
+      _isDark ? const Color(0xFFFFFFFF) : const Color(0xFF121F2E);
+  static Color get textSec =>
+      _isDark ? const Color(0xFFC7D6E3) : const Color(0xFF3D4F60);
+  static Color get textMute =>
+      _isDark ? const Color(0xFF7C93A8) : const Color(0xFF6B7C8C);
 
   static const LinearGradient tealGrad =
       LinearGradient(colors: [teal, tealDark]);
   static const LinearGradient goldGrad =
       LinearGradient(colors: [gold, goldMid]);
-  static const LinearGradient heroGrad = LinearGradient(
-    begin: Alignment.topCenter,
-    end: Alignment.bottomCenter,
-    colors: [Color(0xCC121F2E), Color(0xBB1C2E42), Color(0xDD24384E)],
-    stops: [0.0, 0.45, 1.0],
-  );
+  static LinearGradient get heroGrad => _isDark
+      ? const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xCC121F2E), Color(0xBB1C2E42), Color(0xDD24384E)],
+          stops: [0.0, 0.45, 1.0],
+        )
+      : LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.white.withValues(alpha: 0.90),
+            const Color(0xFFE8EDF2).withValues(alpha: 0.85),
+            Colors.white.withValues(alpha: 0.95),
+          ],
+          stops: const [0.0, 0.45, 1.0],
+        );
+
+  /// Subtle fill for input/button backgrounds that used to be a flat
+  /// `Colors.white.withValues(alpha: x)` — invisible once the surface
+  /// behind it turns light. Black in light mode keeps the same "faint tint
+  /// over the surface" effect in both modes.
+  static Color overlay(double alpha) =>
+      (_isDark ? Colors.white : Colors.black).withValues(alpha: alpha);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -996,11 +1035,12 @@ class _LandingPageState extends State<LandingPage>
                   _brand(),
                   const Spacer(),
                   if (!isMobile) ...[
-                    _navLink('Destinations',
+                    _navLink(context.tr('nav_destinations'),
                         onTap: () => _scrollToKey(_citiesKey)),
                     _navLink(TourismLabels.categoryPlural,
                         onTap: _openCategoriesOverlay),
-                    _navLink('Blog', onTap: () => _scrollToKey(_blogKey)),
+                    _navLink(context.tr('nav_blog'),
+                        onTap: () => _scrollToKey(_blogKey)),
                     const SizedBox(width: 8),
                     _signInButton(),
                   ],
@@ -1047,7 +1087,8 @@ class _LandingPageState extends State<LandingPage>
         foregroundColor: RC.textSec,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       ),
-      child: const Text('Sign In', style: TextStyle(fontSize: 13)),
+      child:
+          Text(context.tr('nav_sign_in'), style: const TextStyle(fontSize: 13)),
     );
   }
 
@@ -1056,15 +1097,15 @@ class _LandingPageState extends State<LandingPage>
       return _signInButton();
     }
     return IconButton(
-      icon: const Icon(Icons.login_rounded, color: RC.textSec, size: 22),
+      icon: Icon(Icons.login_rounded, color: RC.textSec, size: 22),
       onPressed: _goToSignIn,
       splashRadius: 20,
-      tooltip: 'Sign In',
+      tooltip: context.tr('nav_sign_in'),
     );
   }
 
   Widget _menuIconButton() => IconButton(
-        icon: const Icon(Icons.menu_rounded, color: RC.textSec, size: 22),
+        icon: Icon(Icons.menu_rounded, color: RC.textSec, size: 22),
         onPressed: _showMobileMenu,
         splashRadius: 20,
         tooltip: 'Menu',
@@ -1300,7 +1341,9 @@ class _LandingPageState extends State<LandingPage>
                       color: RC.textMute,
                       borderRadius: BorderRadius.circular(2))),
               const SizedBox(height: 16),
-              _mobileMenuItem(Icons.location_city_outlined, 'Destinations', () {
+              _mobileMenuItem(
+                  Icons.location_city_outlined, context.tr('nav_destinations'),
+                  () {
                 Navigator.pop(context);
                 _scrollToKey(_citiesKey);
               }),
@@ -1309,22 +1352,26 @@ class _LandingPageState extends State<LandingPage>
                 Navigator.pop(context);
                 _openCategoriesOverlay();
               }),
-              _mobileMenuItem(Icons.article_outlined, 'Blog', () {
+              _mobileMenuItem(Icons.article_outlined, context.tr('nav_blog'),
+                  () {
                 Navigator.pop(context);
                 _scrollToKey(_blogKey);
               }),
-              _mobileMenuItem(Icons.search_rounded, 'Search', () {
+              _mobileMenuItem(Icons.search_rounded, context.tr('nav_search'),
+                  () {
                 Navigator.pop(context);
                 _focusHeroSearch();
               }),
               const Divider(color: Color(0xFF1A3550), height: 24),
               if (_isLoggedIn)
-                _mobileMenuItem(Icons.person_rounded, 'My Account', () {
+                _mobileMenuItem(
+                    Icons.person_rounded, context.tr('nav_my_account'), () {
                   Navigator.pop(context);
                   _goToAccount();
                 })
               else
-                _mobileMenuItem(Icons.login_rounded, 'Sign In', () {
+                _mobileMenuItem(Icons.login_rounded, context.tr('nav_sign_in'),
+                    () {
                   Navigator.pop(context);
                   _goToSignIn();
                 }),
@@ -1338,8 +1385,7 @@ class _LandingPageState extends State<LandingPage>
   Widget _mobileMenuItem(IconData icon, String label, VoidCallback onTap) =>
       ListTile(
         leading: Icon(icon, color: RC.teal, size: 20),
-        title: Text(label,
-            style: const TextStyle(color: RC.textSec, fontSize: 14)),
+        title: Text(label, style: TextStyle(color: RC.textSec, fontSize: 14)),
         onTap: onTap,
         dense: true,
       );
@@ -1420,8 +1466,7 @@ class _LandingPageState extends State<LandingPage>
         const SizedBox(width: 10),
         ShaderMask(
           shaderCallback: (b) =>
-              const LinearGradient(colors: [RC.gold, Colors.white])
-                  .createShader(b),
+              LinearGradient(colors: [RC.gold, RC.textPri]).createShader(b),
           child: const Text(
             'PALMNAZI RC',
             style: TextStyle(
@@ -1482,7 +1527,7 @@ class _LandingPageState extends State<LandingPage>
                 'assets/images/homepage.jpg',
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => Container(
-                  decoration: const BoxDecoration(gradient: RC.heroGrad),
+                  decoration: BoxDecoration(gradient: RC.heroGrad),
                 ),
               ),
             ),
@@ -1731,7 +1776,7 @@ class _LandingPageState extends State<LandingPage>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('EXPLORE RESORT CITIES',
+            Text(context.tr('section_explore_resort_cities'),
                 style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.55),
                     fontSize: 10,
@@ -1794,14 +1839,14 @@ class _LandingPageState extends State<LandingPage>
               Text(
                 'Featured Places',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: RC.textPri,
                   fontSize: isMobile ? 26 : 34,
                   fontWeight: FontWeight.bold,
                   letterSpacing: -0.3,
                 ),
               ),
               const SizedBox(height: 10),
-              const Text(
+              Text(
                 'Promoted stays, dining and experiences our admins are '
                 'highlighting right now.',
                 style: TextStyle(color: RC.textSec, fontSize: 15, height: 1.6),
@@ -1851,14 +1896,14 @@ class _LandingPageState extends State<LandingPage>
               Text(
                 'Explore Resort Cities',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: RC.textPri,
                   fontSize: isMobile ? 28 : 38,
                   fontWeight: FontWeight.bold,
                   letterSpacing: -0.3,
                 ),
               ),
               const SizedBox(height: 10),
-              const Text(
+              Text(
                 'Handpicked resort destinations for every kind of trip — leisure escapes, team retreats, and everything in between.',
                 style: TextStyle(color: RC.textSec, fontSize: 15, height: 1.6),
               ),
@@ -1880,9 +1925,9 @@ class _LandingPageState extends State<LandingPage>
     if (_citiesError != null) {
       return Center(
           child: Column(children: [
-        const Icon(Icons.cloud_off_rounded, color: RC.textMute, size: 48),
+        Icon(Icons.cloud_off_rounded, color: RC.textMute, size: 48),
         const SizedBox(height: 14),
-        const Text('Could not load destinations',
+        Text(context.tr('empty_destinations_error'),
             style: TextStyle(color: RC.textSec)),
         const SizedBox(height: 10),
         TextButton.icon(
@@ -1895,9 +1940,9 @@ class _LandingPageState extends State<LandingPage>
     if (_cities.isEmpty) {
       return Center(
           child: Column(children: [
-        const Icon(Icons.location_city_outlined, color: RC.textMute, size: 56),
+        Icon(Icons.location_city_outlined, color: RC.textMute, size: 56),
         const SizedBox(height: 16),
-        const Text('No destinations available yet',
+        Text(context.tr('empty_destinations_none'),
             style: TextStyle(color: RC.textSec, fontSize: 15)),
       ]));
     }
@@ -1906,10 +1951,10 @@ class _LandingPageState extends State<LandingPage>
     if (filtered.isEmpty) {
       return Center(
           child: Column(children: [
-        const Icon(Icons.filter_alt_off_outlined, color: RC.textMute, size: 48),
+        Icon(Icons.filter_alt_off_outlined, color: RC.textMute, size: 48),
         const SizedBox(height: 14),
         Text('No resort cities in "$_cityRegionFilter" yet',
-            style: const TextStyle(color: RC.textSec, fontSize: 15)),
+            style: TextStyle(color: RC.textSec, fontSize: 15)),
         const SizedBox(height: 10),
         TextButton(
           onPressed: () => setState(() => _cityRegionFilter = null),
@@ -2023,7 +2068,7 @@ class _LandingPageState extends State<LandingPage>
                         Text(
                           'Travel Inspiration',
                           style: TextStyle(
-                            color: Colors.white,
+                            color: RC.textPri,
                             fontSize: isMobile ? 26 : 36,
                             fontWeight: FontWeight.bold,
                             letterSpacing: -0.2,
@@ -2034,7 +2079,7 @@ class _LandingPageState extends State<LandingPage>
                           _blogTotal > 0
                               ? 'Guides, tips and stories — $_blogTotal articles published.'
                               : 'Guides, tips and stories from our expert travel writers.',
-                          style: const TextStyle(
+                          style: TextStyle(
                               color: RC.textSec, fontSize: 15, height: 1.5),
                         ),
                       ],
@@ -2052,8 +2097,8 @@ class _LandingPageState extends State<LandingPage>
                                   color: RC.teal, strokeWidth: 2))
                           : const Icon(Icons.expand_more_rounded,
                               color: RC.teal, size: 16),
-                      label: const Text('Load More',
-                          style: TextStyle(color: RC.teal, fontSize: 13)),
+                      label: Text(context.tr('section_load_more'),
+                          style: const TextStyle(color: RC.teal, fontSize: 13)),
                     ),
                   ],
                 ],
@@ -2094,8 +2139,7 @@ class _LandingPageState extends State<LandingPage>
                             )
                       : Text(
                           'All ${_blogTotal > 0 ? '$_blogTotal ' : ''}articles loaded',
-                          style:
-                              const TextStyle(color: RC.textMute, fontSize: 12),
+                          style: TextStyle(color: RC.textMute, fontSize: 12),
                         ),
                 ),
               ],
@@ -2125,11 +2169,11 @@ class _LandingPageState extends State<LandingPage>
     if (_blogPosts.isEmpty) {
       return Center(
           child: Column(children: [
-        const Icon(Icons.article_outlined, color: RC.textMute, size: 48),
+        Icon(Icons.article_outlined, color: RC.textMute, size: 48),
         const SizedBox(height: 12),
-        const Text('No blog posts yet.', style: TextStyle(color: RC.textSec)),
+        Text('No blog posts yet.', style: TextStyle(color: RC.textSec)),
         const SizedBox(height: 6),
-        const Text('Check back soon for travel guides and inspiration.',
+        Text('Check back soon for travel guides and inspiration.',
             style: TextStyle(color: RC.textMute, fontSize: 13)),
       ]));
     }
@@ -2137,10 +2181,10 @@ class _LandingPageState extends State<LandingPage>
     if (filtered.isEmpty) {
       return Center(
           child: Column(children: [
-        const Icon(Icons.filter_alt_off_outlined, color: RC.textMute, size: 44),
+        Icon(Icons.filter_alt_off_outlined, color: RC.textMute, size: 44),
         const SizedBox(height: 12),
         Text('No articles tagged "$_blogCategoryFilter" yet',
-            style: const TextStyle(color: RC.textSec, fontSize: 14)),
+            style: TextStyle(color: RC.textSec, fontSize: 14)),
         const SizedBox(height: 8),
         TextButton(
           onPressed: () => setState(() => _blogCategoryFilter = null),
@@ -2311,7 +2355,8 @@ class _LandingPageState extends State<LandingPage>
                       children: [
                           _footerBrand(),
                           const SizedBox(height: 32),
-                          _footerLinks('Explore', exploreLinks),
+                          _footerLinks(
+                              context.tr('footer_explore'), exploreLinks),
                           const SizedBox(height: 28),
                           _footerLinks('Company', companyLinks),
                           const SizedBox(height: 28),
@@ -2323,7 +2368,8 @@ class _LandingPageState extends State<LandingPage>
                           Expanded(flex: 2, child: _footerBrand()),
                           const SizedBox(width: 40),
                           Expanded(
-                              child: _footerLinks('Explore', exploreLinks)),
+                              child: _footerLinks(
+                                  context.tr('footer_explore'), exploreLinks)),
                           const SizedBox(width: 24),
                           Expanded(
                               child: _footerLinks('Company', companyLinks)),
@@ -2337,13 +2383,13 @@ class _LandingPageState extends State<LandingPage>
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Flexible(
+                  Flexible(
                     child: Text(
                         '© 2026 Palmnazi Resort Cities. All rights reserved.',
                         style: TextStyle(color: RC.textMute, fontSize: 12)),
                   ),
                   if (!isMobile)
-                    const Text('Made with ❤ for every kind of traveller',
+                    Text(context.tr('footer_made_with_love'),
                         style: TextStyle(color: RC.textMute, fontSize: 12)),
                 ],
               ),
@@ -2375,8 +2421,8 @@ class _LandingPageState extends State<LandingPage>
                     letterSpacing: 1.5)),
           ]),
           const SizedBox(height: 14),
-          const Text(
-            'Discover Africa\'s most beautiful resort\ndestinations and unforgettable experiences.',
+          Text(
+            context.tr('footer_tagline'),
             style: TextStyle(color: RC.textSec, fontSize: 13, height: 1.7),
           ),
         ],
@@ -2460,7 +2506,7 @@ class _NavLinkState extends State<_NavLink> {
             widget.label,
             style: TextStyle(
               fontSize: 13,
-              color: _hovered ? Colors.white : RC.textSec,
+              color: _hovered ? RC.textPri : RC.textSec,
               fontWeight: _hovered ? FontWeight.w600 : FontWeight.w400,
             ),
           ),
@@ -2489,14 +2535,11 @@ class _FilterChip extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: selected
-              ? RC.gold.withValues(alpha: 0.16)
-              : Colors.white.withValues(alpha: 0.06),
+          color: selected ? RC.gold.withValues(alpha: 0.16) : RC.overlay(0.06),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: selected
-                ? RC.gold.withValues(alpha: 0.70)
-                : Colors.white.withValues(alpha: 0.15),
+            color:
+                selected ? RC.gold.withValues(alpha: 0.70) : RC.overlay(0.15),
             width: 1.2,
           ),
         ),
@@ -2828,7 +2871,7 @@ class _StatCard extends StatelessWidget {
           const SizedBox(height: 3),
           Text(
             label,
-            style: const TextStyle(color: RC.textSec, fontSize: 12),
+            style: TextStyle(color: RC.textSec, fontSize: 12),
             overflow: TextOverflow.ellipsis,
             maxLines: 1,
           ),
@@ -3066,13 +3109,13 @@ class _HeroSearchState extends State<_HeroSearch> {
               controller: _ctrl,
               focusNode: widget.focusNode,
               onChanged: _onQueryChanged,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
+              style: TextStyle(color: RC.textPri, fontSize: 14),
               decoration: InputDecoration(
                 isDense: true,
                 hintText: widget.isMobile
                     ? 'Search destinations…'
                     : 'Search cities, ${TourismLabels.placePlural.toLowerCase()}, ${TourismLabels.categoryPlural.toLowerCase()}…',
-                hintStyle: const TextStyle(color: RC.textSec, fontSize: 13),
+                hintStyle: TextStyle(color: RC.textSec, fontSize: 13),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(vertical: 16),
               ),
@@ -3094,8 +3137,8 @@ class _HeroSearchState extends State<_HeroSearch> {
                 _ctrl.clear();
                 _onQueryChanged('');
               },
-              child: const Padding(
-                padding: EdgeInsets.only(left: 4),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4),
                 child: Icon(Icons.close_rounded, color: RC.textMute, size: 18),
               ),
             ),
@@ -3156,7 +3199,7 @@ class _HeroSearchState extends State<_HeroSearch> {
                             border: Border.all(
                               color: selected
                                   ? RC.gold.withValues(alpha: 0.50)
-                                  : Colors.white.withValues(alpha: 0.06),
+                                  : RC.overlay(0.06),
                             ),
                           ),
                           child: Row(
@@ -3202,7 +3245,7 @@ class _HeroSearchState extends State<_HeroSearch> {
             Text(
                 'Type to search across cities, ${TourismLabels.placePlural.toLowerCase()} and ${TourismLabels.categoryPlural.toLowerCase()}',
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: RC.textMute, fontSize: 13)),
+                style: TextStyle(color: RC.textMute, fontSize: 13)),
           ],
         ),
       );
@@ -3222,7 +3265,7 @@ class _HeroSearchState extends State<_HeroSearch> {
           const SizedBox(height: 10),
           Text(_error!,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: RC.textSec, fontSize: 13)),
+              style: TextStyle(color: RC.textSec, fontSize: 13)),
         ]),
       );
     }
@@ -3237,11 +3280,11 @@ class _HeroSearchState extends State<_HeroSearch> {
           Text(
             'No results found for "${_ctrl.text.trim()}"',
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
                 color: RC.textSec, fontSize: 14, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Try a different spelling or search term.',
             style: TextStyle(color: RC.textMute, fontSize: 12),
           ),
@@ -3253,8 +3296,7 @@ class _HeroSearchState extends State<_HeroSearch> {
       shrinkWrap: true,
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 12),
       itemCount: visible.length,
-      separatorBuilder: (_, __) =>
-          Divider(color: Colors.white.withValues(alpha: 0.05), height: 1),
+      separatorBuilder: (_, __) => Divider(color: RC.overlay(0.05), height: 1),
       itemBuilder: (_, i) {
         final r = visible[i];
         return ListTile(
@@ -3262,15 +3304,15 @@ class _HeroSearchState extends State<_HeroSearch> {
               const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           leading: _resultIcon(r),
           title: Text(r.name,
-              style: const TextStyle(
-                  color: Colors.white,
+              style: TextStyle(
+                  color: RC.textPri,
                   fontSize: 13,
                   fontWeight: FontWeight.w500)),
           subtitle: r.subtitle != null && r.subtitle!.isNotEmpty
               ? Text(r.subtitle!,
-                  style: const TextStyle(color: RC.textMute, fontSize: 11))
+                  style: TextStyle(color: RC.textMute, fontSize: 11))
               : null,
-          trailing: const Icon(Icons.arrow_forward_ios_rounded,
+          trailing: Icon(Icons.arrow_forward_ios_rounded,
               color: RC.textMute, size: 12),
           onTap: () => _onResultTap(r),
           shape:
@@ -3451,19 +3493,19 @@ class _PublicCategoriesOverlayState extends State<_PublicCategoriesOverlay> {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.close_rounded, color: RC.textSec),
+          icon: Icon(Icons.close_rounded, color: RC.textSec),
           onPressed: () => Navigator.pop(context),
         ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(TourismLabels.categoryPlural,
-                style: const TextStyle(
-                    color: Colors.white,
+                style: TextStyle(
+                    color: RC.textPri,
                     fontSize: 16,
                     fontWeight: FontWeight.w700)),
             Text('Browse all ${TourismLabels.categoryPlural}',
-                style: const TextStyle(color: RC.textMute, fontSize: 11)),
+                style: TextStyle(color: RC.textMute, fontSize: 11)),
           ],
         ),
         bottom: PreferredSize(
@@ -3479,15 +3521,15 @@ class _PublicCategoriesOverlayState extends State<_PublicCategoriesOverlay> {
               child: TextField(
                 controller: _searchCtrl,
                 onChanged: (v) => setState(() => _query = v),
-                style: const TextStyle(color: Colors.white, fontSize: 14),
-                decoration: const InputDecoration(
+                style: TextStyle(color: RC.textPri, fontSize: 14),
+                decoration: InputDecoration(
                   hintText: 'Filter categories…',
                   hintStyle: TextStyle(color: RC.textMute, fontSize: 13),
-                  prefixIcon:
-                      Icon(Icons.search_rounded, color: RC.teal, size: 18),
+                  prefixIcon: const Icon(Icons.search_rounded,
+                      color: RC.teal, size: 18),
                   border: InputBorder.none,
                   contentPadding:
-                      EdgeInsets.symmetric(horizontal: 8, vertical: 13),
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 13),
                 ),
               ),
             ),
@@ -3512,10 +3554,9 @@ class _PublicCategoriesOverlayState extends State<_PublicCategoriesOverlay> {
     if (_error != null) {
       return Center(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.cloud_off_rounded, color: RC.textMute, size: 48),
+        Icon(Icons.cloud_off_rounded, color: RC.textMute, size: 48),
         const SizedBox(height: 14),
-        const Text('Could not load categories',
-            style: TextStyle(color: RC.textSec)),
+        Text('Could not load categories', style: TextStyle(color: RC.textSec)),
         const SizedBox(height: 10),
         TextButton.icon(
           onPressed: _fetch,
@@ -3535,7 +3576,7 @@ class _PublicCategoriesOverlayState extends State<_PublicCategoriesOverlay> {
           _query.isEmpty
               ? 'No categories available yet'
               : 'No categories match "$_query"',
-          style: const TextStyle(color: RC.textSec, fontSize: 14),
+          style: TextStyle(color: RC.textSec, fontSize: 14),
         ),
       ]));
     }
@@ -3577,7 +3618,7 @@ class _RootCategoryTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: RC.deepBlue,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+        border: Border.all(color: RC.overlay(0.07)),
       ),
       child: Column(
         children: [
@@ -3607,8 +3648,8 @@ class _RootCategoryTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(root.name,
-                        style: const TextStyle(
-                            color: Colors.white,
+                        style: TextStyle(
+                            color: RC.textPri,
                             fontSize: 14,
                             fontWeight: FontWeight.w600)),
                     if (root.description != null &&
@@ -3616,8 +3657,7 @@ class _RootCategoryTile extends StatelessWidget {
                       Text(root.description!,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: RC.textMute, fontSize: 11)),
+                          style: TextStyle(color: RC.textMute, fontSize: 11)),
                   ],
                 )),
                 if (root.children.isNotEmpty) ...[
@@ -3651,9 +3691,7 @@ class _RootCategoryTile extends StatelessWidget {
           if (expanded && root.children.isNotEmpty)
             Container(
               decoration: BoxDecoration(
-                border: Border(
-                    top: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.06))),
+                border: Border(top: BorderSide(color: RC.overlay(0.06))),
               ),
               child: Column(
                 children: root.children
@@ -3664,16 +3702,14 @@ class _RootCategoryTile extends StatelessWidget {
                           leading: child.icon != null && child.icon!.length == 2
                               ? Text(child.icon!,
                                   style: const TextStyle(fontSize: 14))
-                              : const Icon(
-                                  Icons.subdirectory_arrow_right_rounded,
-                                  color: RC.textMute,
-                                  size: 14),
+                              : Icon(Icons.subdirectory_arrow_right_rounded,
+                                  color: RC.textMute, size: 14),
                           title: Text(child.name,
-                              style: const TextStyle(
-                                  color: RC.textSec, fontSize: 13)),
+                              style:
+                                  TextStyle(color: RC.textSec, fontSize: 13)),
                           subtitle: child.placeLinksCount > 0
                               ? Text('${child.placeLinksCount} places',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       color: RC.textMute, fontSize: 11))
                               : null,
                           onTap: () {},
@@ -3768,11 +3804,12 @@ class _FeaturedPlaceCardState extends State<_FeaturedPlaceCard> {
                       color: RC.gold.withValues(alpha: 0.92),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.star_rounded, size: 12, color: Colors.black87),
-                      SizedBox(width: 3),
-                      Text('Featured',
-                          style: TextStyle(
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.star_rounded,
+                          size: 12, color: Colors.black87),
+                      const SizedBox(width: 3),
+                      Text(context.tr('section_featured'),
+                          style: const TextStyle(
                               color: Colors.black87,
                               fontSize: 11,
                               fontWeight: FontWeight.w700)),
@@ -3806,7 +3843,7 @@ class _FeaturedPlaceCardState extends State<_FeaturedPlaceCard> {
                               child: Text(p.cityName,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       color: RC.textSec, fontSize: 11.5)),
                             ),
                           ]),
@@ -3838,7 +3875,7 @@ class _FeaturedPlaceCardState extends State<_FeaturedPlaceCard> {
   }
 
   Widget _placeFallback() => Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -3875,25 +3912,25 @@ class _MaintenancePage extends StatelessWidget {
             children: [
               const Icon(Icons.build_circle_outlined, size: 64, color: RC.gold),
               const SizedBox(height: 20),
-              const Text('Under Maintenance',
+              Text(context.tr('section_under_maintenance'),
                   style: TextStyle(
-                      color: Colors.white,
+                      color: RC.textPri,
                       fontSize: 24,
                       fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
               Text(display,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color: RC.textSec, fontSize: 14, height: 1.5)),
+                  style:
+                      TextStyle(color: RC.textSec, fontSize: 14, height: 1.5)),
               const SizedBox(height: 28),
               TextButton.icon(
                 onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(
                         builder: (_) => const AuthScreen(isLogin: true))),
-                icon: const Icon(Icons.admin_panel_settings_outlined,
+                icon: Icon(Icons.admin_panel_settings_outlined,
                     color: RC.textMute, size: 16),
-                label: const Text('Admin sign in',
+                label: Text(context.tr('section_admin_sign_in'),
                     style: TextStyle(color: RC.textMute, fontSize: 12)),
               ),
             ],
@@ -4022,17 +4059,16 @@ class _CityCardState extends State<_CityCard>
                           color: RC.emerald.withValues(alpha: 0.88),
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.circle, size: 6, color: Colors.white),
-                              SizedBox(width: 4),
-                              Text('Open',
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600)),
-                            ]),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.circle,
+                              size: 6, color: Colors.white),
+                          const SizedBox(width: 4),
+                          Text(context.tr('section_open'),
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600)),
+                        ]),
                       ),
                     ),
                   Positioned(
@@ -4058,7 +4094,7 @@ class _CityCardState extends State<_CityCard>
                                   size: 12, color: RC.teal),
                               const SizedBox(width: 3),
                               Text(city.region,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       color: RC.textSec, fontSize: 12)),
                             ]),
                           ],
@@ -4087,16 +4123,16 @@ class _CityCardState extends State<_CityCard>
                                       blurRadius: 10)
                                 ],
                               ),
-                              child: const Row(
+                              child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Text('Explore',
-                                        style: TextStyle(
+                                    Text(context.tr('footer_explore'),
+                                        style: const TextStyle(
                                             color: Colors.white,
                                             fontSize: 12,
                                             fontWeight: FontWeight.w700)),
-                                    SizedBox(width: 6),
-                                    Icon(Icons.arrow_forward_rounded,
+                                    const SizedBox(width: 6),
+                                    const Icon(Icons.arrow_forward_rounded,
                                         size: 13, color: Colors.white),
                                   ]),
                             ),
@@ -4126,7 +4162,7 @@ class _CityCardState extends State<_CityCard>
   }
 
   Widget _gradientFallback() => Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -4192,7 +4228,7 @@ class _BlogCardState extends State<_BlogCard>
             decoration: BoxDecoration(
               color: RC.surface,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+              border: Border.all(color: RC.overlay(0.07)),
               boxShadow: [
                 BoxShadow(
                     color: Colors.black.withValues(alpha: 0.20), blurRadius: 12)
@@ -4241,8 +4277,8 @@ class _BlogCardState extends State<_BlogCard>
                         ),
                       const SizedBox(height: 10),
                       Text(post.title,
-                          style: const TextStyle(
-                              color: Colors.white,
+                          style: TextStyle(
+                              color: RC.textPri,
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
                               height: 1.4),
@@ -4250,7 +4286,7 @@ class _BlogCardState extends State<_BlogCard>
                           overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 8),
                       Text(post.excerpt,
-                          style: const TextStyle(
+                          style: TextStyle(
                               color: RC.textSec, fontSize: 12, height: 1.5),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis),
@@ -4259,20 +4295,20 @@ class _BlogCardState extends State<_BlogCard>
                         Padding(
                           padding: const EdgeInsets.only(bottom: 8),
                           child: Row(children: [
-                            const Icon(Icons.calendar_today_outlined,
+                            Icon(Icons.calendar_today_outlined,
                                 size: 11, color: RC.textMute),
                             const SizedBox(width: 4),
                             Text(post.formattedDate,
-                                style: const TextStyle(
+                                style: TextStyle(
                                     color: RC.textMute, fontSize: 11)),
                             if (post.cityName.isNotEmpty) ...[
                               const SizedBox(width: 8),
-                              const Icon(Icons.location_on_outlined,
+                              Icon(Icons.location_on_outlined,
                                   size: 11, color: RC.textMute),
                               const SizedBox(width: 3),
                               Expanded(
                                 child: Text(post.cityName,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         color: RC.textMute, fontSize: 11),
                                     overflow: TextOverflow.ellipsis),
                               ),
@@ -4280,30 +4316,30 @@ class _BlogCardState extends State<_BlogCard>
                           ]),
                         ),
                       Row(children: [
-                        const Icon(Icons.person_outline_rounded,
+                        Icon(Icons.person_outline_rounded,
                             size: 13, color: RC.textMute),
                         const SizedBox(width: 4),
                         Expanded(
                             child: Text(post.authorName,
-                                style: const TextStyle(
-                                    color: RC.textMute, fontSize: 11),
+                                style:
+                                    TextStyle(color: RC.textMute, fontSize: 11),
                                 overflow: TextOverflow.ellipsis)),
                         if (post.readingTimeMinutes != null) ...[
-                          const Icon(Icons.schedule_rounded,
+                          Icon(Icons.schedule_rounded,
                               size: 12, color: RC.textMute),
                           const SizedBox(width: 3),
                           Text('${post.readingTimeMinutes}m',
-                              style: const TextStyle(
-                                  color: RC.textMute, fontSize: 11)),
+                              style:
+                                  TextStyle(color: RC.textMute, fontSize: 11)),
                         ],
                         if (post.views != null && post.views! > 0) ...[
                           const SizedBox(width: 8),
-                          const Icon(Icons.visibility_outlined,
+                          Icon(Icons.visibility_outlined,
                               size: 12, color: RC.textMute),
                           const SizedBox(width: 3),
                           Text('${post.views}',
-                              style: const TextStyle(
-                                  color: RC.textMute, fontSize: 11)),
+                              style:
+                                  TextStyle(color: RC.textMute, fontSize: 11)),
                         ],
                       ]),
                     ],
@@ -4319,7 +4355,7 @@ class _BlogCardState extends State<_BlogCard>
 
   Widget _imgFallback() => Container(
         color: RC.deepBlue,
-        child: const Center(
+        child: Center(
             child: Icon(Icons.article_outlined, color: RC.textMute, size: 40)),
       );
 }
@@ -4368,7 +4404,7 @@ class _SkeletonBoxState extends State<_SkeletonBox>
           decoration: BoxDecoration(
             color: RC.deepBlue.withValues(alpha: _anim.value),
             borderRadius: BorderRadius.circular(widget.radius),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+            border: Border.all(color: RC.overlay(0.05)),
           ),
         ),
       );

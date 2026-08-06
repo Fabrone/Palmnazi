@@ -111,18 +111,12 @@ class PalmnaziApp extends StatefulWidget {
 }
 
 class _PalmnaziAppState extends State<PalmnaziApp> {
-  final AppSettingsController _settings = AppSettingsController();
+  final AppSettingsController _settings = AppSettingsController.instance;
 
   @override
   void initState() {
     super.initState();
     _settings.load();
-  }
-
-  @override
-  void dispose() {
-    _settings.dispose();
-    super.dispose();
   }
 
   // ── Shared brand palette, mirrored light/dark ─────────────────────────────
@@ -189,6 +183,16 @@ class _PalmnaziAppState extends State<PalmnaziApp> {
     return AnimatedBuilder(
       animation: _settings,
       builder: (context, _) {
+        // Resolved before the subtree builds so every RC.xxx getter
+        // (landing_page.dart) reflects the current mode this frame, even
+        // for widgets that never touch Theme.of(context) directly.
+        _settings.resolvedBrightness = switch (_settings.themeMode) {
+          ThemeMode.light => Brightness.light,
+          ThemeMode.dark => Brightness.dark,
+          ThemeMode.system =>
+            WidgetsBinding.instance.platformDispatcher.platformBrightness,
+        };
+
         final lightBase = _buildTheme(brightness: Brightness.light);
         final darkBase = _buildTheme(brightness: Brightness.dark);
 

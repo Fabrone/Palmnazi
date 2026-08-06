@@ -4,6 +4,29 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/services/app_colors.dart';
+import 'package:palmnazi/services/app_settings_controller.dart';
+import 'package:palmnazi/services/app_strings.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _PSP — local theme-reactive palette for this modal sheet
+// ─────────────────────────────────────────────────────────────────────────────
+abstract final class _PSP {
+  static bool get _isDark =>
+      AppSettingsController.instance.resolvedBrightness == Brightness.dark;
+
+  static Color get surface =>
+      _isDark ? const Color(0xFF111827) : const Color(0xFFFFFFFF);
+  static Color get textPri => _isDark ? Colors.white : const Color(0xFF121F2E);
+  static Color get textSec =>
+      _isDark ? Colors.white38 : const Color(0xFF7C93A8);
+  static Color get handle => _isDark ? Colors.white24 : const Color(0xFFD0D8E0);
+  static Color get fieldFill =>
+      _isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF0F3F7);
+  static Color get divider => _isDark
+      ? Colors.white.withValues(alpha: 0.06)
+      : Colors.black.withValues(alpha: 0.06);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PlaceSearchPicker
@@ -139,9 +162,9 @@ class _PlaceSearchSheetState extends State<_PlaceSearchSheet> {
       child: Container(
         constraints: BoxConstraints(
             maxHeight: MediaQuery.of(context).size.height * 0.75),
-        decoration: const BoxDecoration(
-          color: Color(0xFF111827),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        decoration: BoxDecoration(
+          color: _PSP.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
         child: Column(
@@ -152,38 +175,37 @@ class _PlaceSearchSheetState extends State<_PlaceSearchSheet> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(2)),
+                    color: _PSP.handle, borderRadius: BorderRadius.circular(2)),
               ),
             ),
             const SizedBox(height: 16),
-            const Align(
+            Align(
               alignment: Alignment.centerLeft,
-              child: Text('Select a Place',
+              child: Text(context.tr('widget_place_search_picker_title'),
                   style: TextStyle(
-                      color: Colors.white,
+                      color: _PSP.textPri,
                       fontSize: 16,
                       fontWeight: FontWeight.bold)),
             ),
             const SizedBox(height: 4),
-            const Align(
+            Align(
               alignment: Alignment.centerLeft,
-              child: Text('Search for the place you manage or want to manage.',
-                  style: TextStyle(color: Colors.white38, fontSize: 12)),
+              child: Text(context.tr('widget_place_search_picker_subtitle'),
+                  style: TextStyle(color: _PSP.textSec, fontSize: 12)),
             ),
             const SizedBox(height: 14),
             TextField(
               controller: _ctrl,
               autofocus: true,
               onChanged: _onChanged,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
+              style: TextStyle(color: _PSP.textPri, fontSize: 14),
               decoration: InputDecoration(
-                hintText: 'Search by place name…',
-                hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                prefixIcon: const Icon(Icons.search_rounded,
-                    color: Color(0xFF14FFEC), size: 18),
+                hintText: context.tr('widget_place_search_picker_hint'),
+                hintStyle: TextStyle(color: _PSP.textSec, fontSize: 13),
+                prefixIcon:
+                    const Icon(Icons.search_rounded, color: AC.teal, size: 18),
                 filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.06),
+                fillColor: _PSP.fieldFill,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -205,41 +227,39 @@ class _PlaceSearchSheetState extends State<_PlaceSearchSheet> {
       return const Padding(
         padding: EdgeInsets.all(24),
         child: Center(
-            child: CircularProgressIndicator(
-                color: Color(0xFF14FFEC), strokeWidth: 2)),
+            child: CircularProgressIndicator(color: AC.teal, strokeWidth: 2)),
       );
     }
     if (!_searched) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 24),
-        child: Text('Start typing to find a place.',
-            style: TextStyle(color: Colors.white38, fontSize: 12)),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Text(context.tr('widget_place_search_picker_prompt'),
+            style: TextStyle(color: _PSP.textSec, fontSize: 12)),
       );
     }
     if (_results.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 24),
-        child: Text('No matching places found.',
-            style: TextStyle(color: Colors.white38, fontSize: 12)),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Text(context.tr('widget_place_search_picker_empty'),
+            style: TextStyle(color: _PSP.textSec, fontSize: 12)),
       );
     }
     return ListView.separated(
       shrinkWrap: true,
       itemCount: _results.length,
-      separatorBuilder: (_, __) =>
-          Divider(color: Colors.white.withValues(alpha: 0.06), height: 1),
+      separatorBuilder: (_, __) => Divider(color: _PSP.divider, height: 1),
       itemBuilder: (_, i) {
         final p = _results[i];
         return ListTile(
           contentPadding: EdgeInsets.zero,
-          title: Text(p.name,
-              style: const TextStyle(color: Colors.white, fontSize: 13)),
+          title:
+              Text(p.name, style: TextStyle(color: _PSP.textPri, fontSize: 13)),
           subtitle: p.cityName.isNotEmpty
               ? Text(p.cityName,
-                  style: const TextStyle(color: Colors.white38, fontSize: 11))
+                  style: TextStyle(color: _PSP.textSec, fontSize: 11))
               : null,
-          trailing: const Icon(Icons.chevron_right_rounded,
-              color: Colors.white38, size: 18),
+          trailing:
+              Icon(Icons.chevron_right_rounded, color: _PSP.textSec, size: 18),
           onTap: () => Navigator.of(context).pop(p),
         );
       },

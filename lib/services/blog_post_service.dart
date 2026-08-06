@@ -38,9 +38,8 @@ class BlogComment {
     return BlogComment(
       id: j['id'] as String? ?? j['_id'] as String? ?? '',
       content: j['content'] as String? ?? '',
-      authorName: full.isNotEmpty
-          ? full
-          : (author?['email'] as String? ?? 'Guest'),
+      authorName:
+          full.isNotEmpty ? full : (author?['email'] as String? ?? 'Guest'),
       createdAt: j['createdAt'] != null
           ? DateTime.tryParse(j['createdAt'] as String)
           : null,
@@ -70,7 +69,10 @@ class BlogPostService {
     if (resp.statusCode != 200) return [];
     final body = jsonDecode(resp.body) as Map<String, dynamic>;
     final list = body['comments'] as List<dynamic>? ?? [];
-    return list.whereType<Map<String, dynamic>>().map(BlogComment.fromJson).toList();
+    return list
+        .whereType<Map<String, dynamic>>()
+        .map(BlogComment.fromJson)
+        .toList();
   }
 
   /// Best-effort — attaches the caller's token if signed in, but doesn't

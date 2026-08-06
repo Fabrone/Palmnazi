@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:palmnazi/models/payment_method_model.dart';
+import 'package:palmnazi/services/app_settings_controller.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/mpesa_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -20,10 +22,27 @@ import 'package:palmnazi/services/mpesa_service.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 abstract final class _P {
+  static bool get _isDark =>
+      AppSettingsController.instance.resolvedBrightness == Brightness.dark;
+
   static const Color aqua = Color(0xFF00B8D4);
   static const Color aquaBright = Color(0xFF00E5FF);
-  static const Color deepNavy = Color(0xFF01263F);
-  static const Color deepBlue = Color(0xFF071829);
+  static Color get deepNavy =>
+      _isDark ? const Color(0xFF01263F) : const Color(0xFFF5F7FA);
+  static Color get deepBlue =>
+      _isDark ? const Color(0xFF071829) : const Color(0xFFE8EDF2);
+
+  static Color get textPri => _isDark ? Colors.white : const Color(0xFF121F2E);
+  static Color get textSec =>
+      _isDark ? Colors.white70 : const Color(0xFF3D4F60);
+  static Color get textMute =>
+      _isDark ? Colors.white38 : const Color(0xFF7C93A8);
+
+  /// Subtle fill for input/button backgrounds that used to be a flat
+  /// `Colors.white.withValues(alpha: x)` — invisible once the surface
+  /// behind it turns light.
+  static Color overlay(double alpha) =>
+      (_isDark ? Colors.white : Colors.black).withValues(alpha: alpha);
 }
 
 /// Result of a payment attempt. [mpesaReceiptNumber]/[mpesaTransactionRef]
@@ -100,7 +119,7 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
   Future<void> _confirmMpesa() async {
     final phone = _phoneCtrl.text.trim();
     if (phone.length < 9) {
-      setState(() => _error = 'Enter a valid Safaricom number.');
+      setState(() => _error = context.tr('payment_sim_error_invalid_phone'));
       return;
     }
     setState(() {
@@ -142,7 +161,7 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
       } else if (status == 'failed') {
         setState(() {
           _error = data['resultDesc'] as String? ??
-              'The M-Pesa request was not completed.';
+              context.tr('payment_sim_mpesa_not_completed');
           _stage = _Stage.failed;
         });
         _txSub?.cancel();
@@ -183,9 +202,10 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
       appBar: AppBar(
         backgroundColor: _P.deepNavy,
         automaticallyImplyLeading: canGoBack,
-        title: Text('Pay with ${widget.method.name}',
-            style: const TextStyle(color: Colors.white, fontSize: 16)),
-        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(
+            '${context.tr('payment_sim_appbar_title_prefix')} ${widget.method.name}',
+            style: TextStyle(color: _P.textPri, fontSize: 16)),
+        iconTheme: IconThemeData(color: _P.textPri),
       ),
       body: SafeArea(
         child: Padding(
@@ -193,7 +213,7 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
           child: switch (_stage) {
             _Stage.input => _buildInputStage(),
             _Stage.sending =>
-              _buildBusyStage('Sending STK push to your phone…'),
+              _buildBusyStage(context.tr('payment_sim_stage_sending')),
             _Stage.waiting => _buildWaitingStage(),
             _Stage.success => _buildMpesaSuccessStage(),
             _Stage.failed => _buildMpesaFailedStage(),
@@ -217,11 +237,11 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
         ),
         child: Column(children: [
           Text(widget.placeName,
-              style: const TextStyle(color: Colors.white54, fontSize: 12)),
+              style: TextStyle(color: _P.textMute, fontSize: 12)),
           const SizedBox(height: 4),
           Text(_amountLabel,
-              style: const TextStyle(
-                  color: Colors.white,
+              style: TextStyle(
+                  color: _P.textPri,
                   fontSize: 26,
                   fontWeight: FontWeight.bold)),
         ]),
@@ -265,8 +285,7 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
           ),
           if (_isMpesa) ...[
             const SizedBox(height: 12),
-            _noteBox(
-                'Sandbox mode — this sends a real Daraja STK push request, but Safaricom\'s own test harness resolves it automatically. No real phone or money is involved.'),
+            _noteBox(context.tr('payment_sim_note_sandbox_mode')),
           ],
         ],
       ),
@@ -276,17 +295,17 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
   String _confirmLabelForType() {
     switch (widget.method.type) {
       case PaymentMethodType.mpesa:
-        return 'Send STK Push';
+        return context.tr('payment_sim_btn_send_stk');
       case PaymentMethodType.card:
-        return 'Pay Now';
+        return context.tr('payment_sim_btn_pay_now');
       case PaymentMethodType.paypal:
-        return 'Continue to PayPal';
+        return context.tr('payment_sim_btn_continue_paypal');
       case PaymentMethodType.bankTransfer:
-        return "I've Made the Transfer";
+        return context.tr('payment_sim_btn_made_transfer');
       case PaymentMethodType.cash:
-        return 'Confirm — Pay on Arrival';
+        return context.tr('payment_sim_btn_confirm_cash');
       case PaymentMethodType.other:
-        return 'Confirm Payment';
+        return context.tr('payment_sim_btn_confirm_payment');
     }
   }
 
@@ -294,57 +313,71 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
     final config = widget.method.config;
     switch (widget.method.type) {
       case PaymentMethodType.mpesa:
+        final paybillText = config['paybillNumber'] != null
+            ? '${context.tr('payment_sim_paybill_label')} ${config['paybillNumber']}'
+            : context.tr('payment_sim_configured_paybill');
         return [
-          const Text('M-Pesa Phone Number',
-              style: TextStyle(color: Colors.white70, fontSize: 13)),
+          Text(context.tr('payment_sim_label_mpesa_phone'),
+              style: TextStyle(color: _P.textSec, fontSize: 13)),
           const SizedBox(height: 8),
-          _field(_phoneCtrl, '07XX XXX XXX', TextInputType.phone),
+          _field(_phoneCtrl, context.tr('payment_sim_hint_phone'),
+              TextInputType.phone),
           const SizedBox(height: 12),
           _noteBox(
-              'An STK push will be sent to this number for ${config['paybillNumber'] != null ? 'Paybill ${config['paybillNumber']}' : 'the configured paybill'} (sandbox shortcode is used under the hood).'),
+              '${context.tr('payment_sim_note_stk_prefix')} $paybillText ${context.tr('payment_sim_note_stk_suffix')}'),
         ];
       case PaymentMethodType.card:
         return [
-          const Text('Card Details',
-              style: TextStyle(color: Colors.white70, fontSize: 13)),
+          Text(context.tr('payment_sim_label_card_details'),
+              style: TextStyle(color: _P.textSec, fontSize: 13)),
           const SizedBox(height: 8),
-          _field(_cardNumberCtrl, 'Card Number', TextInputType.number),
+          _field(_cardNumberCtrl, context.tr('payment_sim_hint_card_number'),
+              TextInputType.number),
           const SizedBox(height: 10),
           Row(children: [
             Expanded(
-                child:
-                    _field(_cardExpiryCtrl, 'MM/YY', TextInputType.datetime)),
+                child: _field(
+                    _cardExpiryCtrl,
+                    context.tr('payment_sim_hint_expiry'),
+                    TextInputType.datetime)),
             const SizedBox(width: 10),
-            Expanded(child: _field(_cardCvvCtrl, 'CVV', TextInputType.number)),
+            Expanded(
+                child: _field(_cardCvvCtrl, context.tr('payment_sim_hint_cvv'),
+                    TextInputType.number)),
           ]),
           const SizedBox(height: 12),
-          _noteBox(
-              'Card payments are not yet processed by a live gateway — this is a demo flow only. Card details are never sent anywhere.'),
+          _noteBox(context.tr('payment_sim_note_card_demo')),
         ];
       case PaymentMethodType.paypal:
         return [
           _noteBox(
-              'You would be redirected to PayPal to sign in and approve payment to ${config['merchantEmail'] ?? 'the configured merchant account'}.'),
+              '${context.tr('payment_sim_note_paypal_prefix')} ${config['merchantEmail'] ?? context.tr('payment_sim_configured_merchant')}.'),
         ];
       case PaymentMethodType.bankTransfer:
         return [
-          const Text('Transfer Instructions',
-              style: TextStyle(color: Colors.white70, fontSize: 13)),
+          Text(context.tr('payment_sim_label_transfer_instructions'),
+              style: TextStyle(color: _P.textSec, fontSize: 13)),
           const SizedBox(height: 8),
-          _infoTile('Bank', config['bankName'] ?? 'Not yet configured'),
-          _infoTile('Account Number',
-              config['accountNumber'] ?? 'Not yet configured'),
+          _infoTile(context.tr('payment_sim_field_bank'),
+              config['bankName'] ?? context.tr('payment_sim_not_configured')),
           _infoTile(
-              'Account Name', config['accountName'] ?? 'Not yet configured'),
+              context.tr('payment_sim_field_account_number'),
+              config['accountNumber'] ??
+                  context.tr('payment_sim_not_configured')),
+          _infoTile(
+              context.tr('payment_sim_field_account_name'),
+              config['accountName'] ??
+                  context.tr('payment_sim_not_configured')),
         ];
       case PaymentMethodType.cash:
         return [
-          _noteBox('Pay in cash directly at ${widget.placeName} upon arrival.'),
+          _noteBox(
+              '${context.tr('payment_sim_note_cash_prefix')} ${widget.placeName} ${context.tr('payment_sim_note_cash_suffix')}'),
         ];
       case PaymentMethodType.other:
         return [
           _noteBox(
-              'Payment will be arranged directly with ${widget.placeName}.'),
+              '${context.tr('payment_sim_note_other_prefix')} ${widget.placeName}.'),
         ];
     }
   }
@@ -353,12 +386,12 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
     return TextField(
       controller: ctrl,
       keyboardType: type,
-      style: const TextStyle(color: Colors.white),
+      style: TextStyle(color: _P.textPri),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Colors.white38),
+        hintStyle: TextStyle(color: _P.textMute),
         filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.06),
+        fillColor: _P.overlay(0.06),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide.none,
@@ -373,10 +406,10 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
           SizedBox(
               width: 120,
               child: Text(label,
-                  style: const TextStyle(color: Colors.white38, fontSize: 12))),
+                  style: TextStyle(color: _P.textMute, fontSize: 12))),
           Expanded(
-            child: Text(value,
-                style: const TextStyle(color: Colors.white, fontSize: 13)),
+            child:
+                Text(value, style: TextStyle(color: _P.textPri, fontSize: 13)),
           ),
         ]),
       );
@@ -384,17 +417,16 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
   Widget _noteBox(String text) => Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
+          color: _P.overlay(0.05),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(children: [
-          const Icon(Icons.info_outline_rounded,
-              color: Colors.white38, size: 16),
+          Icon(Icons.info_outline_rounded, color: _P.textMute, size: 16),
           const SizedBox(width: 8),
           Expanded(
             child: Text(text,
-                style: const TextStyle(
-                    color: Colors.white54, fontSize: 12, height: 1.4)),
+                style:
+                    TextStyle(color: _P.textMute, fontSize: 12, height: 1.4)),
           ),
         ]),
       );
@@ -408,7 +440,7 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
           const CircularProgressIndicator(color: _P.aquaBright),
           const SizedBox(height: 20),
           Text(message,
-              style: const TextStyle(color: Colors.white70, fontSize: 14),
+              style: TextStyle(color: _P.textSec, fontSize: 14),
               textAlign: TextAlign.center),
         ],
       ),
@@ -418,15 +450,15 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
   String _processingMessage() {
     switch (widget.method.type) {
       case PaymentMethodType.card:
-        return 'Processing card payment…';
+        return context.tr('payment_sim_processing_card');
       case PaymentMethodType.paypal:
-        return 'Redirecting to PayPal…';
+        return context.tr('payment_sim_processing_paypal');
       case PaymentMethodType.bankTransfer:
-        return 'Recording your transfer…';
+        return context.tr('payment_sim_processing_bank');
       case PaymentMethodType.cash:
-        return 'Confirming arrangement…';
+        return context.tr('payment_sim_processing_cash');
       default:
-        return 'Processing…';
+        return context.tr('payment_sim_processing_default');
     }
   }
 
@@ -439,16 +471,16 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
           _amountBanner(),
           const Center(child: CircularProgressIndicator(color: _P.aquaBright)),
           const SizedBox(height: 20),
-          const Text(
-            'Check your phone and enter your M-Pesa PIN to complete this payment.',
+          Text(
+            context.tr('payment_sim_waiting_instructions'),
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
+            style: TextStyle(color: _P.textSec, fontSize: 14, height: 1.4),
           ),
           const SizedBox(height: 8),
           Text(
-            'Sent to ${_phoneCtrl.text.trim()}',
+            '${context.tr('payment_sim_sent_to_prefix')} ${_phoneCtrl.text.trim()}',
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white38, fontSize: 12),
+            style: TextStyle(color: _P.textMute, fontSize: 12),
           ),
           const SizedBox(height: 24),
           OutlinedButton(
@@ -460,13 +492,13 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text("I've entered my PIN — check now"),
+            child: Text(context.tr('payment_sim_btn_check_now')),
           ),
           const SizedBox(height: 10),
           TextButton(
             onPressed: _retryMpesa,
-            child: const Text('Cancel and go back',
-                style: TextStyle(color: Colors.white38)),
+            child: Text(context.tr('payment_sim_btn_cancel_back'),
+                style: TextStyle(color: _P.textMute)),
           ),
         ],
       ),
@@ -490,22 +522,24 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
             ),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Row(children: [
-                Icon(Icons.check_circle_rounded, color: Colors.greenAccent),
-                SizedBox(width: 10),
+              Row(children: [
+                const Icon(Icons.check_circle_rounded,
+                    color: Colors.greenAccent),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Text('M-Pesa payment received',
+                  child: Text(context.tr('payment_sim_success_title'),
                       style: TextStyle(
-                          color: Colors.white,
+                          color: _P.textPri,
                           fontSize: 15,
                           fontWeight: FontWeight.bold)),
                 ),
               ]),
               const SizedBox(height: 12),
               if (_mpesaReceiptNumber != null)
-                Text('Receipt: $_mpesaReceiptNumber',
-                    style: const TextStyle(
-                        color: Colors.white70, fontSize: 13, height: 1.5)),
+                Text(
+                    '${context.tr('payment_sim_receipt_prefix')} $_mpesaReceiptNumber',
+                    style: TextStyle(
+                        color: _P.textSec, fontSize: 13, height: 1.5)),
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(10),
@@ -513,15 +547,15 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
                   color: Colors.orangeAccent.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Row(children: [
-                  Icon(Icons.warning_amber_rounded,
+                child: Row(children: [
+                  const Icon(Icons.warning_amber_rounded,
                       color: Colors.orangeAccent, size: 16),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Sandbox transaction — this ran against Safaricom\'s Daraja test environment. No real money moved.',
-                      style:
-                          TextStyle(color: Colors.orangeAccent, fontSize: 12),
+                      context.tr('payment_sim_sandbox_transaction_note'),
+                      style: const TextStyle(
+                          color: Colors.orangeAccent, fontSize: 12),
                     ),
                   ),
                 ]),
@@ -544,8 +578,9 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text('Continue',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            child: Text(context.tr('payment_sim_btn_continue'),
+                style:
+                    const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -569,22 +604,21 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
             ),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Row(children: [
-                Icon(Icons.cancel_rounded, color: Colors.redAccent),
-                SizedBox(width: 10),
+              Row(children: [
+                const Icon(Icons.cancel_rounded, color: Colors.redAccent),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Text('Payment not completed',
+                  child: Text(context.tr('payment_sim_failed_title'),
                       style: TextStyle(
-                          color: Colors.white,
+                          color: _P.textPri,
                           fontSize: 15,
                           fontWeight: FontWeight.bold)),
                 ),
               ]),
               const SizedBox(height: 12),
               Text(
-                _error ?? 'The M-Pesa request was cancelled or timed out.',
-                style: const TextStyle(
-                    color: Colors.white70, fontSize: 13, height: 1.5),
+                _error ?? context.tr('payment_sim_failed_default_message'),
+                style: TextStyle(color: _P.textSec, fontSize: 13, height: 1.5),
               ),
             ]),
           ),
@@ -598,15 +632,16 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text('Try Again',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            child: Text(context.tr('payment_sim_btn_try_again'),
+                style:
+                    const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
           ),
           const SizedBox(height: 10),
           TextButton(
             onPressed: () =>
                 Navigator.of(context).pop(const PaymentOutcome(success: false)),
-            child: const Text('Back out of booking',
-                style: TextStyle(color: Colors.white38)),
+            child: Text(context.tr('payment_sim_btn_back_out'),
+                style: TextStyle(color: _P.textMute)),
           ),
         ],
       ),
@@ -630,13 +665,14 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
             ),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Row(children: [
-                Icon(Icons.check_circle_rounded, color: Colors.greenAccent),
-                SizedBox(width: 10),
+              Row(children: [
+                const Icon(Icons.check_circle_rounded,
+                    color: Colors.greenAccent),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Text('Payment flow complete (simulated)',
+                  child: Text(context.tr('payment_sim_done_title'),
                       style: TextStyle(
-                          color: Colors.white,
+                          color: _P.textPri,
                           fontSize: 15,
                           fontWeight: FontWeight.bold)),
                 ),
@@ -644,8 +680,7 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
               const SizedBox(height: 12),
               Text(
                 _completionMessage(),
-                style: const TextStyle(
-                    color: Colors.white70, fontSize: 13, height: 1.5),
+                style: TextStyle(color: _P.textSec, fontSize: 13, height: 1.5),
               ),
               const SizedBox(height: 12),
               Container(
@@ -654,15 +689,15 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
                   color: Colors.orangeAccent.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Row(children: [
-                  Icon(Icons.warning_amber_rounded,
+                child: Row(children: [
+                  const Icon(Icons.warning_amber_rounded,
                       color: Colors.orangeAccent, size: 16),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'This is a demonstration only. No real money has moved and no live payment gateway was contacted.',
-                      style:
-                          TextStyle(color: Colors.orangeAccent, fontSize: 12),
+                      context.tr('payment_sim_demo_note'),
+                      style: const TextStyle(
+                          color: Colors.orangeAccent, fontSize: 12),
                     ),
                   ),
                 ]),
@@ -680,8 +715,9 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text('Continue',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            child: Text(context.tr('payment_sim_btn_continue'),
+                style:
+                    const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -689,17 +725,22 @@ class _PaymentSimulationScreenState extends State<PaymentSimulationScreen> {
   }
 
   String _completionMessage() {
+    final cardGatewayText = widget.method.config['publishableKey'] != null
+        ? context.tr('payment_sim_configured_card_gateway')
+        : context.tr('payment_sim_card_gateway_not_configured');
+    final merchantText = widget.method.config['merchantEmail'] ??
+        context.tr('payment_sim_configured_merchant');
     switch (widget.method.type) {
       case PaymentMethodType.card:
-        return 'In a live integration, this card would be charged $_amountLabel via ${widget.method.config['publishableKey'] != null ? 'the configured card gateway' : 'a card gateway (not yet configured)'}.';
+        return '${context.tr('payment_sim_completion_card_prefix')} $_amountLabel ${context.tr('payment_sim_completion_card_via')} $cardGatewayText.';
       case PaymentMethodType.paypal:
-        return 'In a live integration, you would have approved a $_amountLabel payment on PayPal to ${widget.method.config['merchantEmail'] ?? 'the configured merchant account'}.';
+        return '${context.tr('payment_sim_completion_paypal_prefix')} $_amountLabel ${context.tr('payment_sim_completion_paypal_middle')} $merchantText.';
       case PaymentMethodType.bankTransfer:
-        return 'Your booking will be held pending manual confirmation that $_amountLabel was transferred to the account shown.';
+        return '${context.tr('payment_sim_completion_bank_prefix')} $_amountLabel ${context.tr('payment_sim_completion_bank_suffix')}';
       case PaymentMethodType.cash:
-        return 'Your booking is recorded — please pay $_amountLabel in cash at ${widget.placeName} upon arrival.';
+        return '${context.tr('payment_sim_completion_cash_prefix')} $_amountLabel ${context.tr('payment_sim_completion_cash_middle')} ${widget.placeName} ${context.tr('payment_sim_note_cash_suffix')}';
       default:
-        return 'Your booking is recorded — payment arrangements for $_amountLabel will be confirmed directly with ${widget.placeName}.';
+        return '${context.tr('payment_sim_completion_default_prefix')} $_amountLabel ${context.tr('payment_sim_completion_default_middle')} ${widget.placeName}.';
     }
   }
 }

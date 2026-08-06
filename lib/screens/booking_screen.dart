@@ -1,11 +1,16 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:palmnazi/models/booking_model.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/payment_method_model.dart';
 import 'package:palmnazi/models/place_model.dart';
+import 'package:palmnazi/models/menu_item_model.dart';
+import 'package:palmnazi/models/room_model.dart';
 import 'package:palmnazi/screens/my_bookings_screen.dart';
 import 'package:palmnazi/screens/payment_simulation_screen.dart';
+import 'package:palmnazi/services/app_settings_controller.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/booking_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -22,10 +27,27 @@ import 'package:palmnazi/services/booking_service.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 abstract final class _P {
+  static bool get _isDark =>
+      AppSettingsController.instance.resolvedBrightness == Brightness.dark;
+
   static const Color aqua = Color(0xFF00B8D4);
   static const Color aquaBright = Color(0xFF00E5FF);
-  static const Color deepNavy = Color(0xFF01263F);
-  static const Color deepBlue = Color(0xFF071829);
+  static Color get deepNavy =>
+      _isDark ? const Color(0xFF01263F) : const Color(0xFFF5F7FA);
+  static Color get deepBlue =>
+      _isDark ? const Color(0xFF071829) : const Color(0xFFE8EDF2);
+
+  static Color get textPri => _isDark ? Colors.white : const Color(0xFF121F2E);
+  static Color get textSec =>
+      _isDark ? Colors.white70 : const Color(0xFF3D4F60);
+  static Color get textMute =>
+      _isDark ? Colors.white38 : const Color(0xFF7C93A8);
+
+  /// Subtle fill for input/button backgrounds that used to be a flat
+  /// `Colors.white.withValues(alpha: x)` — invisible once the surface
+  /// behind it turns light.
+  static Color overlay(double alpha) =>
+      (_isDark ? Colors.white : Colors.black).withValues(alpha: alpha);
 }
 
 class BookingScreen extends StatefulWidget {
@@ -99,7 +121,7 @@ class _BookingScreenState extends State<BookingScreen> {
       lastDate: DateTime.now().add(const Duration(days: 730)),
       builder: (ctx, child) => Theme(
         data: ThemeData.dark().copyWith(
-          colorScheme: const ColorScheme.dark(
+          colorScheme: ColorScheme.dark(
             primary: _P.aquaBright,
             surface: _P.deepNavy,
           ),
@@ -123,11 +145,11 @@ class _BookingScreenState extends State<BookingScreen> {
   Future<void> _submit() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      setState(() => _error = 'You must be signed in to book.');
+      setState(() => _error = context.tr('booking_error_signin'));
       return;
     }
     if (_isAccommodation && _checkOutDate == null) {
-      setState(() => _error = 'Select a check-out date.');
+      setState(() => _error = context.tr('booking_error_select_checkout'));
       return;
     }
     setState(() {
@@ -154,8 +176,8 @@ class _BookingScreenState extends State<BookingScreen> {
         if (conflict) {
           if (mounted) {
             setState(() {
-              _error = '"$serviceName" is already booked for that date. '
-                  'Pick a different date or option.';
+              _error =
+                  '"$serviceName" ${context.tr('booking_error_conflict_suffix')}';
               _saving = false;
             });
           }
@@ -203,6 +225,7 @@ class _BookingScreenState extends State<BookingScreen> {
         userEmail: user.email ?? '',
         serviceType: widget.serviceType.isNotEmpty ? widget.serviceType : null,
         serviceName: serviceName,
+        serviceId: selectedService?['id'] as String?,
         requestedDate: _requestedDate,
         checkOutDate: _isAccommodation ? _checkOutDate : null,
         numberOfGuests: _guests,
@@ -216,8 +239,8 @@ class _BookingScreenState extends State<BookingScreen> {
         currency: estimate?.currency,
         cancellationPolicy: widget.place.bookingSettings?.cancellationPolicy,
       );
-      await BookingService.create(booking);
-      if (mounted) _showSuccess();
+      final bookingId = await BookingService.create(booking);
+      if (mounted) _showSuccess(bookingId, serviceName);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -228,22 +251,92 @@ class _BookingScreenState extends State<BookingScreen> {
     }
   }
 
-  void _showSuccess() {
+  void _showSuccess(String bookingId, String? serviceName) {
+    // A truncated, uppercased tail of the Firestore doc id — short enough to
+    // read aloud or write down at a front desk, while the full id (kept
+    // underneath, copyable) remains available for exact lookup.
+    final shortRef = bookingId.length > 8
+        ? bookingId.substring(bookingId.length - 8).toUpperCase()
+        : bookingId.toUpperCase();
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
         backgroundColor: _P.deepNavy,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(children: [
-          Icon(Icons.check_circle_rounded, color: Colors.greenAccent),
-          SizedBox(width: 10),
-          Text('Booking requested', style: TextStyle(color: Colors.white)),
+        title: Row(children: [
+          const Icon(Icons.check_circle_rounded, color: Colors.greenAccent),
+          const SizedBox(width: 10),
+          Text(context.tr('booking_success_title'),
+              style: TextStyle(color: _P.textPri)),
         ]),
-        content: Text(
-          'Your booking request for "${widget.place.name}" has been sent. '
-          'You\'ll see its status under My Bookings.',
-          style: const TextStyle(color: Colors.white70),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${context.tr('booking_success_prefix')} "${widget.place.name}" '
+              '${context.tr('booking_success_suffix')}',
+              style: TextStyle(color: _P.textSec),
+            ),
+            if (serviceName != null) ...[
+              const SizedBox(height: 10),
+              Row(children: [
+                Icon(Icons.room_service_outlined,
+                    size: 16, color: _P.aquaBright),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(serviceName,
+                      style: TextStyle(
+                          color: _P.textPri, fontWeight: FontWeight.w600)),
+                ),
+              ]),
+            ],
+            const SizedBox(height: 16),
+            Text(context.tr('booking_success_reference_label'),
+                style: TextStyle(
+                    color: _P.textMute,
+                    fontSize: 11,
+                    letterSpacing: 0.6,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: _P.overlay(0.06),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _P.overlay(0.12)),
+              ),
+              child: Row(children: [
+                Expanded(
+                  child: Text(shortRef,
+                      style: TextStyle(
+                          color: _P.aquaBright,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2)),
+                ),
+                IconButton(
+                  icon: Icon(Icons.copy_rounded, size: 18, color: _P.textMute),
+                  tooltip: context.tr('booking_success_copy_reference'),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: bookingId));
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content:
+                          Text(context.tr('booking_success_reference_copied')),
+                      duration: const Duration(seconds: 2),
+                    ));
+                  },
+                ),
+              ]),
+            ),
+            const SizedBox(height: 8),
+            Text(context.tr('booking_success_reference_hint'),
+                style:
+                    TextStyle(color: _P.textMute, fontSize: 12, height: 1.4)),
+          ],
         ),
         actions: [
           TextButton(
@@ -251,7 +344,8 @@ class _BookingScreenState extends State<BookingScreen> {
               Navigator.of(context).pop(); // dialog
               Navigator.of(context).pop(true); // booking screen
             },
-            child: const Text('Done', style: TextStyle(color: Colors.white54)),
+            child: Text(context.tr('common_done'),
+                style: TextStyle(color: _P.textMute)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: _P.aquaBright),
@@ -262,7 +356,7 @@ class _BookingScreenState extends State<BookingScreen> {
                 MaterialPageRoute(builder: (_) => const MyBookingsScreen()),
               );
             },
-            child: const Text('View My Bookings',
+            child: Text(context.tr('booking_button_view_my_bookings'),
                 style: TextStyle(color: _P.deepNavy)),
           ),
         ],
@@ -276,9 +370,10 @@ class _BookingScreenState extends State<BookingScreen> {
       backgroundColor: _P.deepBlue,
       appBar: AppBar(
         backgroundColor: _P.deepNavy,
-        title: Text('Book ${widget.place.name}',
-            style: const TextStyle(color: Colors.white, fontSize: 16)),
-        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(
+            '${context.tr('booking_appbar_prefix')} ${widget.place.name}',
+            style: TextStyle(color: _P.textPri, fontSize: 16)),
+        iconTheme: IconThemeData(color: _P.textPri),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -303,15 +398,35 @@ class _BookingScreenState extends State<BookingScreen> {
             // ── Service selection ─────────────────────────────────────────
             if (widget.serviceOptions.isNotEmpty) ...[
               _sectionLabel(widget.serviceLabel.isNotEmpty
-                  ? 'Select a ${widget.serviceLabel}'
-                  : 'Select an option'),
+                  ? '${context.tr('booking_select_prefix')} ${widget.serviceLabel}'
+                  : context.tr('booking_select_option')),
               const SizedBox(height: 10),
               ...widget.serviceOptions.asMap().entries.map((e) {
                 final selected = _selectedServiceIndex == e.key;
-                final name =
-                    e.value['name'] as String? ?? 'Option ${e.key + 1}';
+                final name = e.value['name'] as String? ??
+                    '${context.tr('booking_option_prefix')} ${e.key + 1}';
+                String? subtitle;
+                if (_isAccommodation) {
+                  final bedsSummary = RoomModel.bedsSummaryFromMap(e.value);
+                  final size = e.value['sizeSquareMeters'];
+                  final parts = <String>[
+                    if (bedsSummary.isNotEmpty) bedsSummary,
+                    if (size != null) '$size m²',
+                  ];
+                  subtitle = parts.isEmpty ? null : parts.join(' · ');
+                } else if (widget.serviceType == 'menuItems') {
+                  final dietary = MenuItemModel.dietarySummaryFromMap(e.value);
+                  final spicyLevel =
+                      (e.value['spicyLevel'] as num?)?.toInt() ?? 0;
+                  final parts = <String>[
+                    if (dietary.isNotEmpty) dietary,
+                    if (spicyLevel > 0) '🌶️' * spicyLevel,
+                  ];
+                  subtitle = parts.isEmpty ? null : parts.join(' · ');
+                }
                 return _SelectableTile(
                   title: name,
+                  subtitle: subtitle,
                   selected: selected,
                   onTap: () => setState(() => _selectedServiceIndex = e.key),
                 );
@@ -320,13 +435,16 @@ class _BookingScreenState extends State<BookingScreen> {
             ],
 
             // ── Dates ────────────────────────────────────────────────────
-            _sectionLabel(
-                _isAccommodation ? 'Check-in / Check-out' : 'Preferred Date'),
+            _sectionLabel(_isAccommodation
+                ? context.tr('booking_section_checkin_checkout')
+                : context.tr('booking_section_preferred_date')),
             const SizedBox(height: 10),
             Row(children: [
               Expanded(
                 child: _DatePickerTile(
-                  label: _isAccommodation ? 'Check-in' : 'Date',
+                  label: _isAccommodation
+                      ? context.tr('booking_label_checkin')
+                      : context.tr('booking_label_date'),
                   date: _requestedDate,
                   onTap: () => _pickDate(isCheckOut: false),
                 ),
@@ -335,7 +453,7 @@ class _BookingScreenState extends State<BookingScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _DatePickerTile(
-                    label: 'Check-out',
+                    label: context.tr('booking_label_checkout'),
                     date: _checkOutDate,
                     onTap: () => _pickDate(isCheckOut: true),
                   ),
@@ -345,7 +463,7 @@ class _BookingScreenState extends State<BookingScreen> {
             const SizedBox(height: 20),
 
             // ── Guests ───────────────────────────────────────────────────
-            _sectionLabel('Number of Guests'),
+            _sectionLabel(context.tr('booking_section_guests')),
             const SizedBox(height: 10),
             Row(children: [
               _StepperButton(
@@ -356,7 +474,7 @@ class _BookingScreenState extends State<BookingScreen> {
                 width: 56,
                 alignment: Alignment.center,
                 child: Text('$_guests',
-                    style: const TextStyle(color: Colors.white, fontSize: 18)),
+                    style: TextStyle(color: _P.textPri, fontSize: 18)),
               ),
               _StepperButton(
                 icon: Icons.add_rounded,
@@ -379,24 +497,24 @@ class _BookingScreenState extends State<BookingScreen> {
                   const Icon(Icons.receipt_long_rounded,
                       color: _P.aquaBright, size: 20),
                   const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text('Estimated Total',
-                        style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  Expanded(
+                    child: Text(context.tr('booking_estimated_total'),
+                        style: TextStyle(color: _P.textSec, fontSize: 13)),
                   ),
                   Text(
                     '${_priceEstimate!.currency} ${_priceEstimate!.amount.toStringAsFixed(0)}',
-                    style: const TextStyle(
-                        color: Colors.white,
+                    style: TextStyle(
+                        color: _P.textPri,
                         fontSize: 18,
                         fontWeight: FontWeight.bold),
                   ),
                 ]),
               ),
-              const Padding(
-                padding: EdgeInsets.only(top: 6),
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
                 child: Text(
-                  'Estimate only — the final amount is confirmed by the place.',
-                  style: TextStyle(color: Colors.white38, fontSize: 11),
+                  context.tr('booking_estimate_disclaimer'),
+                  style: TextStyle(color: _P.textMute, fontSize: 11),
                 ),
               ),
               const SizedBox(height: 20),
@@ -404,7 +522,7 @@ class _BookingScreenState extends State<BookingScreen> {
 
             // ── Payment method ───────────────────────────────────────────
             if (widget.paymentMethods.isNotEmpty) ...[
-              _sectionLabel('Payment Method'),
+              _sectionLabel(context.tr('booking_section_payment_method')),
               const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
@@ -420,9 +538,9 @@ class _BookingScreenState extends State<BookingScreen> {
                     onSelected: (_) =>
                         setState(() => _selectedPaymentMethodId = m.id),
                     selectedColor: _P.aqua.withValues(alpha: 0.35),
-                    backgroundColor: Colors.white.withValues(alpha: 0.08),
+                    backgroundColor: _P.overlay(0.08),
                     labelStyle: TextStyle(
-                        color: selected ? Colors.white : Colors.white70,
+                        color: selected ? _P.textPri : _P.textSec,
                         fontSize: 12),
                   );
                 }).toList(),
@@ -431,17 +549,17 @@ class _BookingScreenState extends State<BookingScreen> {
             ],
 
             // ── Notes ────────────────────────────────────────────────────
-            _sectionLabel('Special Requests (optional)'),
+            _sectionLabel(context.tr('booking_section_special_requests')),
             const SizedBox(height: 10),
             TextField(
               controller: _notesCtrl,
               maxLines: 3,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: _P.textPri),
               decoration: InputDecoration(
-                hintText: 'Any special requirements…',
-                hintStyle: const TextStyle(color: Colors.white38),
+                hintText: context.tr('booking_notes_hint'),
+                hintStyle: TextStyle(color: _P.textMute),
                 filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.06),
+                fillColor: _P.overlay(0.06),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -462,13 +580,13 @@ class _BookingScreenState extends State<BookingScreen> {
                       borderRadius: BorderRadius.circular(12)),
                 ),
                 child: _saving
-                    ? const SizedBox(
+                    ? SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: _P.deepNavy))
-                    : const Text('Request Booking',
-                        style: TextStyle(
+                    : Text(context.tr('booking_button_request'),
+                        style: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),
@@ -479,16 +597,20 @@ class _BookingScreenState extends State<BookingScreen> {
   }
 
   Widget _sectionLabel(String text) => Text(text,
-      style: const TextStyle(
-          color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold));
+      style: TextStyle(
+          color: _P.textPri, fontSize: 15, fontWeight: FontWeight.bold));
 }
 
 class _SelectableTile extends StatelessWidget {
   final String title;
+  final String? subtitle;
   final bool selected;
   final VoidCallback onTap;
   const _SelectableTile(
-      {required this.title, required this.selected, required this.onTap});
+      {required this.title,
+      this.subtitle,
+      required this.selected,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) => GestureDetector(
@@ -497,14 +619,11 @@ class _SelectableTile extends StatelessWidget {
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            color: selected
-                ? _P.aqua.withValues(alpha: 0.25)
-                : Colors.white.withValues(alpha: 0.06),
+            color:
+                selected ? _P.aqua.withValues(alpha: 0.25) : _P.overlay(0.06),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-                color: selected
-                    ? _P.aquaBright
-                    : Colors.white.withValues(alpha: 0.15)),
+            border:
+                Border.all(color: selected ? _P.aquaBright : _P.overlay(0.15)),
           ),
           child: Row(children: [
             Icon(
@@ -512,11 +631,21 @@ class _SelectableTile extends StatelessWidget {
                   ? Icons.radio_button_checked_rounded
                   : Icons.radio_button_off_rounded,
               size: 18,
-              color: selected ? _P.aquaBright : Colors.white38,
+              color: selected ? _P.aquaBright : _P.textMute,
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(title, style: const TextStyle(color: Colors.white)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: TextStyle(color: _P.textPri)),
+                  if (subtitle != null && subtitle!.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(subtitle!,
+                        style: TextStyle(color: _P.textMute, fontSize: 12)),
+                  ],
+                ],
+              ),
             ),
           ]),
         ),
@@ -536,9 +665,9 @@ class _DatePickerTile extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.06),
+            color: _P.overlay(0.06),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+            border: Border.all(color: _P.overlay(0.15)),
           ),
           child: Row(children: [
             const Icon(Icons.calendar_today_rounded,
@@ -549,13 +678,12 @@ class _DatePickerTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(label,
-                      style:
-                          const TextStyle(color: Colors.white38, fontSize: 11)),
+                      style: TextStyle(color: _P.textMute, fontSize: 11)),
                   Text(
                     date != null
                         ? '${date!.day}/${date!.month}/${date!.year}'
-                        : 'Select',
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                        : context.tr('booking_label_select'),
+                    style: TextStyle(color: _P.textPri, fontSize: 13),
                   ),
                 ],
               ),
@@ -578,13 +706,11 @@ class _StepperButton extends StatelessWidget {
           height: 36,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: onTap != null
-                ? Colors.white.withValues(alpha: 0.10)
-                : Colors.white.withValues(alpha: 0.03),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+            color: onTap != null ? _P.overlay(0.10) : _P.overlay(0.03),
+            border: Border.all(color: _P.overlay(0.15)),
           ),
           child: Icon(icon,
-              size: 18, color: onTap != null ? Colors.white : Colors.white24),
+              size: 18, color: onTap != null ? _P.textPri : _P.textMute),
         ),
       );
 }

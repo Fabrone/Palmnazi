@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:palmnazi/services/app_strings.dart';
 
 class CustomFloatingActionButton extends StatefulWidget {
   final VoidCallback onLoginTap;
@@ -75,9 +76,9 @@ class _CustomFloatingActionButtonState extends State<CustomFloatingActionButton>
               backgroundColor: Colors.white,
               foregroundColor: const Color(0xFF00897B),
               icon: const Icon(Icons.person_add),
-              label: const Text(
-                'Sign Up',
-                style: TextStyle(
+              label: Text(
+                context.tr('auth_tab_signup'),
+                style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.5,
                 ),
@@ -100,9 +101,9 @@ class _CustomFloatingActionButtonState extends State<CustomFloatingActionButton>
               backgroundColor: const Color(0xFF00897B),
               foregroundColor: Colors.white,
               icon: const Icon(Icons.login),
-              label: const Text(
-                'Login',
-                style: TextStyle(
+              label: Text(
+                context.tr('auth_btn_login'),
+                style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.5,
                 ),

@@ -9,6 +9,8 @@ import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/category_screen.dart';
 import 'package:palmnazi/screens/place_details_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/services/app_settings_controller.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/widgets/place_card.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -41,10 +43,20 @@ import 'package:palmnazi/widgets/place_card.dart';
 
 // ── Shared palette ────────────────────────────────────────────────────────────
 abstract final class _P {
+  static bool get _isDark =>
+      AppSettingsController.instance.resolvedBrightness == Brightness.dark;
+
   static const Color aqua = Color(0xFF00B8D4);
   static const Color aquaBright = Color(0xFF00E5FF);
-  static const Color deepNavy = Color(0xFF01263F);
-  static const Color deepBlue = Color(0xFF071829);
+  static Color get deepNavy =>
+      _isDark ? const Color(0xFF01263F) : const Color(0xFFF5F7FA);
+  static Color get deepBlue =>
+      _isDark ? const Color(0xFF071829) : const Color(0xFFE8EDF2);
+
+  // Text on deepNavy/deepBlue surfaces (e.g. the pinned tab bar).
+  static Color get textPri => _isDark ? Colors.white : const Color(0xFF121F2E);
+  static Color get textSec =>
+      _isDark ? Colors.white54 : const Color(0xFF3D4F60);
 }
 
 // ── Vivid category accent palette — cycles when there are more categories ─────
@@ -66,6 +78,7 @@ Color _accentFor(int index) =>
 IconData _iconFor(CategoryModel cat) {
   final n = '${cat.name} ${cat.slug}'.toLowerCase();
   if (n.contains('accommodation') ||
+      n.contains('accomodation') ||
       n.contains('hotel') ||
       n.contains('lodge') ||
       n.contains('stay') ||
@@ -555,16 +568,16 @@ class _ResortCityScreenState extends State<ResortCityScreen>
                         context,
                         MaterialPageRoute(
                             builder: (_) => const AuthScreen(isLogin: true))),
-                    child: const Text('Sign In',
-                        style: TextStyle(
+                    child: Text(context.tr('nav_sign_in'),
+                        style: const TextStyle(
                             color: Colors.white,
                             fontSize: 13,
                             fontWeight: FontWeight.w500)),
                   ),
                   TextButton(
                     onPressed: () {},
-                    child: const Text('Blog',
-                        style: TextStyle(
+                    child: Text(context.tr('nav_blog'),
+                        style: const TextStyle(
                             color: Colors.white,
                             fontSize: 13,
                             fontWeight: FontWeight.w500)),
@@ -585,8 +598,8 @@ class _ResortCityScreenState extends State<ResortCityScreen>
                       elevation: 4,
                       shadowColor: _P.aqua.withValues(alpha: 0.50),
                     ),
-                    child: const Text('Get Started',
-                        style: TextStyle(
+                    child: Text(context.tr('nav_get_started'),
+                        style: const TextStyle(
                             fontSize: 13, fontWeight: FontWeight.w700)),
                   ),
                 ]),
@@ -817,9 +830,9 @@ class _ResortCityScreenState extends State<ResortCityScreen>
                   style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Tap to retry',
-                  style: TextStyle(
+                Text(
+                  context.tr('common_tap_to_retry'),
+                  style: const TextStyle(
                       color: _P.aquaBright,
                       fontSize: 12,
                       fontWeight: FontWeight.w600),
@@ -858,8 +871,8 @@ class _ResortCityScreenState extends State<ResortCityScreen>
         controller: _tabController,
         indicatorColor: _P.aquaBright,
         indicatorWeight: 3,
-        labelColor: Colors.white,
-        unselectedLabelColor: Colors.white54,
+        labelColor: _P.textPri,
+        unselectedLabelColor: _P.textSec,
         labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
         tabs: [
           Tab(
@@ -1009,9 +1022,9 @@ class _ResortCityScreenState extends State<ResortCityScreen>
                   style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Tap to retry',
-                  style: TextStyle(
+                Text(
+                  context.tr('common_tap_to_retry'),
+                  style: const TextStyle(
                       color: _P.aquaBright,
                       fontSize: 12,
                       fontWeight: FontWeight.w600),
@@ -1197,17 +1210,17 @@ class _ResortCityScreenState extends State<ResortCityScreen>
                             ),
                           ],
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text('Explore',
-                                style: TextStyle(
+                            Text(context.tr('resort_city_explore_pill'),
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 12,
                                 )),
-                            SizedBox(width: 6),
-                            Icon(Icons.arrow_forward,
+                            const SizedBox(width: 6),
+                            const Icon(Icons.arrow_forward,
                                 size: 14, color: Colors.white),
                           ],
                         ),
@@ -1255,7 +1268,12 @@ class _ResortCityScreenState extends State<ResortCityScreen>
             alignment: WrapAlignment.center,
             spacing: 8,
             runSpacing: 4,
-            children: ['About', 'Contact', 'Privacy', 'Terms']
+            children: [
+              context.tr('footer_about'),
+              context.tr('footer_contact'),
+              context.tr('footer_privacy'),
+              context.tr('footer_terms'),
+            ]
                 .map((t) => TextButton(
                       onPressed: () {},
                       child: Text(t,
@@ -1271,7 +1289,7 @@ class _ResortCityScreenState extends State<ResortCityScreen>
           const SizedBox(height: 16),
 
           Text(
-            '© 2026 Palmnazi Resort Cities. All rights reserved.',
+            context.tr('resort_city_footer_copyright'),
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,

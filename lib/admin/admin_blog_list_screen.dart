@@ -4,6 +4,8 @@ import 'package:palmnazi/admin/admin_api_service.dart';
 import 'package:palmnazi/admin/admin_blog_compose_screen.dart';
 import 'package:palmnazi/admin/admin_shared_widgets.dart';
 import 'package:palmnazi/models/blog_post_details_model.dart';
+import 'package:palmnazi/services/admin_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/audit_log_service.dart';
 import 'package:palmnazi/services/blog_post_details_service.dart';
 import 'package:palmnazi/widgets/place_search_picker.dart';
@@ -38,7 +40,6 @@ class AdminBlogListScreen extends StatefulWidget {
 
 class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
   // ── Constants ──────────────────────────────────────────────────────────────
-  static const _accent = Color(0xFF14FFEC);
 
   // ── State ──────────────────────────────────────────────────────────────────
   List<Map<String, dynamic>> _posts = [];
@@ -177,6 +178,7 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
       if (slug == null) return;
 
       setState(() => _fetchingPost = true);
+      final loadFailedPrefix = context.tr('admin_blog_error_load_post_prefix');
       Map<String, dynamic>? fullPost;
       try {
         fullPost = await widget.apiService.getBlogPostBySlug(slug);
@@ -185,7 +187,7 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
         setState(() => _fetchingPost = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
-              'Could not load post: ${e is AdminApiException ? e.message : e}'),
+              '$loadFailedPrefix ${e is AdminApiException ? e.message : e}'),
           backgroundColor: Colors.redAccent,
           behavior: SnackBarBehavior.floating,
         ));
@@ -227,30 +229,35 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
     final title = post['title'] as String? ?? 'this post';
     if (slug == null) return;
 
+    final deleteFailedPrefix = context.tr('admin_blog_error_delete_prefix');
+    final permanentlyDeletedSuffix =
+        context.tr('admin_blog_snack_permanently_deleted_suffix');
+    final archivedSuffix = context.tr('admin_blog_snack_archived_suffix');
+
     // Step 1: Choose mode
     final choice = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF111827),
+        backgroundColor: AdC.surface,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Delete Post',
+        title: Text(context.tr('admin_blog_delete_dialog_title'),
             style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w600)),
+                color: AdC.textPri, fontSize: 16, fontWeight: FontWeight.w600)),
         content: RichText(
           text: TextSpan(
-            style: const TextStyle(
-                color: Colors.white54, fontSize: 13, height: 1.5),
+            style: TextStyle(color: AdC.textMute, fontSize: 13, height: 1.5),
             children: [
-              const TextSpan(text: 'How would you like to remove '),
+              TextSpan(
+                  text:
+                      '${context.tr('admin_blog_delete_dialog_body_prefix')} '),
               TextSpan(
                 text: '"$title"',
-                style: const TextStyle(
-                    color: Colors.white70, fontWeight: FontWeight.w600),
+                style:
+                    TextStyle(color: AdC.textSec, fontWeight: FontWeight.w600),
               ),
-              const TextSpan(text: '?'),
+              TextSpan(
+                  text: context.tr('admin_blog_delete_dialog_body_suffix')),
             ],
           ),
         ),
@@ -258,15 +265,15 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, null),
-            child:
-                const Text('Cancel', style: TextStyle(color: Colors.white54)),
+            child: Text(context.tr('common_cancel'),
+                style: TextStyle(color: AdC.textMute)),
           ),
           Row(mainAxisSize: MainAxisSize.min, children: [
             // Soft delete — archive only
             TextButton.icon(
               icon: const Icon(Icons.archive_outlined, size: 15),
-              label: const Text('Archive'),
-              style: TextButton.styleFrom(foregroundColor: Colors.white60),
+              label: Text(context.tr('admin_blog_archive')),
+              style: TextButton.styleFrom(foregroundColor: AdC.textMute),
               onPressed: () => Navigator.pop(ctx, 'soft'),
             ),
             const SizedBox(width: 4),
@@ -285,7 +292,8 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               ),
               icon: const Icon(Icons.delete_forever_rounded, size: 15),
-              label: const Text('Permanent', style: TextStyle(fontSize: 12)),
+              label: Text(context.tr('admin_blog_permanent'),
+                  style: const TextStyle(fontSize: 12)),
               onPressed: () => Navigator.pop(ctx, 'hard'),
             ),
           ]),
@@ -300,44 +308,44 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF111827),
+          backgroundColor: AdC.surface,
           surfaceTintColor: Colors.transparent,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Row(children: [
-            Icon(Icons.warning_amber_rounded,
+          title: Row(children: [
+            const Icon(Icons.warning_amber_rounded,
                 color: Colors.redAccent, size: 20),
-            SizedBox(width: 8),
-            Text('Permanent Delete',
-                style: TextStyle(
+            const SizedBox(width: 8),
+            Text(context.tr('admin_blog_permanent_delete_title'),
+                style: const TextStyle(
                     color: Colors.redAccent,
                     fontSize: 15,
                     fontWeight: FontWeight.w700)),
           ]),
           content: RichText(
-            text: const TextSpan(
-              style:
-                  TextStyle(color: Colors.white54, fontSize: 13, height: 1.5),
+            text: TextSpan(
+              style: TextStyle(color: AdC.textMute, fontSize: 13, height: 1.5),
               children: [
                 TextSpan(
-                    text: 'This action is ',
-                    style: TextStyle(color: Colors.white54)),
+                    text:
+                        '${context.tr('admin_blog_permanent_delete_body_prefix')} ',
+                    style: TextStyle(color: AdC.textMute)),
                 TextSpan(
-                    text: 'IRREVERSIBLE',
-                    style: TextStyle(
+                    text: context
+                        .tr('admin_blog_permanent_delete_body_irreversible'),
+                    style: const TextStyle(
                         color: Colors.redAccent, fontWeight: FontWeight.w700)),
                 TextSpan(
-                    text: '. The post, all its comments, likes, and view '
-                        'history will be permanently erased from the '
-                        'database.\n\nAre you absolutely sure?'),
+                    text:
+                        context.tr('admin_blog_permanent_delete_body_suffix')),
               ],
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child:
-                  const Text('Cancel', style: TextStyle(color: Colors.white54)),
+              child: Text(context.tr('common_cancel'),
+                  style: TextStyle(color: AdC.textMute)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -348,7 +356,7 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
                     borderRadius: BorderRadius.circular(8)),
               ),
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Yes, Delete Permanently'),
+              child: Text(context.tr('admin_blog_yes_delete_permanently')),
             ),
           ],
         ),
@@ -366,15 +374,16 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
       setState(() => _posts.removeWhere((p) => p['slug'] == slug));
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(choice == 'hard'
-            ? '"$title" permanently deleted.'
-            : '"$title" archived.'),
-        backgroundColor: const Color(0xFF111827),
+            ? '"$title" $permanentlyDeletedSuffix'
+            : '"$title" $archivedSuffix'),
+        backgroundColor: AdC.surface,
         behavior: SnackBarBehavior.floating,
       ));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(e is AdminApiException ? e.message : 'Delete failed: $e'),
+        content:
+            Text(e is AdminApiException ? e.message : '$deleteFailedPrefix $e'),
         backgroundColor: Colors.redAccent,
         behavior: SnackBarBehavior.floating,
       ));
@@ -420,12 +429,12 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
       if (_fetchingPost)
         Container(
           color: Colors.black.withValues(alpha: 0.55),
-          child: const Center(
+          child: Center(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              CircularProgressIndicator(color: _accent),
-              SizedBox(height: 14),
-              Text('Loading post…',
-                  style: TextStyle(color: Colors.white54, fontSize: 13)),
+              const CircularProgressIndicator(color: AdC.teal),
+              const SizedBox(height: 14),
+              Text(context.tr('admin_blog_loading_post'),
+                  style: const TextStyle(color: Colors.white54, fontSize: 13)),
             ]),
           ),
         ),
@@ -434,7 +443,7 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: _accent));
+      return const Center(child: CircularProgressIndicator(color: AdC.teal));
     }
     if (_error != null) {
       return _ErrorState(message: _error!, onRetry: _refresh);
@@ -445,8 +454,8 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
     }
 
     return RefreshIndicator(
-      color: _accent,
-      backgroundColor: const Color(0xFF111827),
+      color: AdC.teal,
+      backgroundColor: AdC.surface,
       onRefresh: _refresh,
       child: ListView.builder(
         controller: _scrollCtrl,
@@ -458,7 +467,7 @@ class _AdminBlogListScreenState extends State<AdminBlogListScreen> {
               padding: EdgeInsets.symmetric(vertical: 24),
               child: Center(
                 child:
-                    CircularProgressIndicator(color: _accent, strokeWidth: 2),
+                    CircularProgressIndicator(color: AdC.teal, strokeWidth: 2),
               ),
             );
           }
@@ -492,20 +501,19 @@ class _BlogToolbar extends StatelessWidget {
   });
 
   static const _blogColor = Color(0xFFE91E8C);
-  static const _accent = Color(0xFF14FFEC);
 
   Color _chipColor(String s) {
     switch (s) {
       case 'PUBLISHED':
         return Colors.greenAccent;
       case 'DRAFT':
-        return Colors.white54;
+        return AdC.textMute;
       case 'SCHEDULED':
         return Colors.blueAccent;
       case 'MY_DRAFTS':
         return Colors.orangeAccent;
       default:
-        return _accent;
+        return AdC.teal;
     }
   }
 
@@ -513,9 +521,8 @@ class _BlogToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF111827),
-        border: Border(
-            bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
+        color: AdC.surface,
+        border: Border(bottom: BorderSide(color: AdC.overlay(0.06))),
       ),
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -524,37 +531,37 @@ class _BlogToolbar extends StatelessWidget {
           Expanded(
             child: TextField(
               controller: searchCtrl,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
+              style: TextStyle(color: AdC.textPri, fontSize: 13),
               decoration: InputDecoration(
-                hintText: 'Search posts… (server-side, all pages)',
-                hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
-                prefixIcon: const Icon(Icons.search_rounded,
-                    color: Colors.white38, size: 18),
+                hintText: context.tr('admin_blog_search_hint'),
+                hintStyle: TextStyle(color: AdC.textMute, fontSize: 13),
+                prefixIcon:
+                    Icon(Icons.search_rounded, color: AdC.textMute, size: 18),
                 suffixIcon: ValueListenableBuilder(
                   valueListenable: searchCtrl,
                   builder: (_, __, ___) => searchCtrl.text.isNotEmpty
                       ? IconButton(
-                          icon: const Icon(Icons.clear_rounded,
-                              size: 16, color: Colors.white38),
+                          icon: Icon(Icons.clear_rounded,
+                              size: 16, color: AdC.textMute),
                           onPressed: searchCtrl.clear,
                         )
                       : const SizedBox.shrink(),
                 ),
                 filled: true,
-                fillColor: const Color(0xFF0D1117),
+                fillColor: AdC.bg,
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(vertical: 10),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Colors.white12),
+                  borderSide: BorderSide(color: AdC.overlay(0.12)),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Colors.white12),
+                  borderSide: BorderSide(color: AdC.overlay(0.12)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: _accent, width: 1),
+                  borderSide: const BorderSide(color: AdC.teal, width: 1),
                 ),
               ),
             ),
@@ -570,8 +577,9 @@ class _BlogToolbar extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
             ),
             icon: const Icon(Icons.edit_note_rounded, size: 18),
-            label: const Text('New Post',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            label: Text(context.tr('admin_blog_new_post'),
+                style:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             onPressed: onNewPost,
           ),
         ]),
@@ -582,12 +590,12 @@ class _BlogToolbar extends StatelessWidget {
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(children: [
-            for (final entry in const {
-              'ALL': 'All Posts',
-              'PUBLISHED': 'Published',
-              'DRAFT': 'Drafts',
-              'SCHEDULED': 'Scheduled',
-              'MY_DRAFTS': 'My Drafts',
+            for (final entry in {
+              'ALL': context.tr('admin_blog_filter_all'),
+              'PUBLISHED': context.tr('admin_blog_filter_published'),
+              'DRAFT': context.tr('admin_blog_filter_drafts'),
+              'SCHEDULED': context.tr('admin_blog_filter_scheduled'),
+              'MY_DRAFTS': context.tr('admin_blog_filter_my_drafts'),
             }.entries)
               _FilterChip(
                 label: entry.value,
@@ -629,13 +637,14 @@ class _FilterChip extends StatelessWidget {
                 isSelected ? color.withValues(alpha: 0.14) : Colors.transparent,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: isSelected ? color.withValues(alpha: 0.5) : Colors.white12,
+              color:
+                  isSelected ? color.withValues(alpha: 0.5) : AdC.overlay(0.12),
               width: isSelected ? 1.5 : 1,
             ),
           ),
           child: Text(label,
               style: TextStyle(
-                color: isSelected ? color : Colors.white38,
+                color: isSelected ? color : AdC.textMute,
                 fontSize: 12,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
               )),
@@ -669,7 +678,7 @@ class _PostCard extends StatelessWidget {
       case 'SCHEDULED':
         return Colors.blueAccent;
       default:
-        return Colors.white38;
+        return AdC.textMute;
     }
   }
 
@@ -699,7 +708,7 @@ class _PostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = post['title'] as String? ?? 'Untitled';
+    final title = post['title'] as String? ?? context.tr('admin_blog_untitled');
     final excerpt = post['excerpt'] as String? ?? '';
     final slug = post['slug'] as String? ?? '';
     final status = post['status'] as String? ?? 'DRAFT';
@@ -736,9 +745,9 @@ class _PostCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF111827),
+        color: AdC.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+        border: Border.all(color: AdC.overlay(0.07)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         // ── Main content row ───────────────────────────────────────────
@@ -762,13 +771,13 @@ class _PostCard extends StatelessWidget {
                         _Badge(
                           icon: Icons.location_city_rounded,
                           label: cityName,
-                          color: Colors.white38,
+                          color: AdC.textMute,
                         ),
                       if (viewCount > 0)
                         _Badge(
                           icon: Icons.visibility_outlined,
                           label: '$viewCount',
-                          color: Colors.white24,
+                          color: AdC.textMute,
                         ),
                       if (likeCount > 0)
                         _Badge(
@@ -784,8 +793,8 @@ class _PostCard extends StatelessWidget {
                     Text(title,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: Colors.white,
+                        style: TextStyle(
+                            color: AdC.textPri,
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             height: 1.35)),
@@ -795,10 +804,8 @@ class _PostCard extends StatelessWidget {
                       Text(excerpt,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: Colors.white38,
-                              fontSize: 12,
-                              height: 1.4)),
+                          style: TextStyle(
+                              color: AdC.textMute, fontSize: 12, height: 1.4)),
                     ],
                   ]),
             ),
@@ -815,94 +822,99 @@ class _PostCard extends StatelessWidget {
                 for (final c in categories.take(4))
                   _Chip(label: c, color: _blogColor),
                 for (final t in tags.take(3))
-                  _Chip(label: '#$t', color: Colors.white38),
+                  _Chip(label: '#$t', color: AdC.textMute),
               ]),
             ),
           ),
 
         // ── Footer bar ────────────────────────────────────────────────
+        // Meta info and action buttons each get their own Wrap so the card
+        // reflows onto extra lines instead of overflowing horizontally on
+        // narrow widths (tablet split-screen, resized panes, etc).
         Container(
           margin: const EdgeInsets.fromLTRB(16, 10, 16, 14),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.03),
+            color: AdC.overlay(0.03),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+            border: Border.all(color: AdC.overlay(0.05)),
           ),
-          child: Row(children: [
-            if (authorName.isNotEmpty)
-              _MetaItem(icon: Icons.person_outline_rounded, label: authorName),
-
-            if (dateLabel.isNotEmpty) ...[
-              if (authorName.isNotEmpty) const SizedBox(width: 10),
-              _MetaItem(icon: Icons.calendar_today_rounded, label: dateLabel),
-            ],
-
-            if (readingTime != null) ...[
-              const SizedBox(width: 10),
-              _MetaItem(
-                  icon: Icons.timer_outlined, label: '${readingTime}m read'),
-            ],
-
-            const Spacer(),
-
-            // Slug
-            if (slug.isNotEmpty)
-              Text('/$slug',
-                  style: const TextStyle(color: Colors.white24, fontSize: 10)),
-
-            const SizedBox(width: 10),
-
-            // Comments button (with count badge when non-zero)
-            _ActionBtn(
-              icon: Icons.chat_bubble_outline_rounded,
-              label: commentCount > 0 ? 'Comments ($commentCount)' : 'Comments',
-              color: Colors.white54,
-              onTap: onComments,
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Wrap(
+              spacing: 12,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (authorName.isNotEmpty)
+                  _MetaItem(
+                      icon: Icons.person_outline_rounded, label: authorName),
+                if (dateLabel.isNotEmpty)
+                  _MetaItem(
+                      icon: Icons.calendar_today_rounded, label: dateLabel),
+                if (readingTime != null)
+                  _MetaItem(
+                      icon: Icons.timer_outlined,
+                      label:
+                          '$readingTime${context.tr('admin_blog_min_read_suffix')}'),
+                if (slug.isNotEmpty)
+                  Text('/$slug',
+                      style: TextStyle(color: AdC.textMute, fontSize: 10)),
+              ],
             ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                // Comments button (with count badge when non-zero)
+                _ActionBtn(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  label: commentCount > 0
+                      ? '${context.tr('admin_blog_comments')} ($commentCount)'
+                      : context.tr('admin_blog_comments'),
+                  color: AdC.textMute,
+                  onTap: onComments,
+                ),
 
-            const SizedBox(width: 6),
+                // Promote (featured / paid-advert / related links) — only
+                // once the post has a slug to key the Firestore side-table.
+                if (slug.isNotEmpty)
+                  StreamBuilder<BlogPostDetailsModel>(
+                    stream: BlogPostDetailsService.stream(slug),
+                    builder: (context, snap) {
+                      final details = snap.data ?? BlogPostDetailsModel.empty;
+                      return _ActionBtn(
+                        icon: details.isFeatured
+                            ? Icons.star_rounded
+                            : Icons.star_border_rounded,
+                        label: context.tr('admin_blog_promote'),
+                        color: const Color(0xFFFFC107),
+                        onTap: () => showDialog(
+                          context: context,
+                          builder: (_) =>
+                              _BlogPromoteDialog(slug: slug, initial: details),
+                        ),
+                      );
+                    },
+                  ),
 
-            // Promote (featured / paid-advert / related links) — only once
-            // the post has a slug to key the Firestore side-table on.
-            if (slug.isNotEmpty)
-              StreamBuilder<BlogPostDetailsModel>(
-                stream: BlogPostDetailsService.stream(slug),
-                builder: (context, snap) {
-                  final details = snap.data ?? BlogPostDetailsModel.empty;
-                  return _ActionBtn(
-                    icon: details.isFeatured
-                        ? Icons.star_rounded
-                        : Icons.star_border_rounded,
-                    label: 'Promote',
-                    color: const Color(0xFFFFC107),
-                    onTap: () => showDialog(
-                      context: context,
-                      builder: (_) =>
-                          _BlogPromoteDialog(slug: slug, initial: details),
-                    ),
-                  );
-                },
-              ),
+                // Edit
+                _ActionBtn(
+                  icon: Icons.edit_rounded,
+                  label: context.tr('admin_blog_edit'),
+                  color: AdC.teal,
+                  onTap: onEdit,
+                ),
 
-            const SizedBox(width: 6),
-
-            // Edit
-            _ActionBtn(
-              icon: Icons.edit_rounded,
-              label: 'Edit',
-              color: const Color(0xFF14FFEC),
-              onTap: onEdit,
-            ),
-
-            const SizedBox(width: 6),
-
-            // Delete (opens soft/hard dialog)
-            _ActionBtn(
-              icon: Icons.delete_outline_rounded,
-              label: 'Delete',
-              color: Colors.redAccent,
-              onTap: onDelete,
+                // Delete (opens soft/hard dialog)
+                _ActionBtn(
+                  icon: Icons.delete_outline_rounded,
+                  label: context.tr('common_delete'),
+                  color: Colors.redAccent,
+                  onTap: onDelete,
+                ),
+              ],
             ),
           ]),
         ),
@@ -979,10 +991,10 @@ class _BlogPromoteDialogState extends State<_BlogPromoteDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: const Color(0xFF1E3A5F),
+      backgroundColor: AdC.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text('Promote Post',
-          style: TextStyle(color: Colors.white, fontSize: 16)),
+      title: Text(context.tr('admin_blog_promote_dialog_title'),
+          style: TextStyle(color: AdC.textPri, fontSize: 16)),
       content: SizedBox(
         width: 380,
         child: SingleChildScrollView(
@@ -995,29 +1007,31 @@ class _BlogPromoteDialogState extends State<_BlogPromoteDialog> {
                 value: _isFeatured,
                 onChanged: (v) => setState(() => _isFeatured = v),
                 activeThumbColor: const Color(0xFFFFC107),
-                title: const Text('Featured',
-                    style: TextStyle(color: Colors.white, fontSize: 13)),
-                subtitle: const Text('Surfaces first in the blog section',
-                    style: TextStyle(color: Colors.white38, fontSize: 11)),
+                title: Text(context.tr('admin_blog_featured'),
+                    style: TextStyle(color: AdC.textPri, fontSize: 13)),
+                subtitle: Text(context.tr('admin_blog_featured_sub'),
+                    style: TextStyle(color: AdC.textMute, fontSize: 11)),
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: _isPaidAdvert,
                 onChanged: (v) => setState(() => _isPaidAdvert = v),
-                activeThumbColor: const Color(0xFFD4AF37),
-                title: const Text('Paid Advert',
-                    style: TextStyle(color: Colors.white, fontSize: 13)),
-                subtitle: const Text('Shows a "Sponsored by" badge',
-                    style: TextStyle(color: Colors.white38, fontSize: 11)),
+                activeThumbColor: AdC.gold,
+                title: Text(context.tr('admin_blog_paid_advert'),
+                    style: TextStyle(color: AdC.textPri, fontSize: 13)),
+                subtitle: Text(context.tr('admin_blog_paid_advert_sub'),
+                    style: TextStyle(color: AdC.textMute, fontSize: 11)),
               ),
               if (_isPaidAdvert) ...[
                 const SizedBox(height: 8),
-                AdminField(ctrl: _sponsorCtrl, label: 'Sponsor Name'),
+                AdminField(
+                    ctrl: _sponsorCtrl,
+                    label: context.tr('admin_blog_sponsor_name')),
               ],
               const SizedBox(height: 12),
-              const Text('Related Links',
+              Text(context.tr('admin_blog_related_links'),
                   style: TextStyle(
-                      color: Colors.white70,
+                      color: AdC.textSec,
                       fontSize: 12,
                       fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
@@ -1028,20 +1042,19 @@ class _BlogPromoteDialogState extends State<_BlogPromoteDialog> {
                     .map((l) => Chip(
                           label: Text(l.label,
                               style: const TextStyle(fontSize: 11)),
-                          backgroundColor: Colors.white.withValues(alpha: 0.08),
-                          labelStyle: const TextStyle(color: Colors.white),
+                          backgroundColor: AdC.overlay(0.08),
+                          labelStyle: TextStyle(color: AdC.textPri),
                           onDeleted: () => setState(() => _links.remove(l)),
-                          deleteIconColor: Colors.white54,
+                          deleteIconColor: AdC.textMute,
                         ))
                     .toList(),
               ),
               const SizedBox(height: 8),
               TextButton.icon(
                 onPressed: _addPlaceLink,
-                icon: const Icon(Icons.add_rounded,
-                    color: Color(0xFF14FFEC), size: 16),
-                label: const Text('Link a Place',
-                    style: TextStyle(color: Color(0xFF14FFEC))),
+                icon: const Icon(Icons.add_rounded, color: AdC.teal, size: 16),
+                label: Text(context.tr('admin_blog_link_a_place'),
+                    style: const TextStyle(color: AdC.teal)),
               ),
             ],
           ),
@@ -1050,14 +1063,16 @@ class _BlogPromoteDialogState extends State<_BlogPromoteDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          child: Text(context.tr('common_cancel'),
+              style: TextStyle(color: AdC.textMute)),
         ),
         ElevatedButton(
           onPressed: _saving ? null : _save,
           style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF14FFEC),
-              foregroundColor: Colors.black),
-          child: Text(_saving ? 'Saving…' : 'Save'),
+              backgroundColor: AdC.teal, foregroundColor: Colors.black),
+          child: Text(_saving
+              ? context.tr('admin_blog_saving')
+              : context.tr('common_save')),
         ),
       ],
     );
@@ -1084,8 +1099,6 @@ class _CommentsSheet extends StatefulWidget {
 }
 
 class _CommentsSheetState extends State<_CommentsSheet> {
-  static const _accent = Color(0xFF14FFEC);
-
   List<Map<String, dynamic>> _comments = [];
   bool _loading = true;
   bool _submitting = false;
@@ -1194,8 +1207,9 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       if (!mounted) return;
       setState(() => _submitting = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content:
-            Text(e is AdminApiException ? e.message : 'Failed to post comment'),
+        content: Text(e is AdminApiException
+            ? e.message
+            : context.tr('admin_blog_failed_post_comment')),
         backgroundColor: Colors.redAccent,
         behavior: SnackBarBehavior.floating,
       ));
@@ -1220,8 +1234,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       snap: true,
       snapSizes: const [0.40, 0.72, 0.95],
       builder: (_, sheetCtrl) => Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF111827),
+        decoration: BoxDecoration(
+          color: AdC.surface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(children: [
@@ -1232,7 +1246,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white24,
+                color: AdC.overlay(0.24),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -1243,20 +1257,19 @@ class _CommentsSheetState extends State<_CommentsSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
             child: Row(children: [
               const Icon(Icons.chat_bubble_outline_rounded,
-                  color: Color(0xFF14FFEC), size: 16),
+                  color: AdC.teal, size: 16),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Comments${_total > 0 ? ' ($_total)' : ''}',
-                  style: const TextStyle(
-                      color: Colors.white,
+                  '${context.tr('admin_blog_comments')}${_total > 0 ? ' ($_total)' : ''}',
+                  style: TextStyle(
+                      color: AdC.textPri,
                       fontSize: 15,
                       fontWeight: FontWeight.w600),
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.close_rounded,
-                    color: Colors.white38, size: 20),
+                icon: Icon(Icons.close_rounded, color: AdC.textMute, size: 20),
                 onPressed: () => Navigator.pop(context),
               ),
             ]),
@@ -1264,7 +1277,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
 
           Container(
             height: 1,
-            color: Colors.white.withValues(alpha: 0.07),
+            color: AdC.overlay(0.07),
           ),
 
           // ── Comment list ───────────────────────────────────────────
@@ -1283,7 +1296,9 @@ class _CommentsSheetState extends State<_CommentsSheet> {
             focusNode: _inputFocus,
             submitting: _submitting,
             onSubmit: _submitComment,
-            hintText: _replyTo != null ? 'Write a reply…' : 'Add a comment…',
+            hintText: _replyTo != null
+                ? context.tr('admin_blog_reply_hint')
+                : context.tr('admin_blog_comment_hint'),
           ),
         ]),
       ),
@@ -1292,7 +1307,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
 
   Widget _buildList(ScrollController ctrl) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: _accent));
+      return const Center(child: CircularProgressIndicator(color: AdC.teal));
     }
     if (_error != null) {
       return Center(
@@ -1304,26 +1319,27 @@ class _CommentsSheetState extends State<_CommentsSheet> {
             const SizedBox(height: 12),
             Text(_error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                style: TextStyle(color: AdC.textMute, fontSize: 13)),
             const SizedBox(height: 16),
             TextButton(
               onPressed: () => _loadComments(reset: true),
-              child: const Text('Retry', style: TextStyle(color: _accent)),
+              child: Text(context.tr('common_retry'),
+                  style: const TextStyle(color: AdC.teal)),
             ),
           ]),
         ),
       );
     }
     if (_comments.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.forum_outlined, color: Colors.white24, size: 36),
-          SizedBox(height: 12),
-          Text('No comments yet.',
-              style: TextStyle(color: Colors.white38, fontSize: 13)),
-          SizedBox(height: 6),
-          Text('Be the first to comment below.',
-              style: TextStyle(color: Colors.white24, fontSize: 12)),
+          Icon(Icons.forum_outlined, color: AdC.textMute, size: 36),
+          const SizedBox(height: 12),
+          Text(context.tr('admin_blog_no_comments_yet'),
+              style: TextStyle(color: AdC.textMute, fontSize: 13)),
+          const SizedBox(height: 6),
+          Text(context.tr('admin_blog_be_first_comment'),
+              style: TextStyle(color: AdC.textMute, fontSize: 12)),
         ]),
       );
     }
@@ -1338,7 +1354,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Center(
                 child:
-                    CircularProgressIndicator(color: _accent, strokeWidth: 2)),
+                    CircularProgressIndicator(color: AdC.teal, strokeWidth: 2)),
           );
         }
         return _CommentTile(
@@ -1363,7 +1379,7 @@ class _CommentTile extends StatelessWidget {
     final author = comment['author'] as Map<String, dynamic>?;
     final name = author != null
         ? '${author['firstName'] ?? ''} ${author['lastName'] ?? ''}'.trim()
-        : 'Anonymous';
+        : context.tr('admin_blog_anonymous');
     final initials = name.isNotEmpty ? name[0].toUpperCase() : '?';
     final content = comment['content'] as String? ?? '';
     final createdAt = comment['createdAt'] as String?;
@@ -1389,9 +1405,9 @@ class _CommentTile extends StatelessWidget {
           margin: const EdgeInsets.only(bottom: 6),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.04),
+            color: AdC.overlay(0.04),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+            border: Border.all(color: AdC.overlay(0.07)),
           ),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1399,41 +1415,39 @@ class _CommentTile extends StatelessWidget {
             Row(children: [
               CircleAvatar(
                 radius: 13,
-                backgroundColor:
-                    const Color(0xFF14FFEC).withValues(alpha: 0.15),
+                backgroundColor: AdC.teal.withValues(alpha: 0.15),
                 child: Text(initials,
                     style: const TextStyle(
-                        color: Color(0xFF14FFEC),
+                        color: AdC.teal,
                         fontSize: 11,
                         fontWeight: FontWeight.w700)),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(name,
-                    style: const TextStyle(
-                        color: Colors.white70,
+                    style: TextStyle(
+                        color: AdC.textSec,
                         fontSize: 12,
                         fontWeight: FontWeight.w600)),
               ),
               if (timeLabel.isNotEmpty)
                 Text(timeLabel,
-                    style:
-                        const TextStyle(color: Colors.white24, fontSize: 10)),
+                    style: TextStyle(color: AdC.textMute, fontSize: 10)),
             ]),
             const SizedBox(height: 8),
             // Content
             Text(content,
-                style: const TextStyle(
-                    color: Colors.white54, fontSize: 13, height: 1.45)),
+                style:
+                    TextStyle(color: AdC.textMute, fontSize: 13, height: 1.45)),
             const SizedBox(height: 8),
             // Reply button
             GestureDetector(
               onTap: onReply,
-              child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.reply_rounded, size: 13, color: Color(0xFF14FFEC)),
-                SizedBox(width: 4),
-                Text('Reply',
-                    style: TextStyle(color: Color(0xFF14FFEC), fontSize: 11)),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.reply_rounded, size: 13, color: AdC.teal),
+                const SizedBox(width: 4),
+                Text(context.tr('admin_blog_reply'),
+                    style: const TextStyle(color: AdC.teal, fontSize: 11)),
               ]),
             ),
           ]),
@@ -1450,7 +1464,7 @@ class _CommentTile extends StatelessWidget {
                     ? '${rAuthor['firstName'] ?? ''} '
                             '${rAuthor['lastName'] ?? ''}'
                         .trim()
-                    : 'Anonymous';
+                    : context.tr('admin_blog_anonymous');
                 final rInitial =
                     rName.isNotEmpty ? rName[0].toUpperCase() : '?';
                 final rContent = r['content'] as String? ?? '';
@@ -1458,20 +1472,19 @@ class _CommentTile extends StatelessWidget {
                   margin: const EdgeInsets.only(bottom: 6),
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.03),
+                    color: AdC.overlay(0.03),
                     borderRadius: BorderRadius.circular(8),
-                    border:
-                        Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                    border: Border.all(color: AdC.overlay(0.05)),
                   ),
                   child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         CircleAvatar(
                           radius: 11,
-                          backgroundColor: Colors.white.withValues(alpha: 0.08),
+                          backgroundColor: AdC.overlay(0.08),
                           child: Text(rInitial,
-                              style: const TextStyle(
-                                  color: Colors.white54,
+                              style: TextStyle(
+                                  color: AdC.textMute,
                                   fontSize: 10,
                                   fontWeight: FontWeight.w600)),
                         ),
@@ -1481,14 +1494,14 @@ class _CommentTile extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(rName,
-                                    style: const TextStyle(
-                                        color: Colors.white60,
+                                    style: TextStyle(
+                                        color: AdC.textMute,
                                         fontSize: 11,
                                         fontWeight: FontWeight.w600)),
                                 const SizedBox(height: 4),
                                 Text(rContent,
-                                    style: const TextStyle(
-                                        color: Colors.white38,
+                                    style: TextStyle(
+                                        color: AdC.textMute,
                                         fontSize: 12,
                                         height: 1.4)),
                               ]),
@@ -1518,22 +1531,21 @@ class _ReplyBanner extends StatelessWidget {
     final author = replyTo['author'] as Map<String, dynamic>?;
     final name = author != null
         ? '${author['firstName'] ?? ''} ${author['lastName'] ?? ''}'.trim()
-        : 'someone';
+        : context.tr('admin_blog_anonymous');
 
     return Container(
-      color: const Color(0xFF14FFEC).withValues(alpha: 0.07),
+      color: AdC.teal.withValues(alpha: 0.07),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(children: [
-        const Icon(Icons.reply_rounded, size: 14, color: Color(0xFF14FFEC)),
+        const Icon(Icons.reply_rounded, size: 14, color: AdC.teal),
         const SizedBox(width: 8),
         Expanded(
-          child: Text('Replying to $name',
-              style: const TextStyle(color: Color(0xFF14FFEC), fontSize: 12)),
+          child: Text('${context.tr('admin_blog_replying_to_prefix')} $name',
+              style: const TextStyle(color: AdC.teal, fontSize: 12)),
         ),
         GestureDetector(
           onTap: onCancel,
-          child:
-              const Icon(Icons.close_rounded, size: 16, color: Colors.white38),
+          child: Icon(Icons.close_rounded, size: 16, color: AdC.textMute),
         ),
       ]),
     );
@@ -1563,9 +1575,8 @@ class _CommentInput extends StatelessWidget {
     return Container(
       padding: EdgeInsets.fromLTRB(16, 10, 16, 12 + bottom),
       decoration: BoxDecoration(
-        color: const Color(0xFF111827),
-        border: Border(
-            top: BorderSide(color: Colors.white.withValues(alpha: 0.07))),
+        color: AdC.surface,
+        border: Border(top: BorderSide(color: AdC.overlay(0.07))),
       ),
       child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
         Expanded(
@@ -1575,27 +1586,26 @@ class _CommentInput extends StatelessWidget {
             maxLines: 4,
             minLines: 1,
             textInputAction: TextInputAction.newline,
-            style: const TextStyle(color: Colors.white, fontSize: 13),
+            style: TextStyle(color: AdC.textPri, fontSize: 13),
             decoration: InputDecoration(
               hintText: hintText,
-              hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+              hintStyle: TextStyle(color: AdC.textMute, fontSize: 13),
               filled: true,
-              fillColor: const Color(0xFF0D1117),
+              fillColor: AdC.bg,
               isDense: true,
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Colors.white12),
+                borderSide: BorderSide(color: AdC.overlay(0.12)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Colors.white12),
+                borderSide: BorderSide(color: AdC.overlay(0.12)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide:
-                    const BorderSide(color: Color(0xFF14FFEC), width: 1),
+                borderSide: const BorderSide(color: AdC.teal, width: 1),
               ),
             ),
           ),
@@ -1609,13 +1619,13 @@ class _CommentInput extends StatelessWidget {
             height: 40,
             decoration: BoxDecoration(
               color: submitting
-                  ? Colors.white12
-                  : const Color(0xFF14FFEC).withValues(alpha: 0.15),
+                  ? AdC.overlay(0.12)
+                  : AdC.teal.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: submitting
-                    ? Colors.white12
-                    : const Color(0xFF14FFEC).withValues(alpha: 0.4),
+                    ? AdC.overlay(0.12)
+                    : AdC.teal.withValues(alpha: 0.4),
               ),
             ),
             child: submitting
@@ -1624,11 +1634,10 @@ class _CommentInput extends StatelessWidget {
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(
-                          color: Color(0xFF14FFEC), strokeWidth: 2),
+                          color: AdC.teal, strokeWidth: 2),
                     ),
                   )
-                : const Icon(Icons.send_rounded,
-                    size: 16, color: Color(0xFF14FFEC)),
+                : const Icon(Icons.send_rounded, size: 16, color: AdC.teal),
           ),
         ),
       ]),
@@ -1667,11 +1676,21 @@ class _Thumbnail extends StatelessWidget {
         width: 80,
         height: 80,
         decoration: BoxDecoration(
-          color: _blogColor.withValues(alpha: 0.08),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              _blogColor.withValues(alpha: 0.55),
+              _blogColor.withValues(alpha: 0.22),
+            ],
+          ),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: _blogColor.withValues(alpha: 0.15)),
+          border: Border.all(color: _blogColor.withValues(alpha: 0.25)),
         ),
-        child: const Icon(Icons.article_rounded, color: _blogColor, size: 28),
+        child: const Center(
+          child:
+              Icon(Icons.auto_stories_rounded, color: Colors.white, size: 30),
+        ),
       );
 }
 
@@ -1731,10 +1750,9 @@ class _MetaItem extends StatelessWidget {
   Widget build(BuildContext context) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 11, color: Colors.white38),
+          Icon(icon, size: 11, color: AdC.textMute),
           const SizedBox(width: 4),
-          Text(label,
-              style: const TextStyle(color: Colors.white38, fontSize: 11)),
+          Text(label, style: TextStyle(color: AdC.textMute, fontSize: 11)),
         ],
       );
 }
@@ -1810,21 +1828,20 @@ class _EmptyState extends StatelessWidget {
           const SizedBox(height: 22),
           Text(
             isAll
-                ? 'No blog posts yet'
+                ? context.tr('admin_blog_empty_no_posts')
                 : isMyDrafts
-                    ? 'No drafts yet'
+                    ? context.tr('admin_blog_empty_no_drafts')
                     : 'No ${filter.toLowerCase()} posts',
-            style: const TextStyle(
-                color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600),
+            style: TextStyle(
+                color: AdC.textPri, fontSize: 17, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Text(
             isAll || isMyDrafts
-                ? 'Hit "New Post" to write your first article.'
-                : 'Try switching the filter above.',
+                ? context.tr('admin_blog_empty_hit_new_post')
+                : context.tr('admin_blog_empty_try_filter'),
             textAlign: TextAlign.center,
-            style: const TextStyle(
-                color: Colors.white38, fontSize: 13, height: 1.5),
+            style: TextStyle(color: AdC.textMute, fontSize: 13, height: 1.5),
           ),
           if (isAll || isMyDrafts) ...[
             const SizedBox(height: 28),
@@ -1839,8 +1856,9 @@ class _EmptyState extends StatelessWidget {
                     const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
               icon: const Icon(Icons.edit_note_rounded, size: 18),
-              label: const Text('Write First Post',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              label: Text(context.tr('admin_blog_write_first_post'),
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w600)),
               onPressed: onNewPost,
             ),
           ],
@@ -1869,20 +1887,20 @@ class _ErrorState extends StatelessWidget {
             const SizedBox(height: 16),
             Text(message,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: Colors.white54, fontSize: 13, height: 1.5)),
+                style:
+                    TextStyle(color: AdC.textMute, fontSize: 13, height: 1.5)),
             const SizedBox(height: 24),
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF14FFEC),
-                side: const BorderSide(color: Color(0xFF14FFEC), width: 1),
+                foregroundColor: AdC.teal,
+                side: const BorderSide(color: AdC.teal, width: 1),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
                 padding:
                     const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               ),
               icon: const Icon(Icons.refresh_rounded, size: 16),
-              label: const Text('Retry'),
+              label: Text(context.tr('common_retry')),
               onPressed: onRetry,
             ),
           ]),

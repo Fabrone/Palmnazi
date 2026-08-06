@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:palmnazi/services/app_strings.dart';
 
 abstract final class _SC {
   static const Color aquaBright = Color(0xFF00E5FF);
@@ -15,23 +16,29 @@ class StatsCounter extends StatefulWidget {
 class _StatsCounterState extends State<StatsCounter> {
   bool _hasAnimated = false;
 
-  final List<StatItem> _stats = [
-    StatItem(
-        icon: Icons.location_city,
-        count: 15,
-        label: 'Resort Cities',
-        suffix: '+'),
-    StatItem(
-        icon: Icons.business, count: 500, label: 'Businesses', suffix: '+'),
-    StatItem(
-        icon: Icons.people, count: 10000, label: 'Happy Visitors', suffix: '+'),
-    StatItem(
-        icon: Icons.star,
-        count: 4,
-        label: 'Average Rating',
-        suffix: '.8',
-        decimal: true),
-  ];
+  List<StatItem> _stats(BuildContext context) => [
+        StatItem(
+            icon: Icons.location_city,
+            count: 15,
+            label: context.tr('widget_stats_counter_resort_cities'),
+            suffix: '+'),
+        StatItem(
+            icon: Icons.business,
+            count: 500,
+            label: context.tr('widget_stats_counter_businesses'),
+            suffix: '+'),
+        StatItem(
+            icon: Icons.people,
+            count: 10000,
+            label: context.tr('widget_stats_counter_happy_visitors'),
+            suffix: '+'),
+        StatItem(
+            icon: Icons.star,
+            count: 4,
+            label: context.tr('widget_stats_counter_average_rating'),
+            suffix: '.8',
+            decimal: true),
+      ];
 
   @override
   void initState() {
@@ -64,7 +71,8 @@ class _StatsCounterState extends State<StatsCounter> {
                 ? 24
                 : 18;
 
-        final List<Widget> items = _stats
+        final stats = _stats(context);
+        final List<Widget> items = stats
             .map((s) => Expanded(child: _buildStatItem(s, isLarge, isMedium)))
             .toList();
 
@@ -96,12 +104,12 @@ class _StatsCounterState extends State<StatsCounter> {
           // Always horizontal — Column only on very narrow phones
           child: w < 360
               ? Column(
-                  children: _stats
+                  children: stats
                       .asMap()
                       .entries
                       .map((e) => Padding(
                             padding: EdgeInsets.only(
-                                bottom: e.key < _stats.length - 1 ? 28 : 0),
+                                bottom: e.key < stats.length - 1 ? 28 : 0),
                             child: _buildStatItem(e.value, isLarge, isMedium),
                           ))
                       .toList(),

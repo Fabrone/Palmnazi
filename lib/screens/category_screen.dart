@@ -7,6 +7,7 @@ import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/place_model.dart';
 import 'package:palmnazi/screens/place_details_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/widgets/place_card.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -518,7 +519,7 @@ class _CategoryScreenState extends State<CategoryScreen>
         padding: const EdgeInsets.symmetric(horizontal: 24),
         children: [
           _SubcatChip(
-            label: 'All',
+            label: context.tr('category_subcat_all'),
             selected: _selectedSubcatId == null,
             onTap: () => setState(() => _selectedSubcatId = null),
           ),
@@ -656,9 +657,9 @@ class _CategoryScreenState extends State<CategoryScreen>
                   style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Tap to retry',
-                  style: TextStyle(
+                Text(
+                  context.tr('common_tap_to_retry'),
+                  style: const TextStyle(
                       color: _P.aquaBright,
                       fontSize: 12,
                       fontWeight: FontWeight.w600),

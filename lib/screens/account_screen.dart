@@ -285,18 +285,17 @@ class _AccountScreenState extends State<AccountScreen> {
                           color: Color(0xFFFF9800), size: 24),
                     ),
                     const SizedBox(width: 14),
-                    const Expanded(
+                    Expanded(
                         child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('Request Admin Access',
                             style: TextStyle(
-                                color: Colors.white,
+                                color: RC.textPri,
                                 fontSize: 17,
                                 fontWeight: FontWeight.bold)),
                         Text('Complete the form below to apply',
-                            style:
-                                TextStyle(color: Colors.white38, fontSize: 12)),
+                            style: TextStyle(color: RC.textMute, fontSize: 12)),
                       ],
                     )),
                   ]),
@@ -328,9 +327,7 @@ class _AccountScreenState extends State<AccountScreen> {
                         const SizedBox(height: 4),
                         Text(
                           'Pick the place already listed on Palmnazi that you\'ll be managing.',
-                          style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.4),
-                              fontSize: 11),
+                          style: TextStyle(color: RC.textMute, fontSize: 11),
                         ),
                         const SizedBox(height: 8),
                         GestureDetector(
@@ -345,11 +342,11 @@ class _AccountScreenState extends State<AccountScreen> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 14, vertical: 14),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.06),
+                              color: RC.overlay(0.06),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
                                 color: pickedPlace == null
-                                    ? Colors.white.withValues(alpha: 0.15)
+                                    ? RC.overlay(0.15)
                                     : const Color(0xFF14FFEC)
                                         .withValues(alpha: 0.5),
                               ),
@@ -357,7 +354,7 @@ class _AccountScreenState extends State<AccountScreen> {
                             child: Row(children: [
                               Icon(Icons.business_rounded,
                                   color: pickedPlace == null
-                                      ? Colors.white38
+                                      ? RC.textMute
                                       : const Color(0xFF14FFEC),
                                   size: 18),
                               const SizedBox(width: 10),
@@ -368,14 +365,14 @@ class _AccountScreenState extends State<AccountScreen> {
                                       : '${pickedPlace!.name} · ${pickedPlace!.cityName}',
                                   style: TextStyle(
                                       color: pickedPlace == null
-                                          ? Colors.white38
-                                          : Colors.white,
+                                          ? RC.textMute
+                                          : RC.textPri,
                                       fontSize: 13),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              const Icon(Icons.search_rounded,
-                                  color: Colors.white38, size: 16),
+                              Icon(Icons.search_rounded,
+                                  color: RC.textMute, size: 16),
                             ]),
                           ),
                         ),
@@ -384,24 +381,20 @@ class _AccountScreenState extends State<AccountScreen> {
                             padding: const EdgeInsets.only(top: 6),
                             child: Text('A place selection is required.',
                                 style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.3),
-                                    fontSize: 11)),
+                                    color: RC.textMute, fontSize: 11)),
                           ),
                         const SizedBox(height: 20),
                         _fieldLabel('Services Offered *'),
                         const SizedBox(height: 4),
                         Text(
                             'Add each service and press the + button or Enter.',
-                            style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.4),
-                                fontSize: 11)),
+                            style: TextStyle(color: RC.textMute, fontSize: 11)),
                         const SizedBox(height: 8),
                         Row(children: [
                           Expanded(
                               child: TextFormField(
                             controller: serviceCtrl,
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 14),
+                            style: TextStyle(color: RC.textPri, fontSize: 14),
                             decoration: _inputDecoration(
                                 hint: 'e.g. Spa & Wellness',
                                 icon: Icons.room_service_rounded),
@@ -454,9 +447,7 @@ class _AccountScreenState extends State<AccountScreen> {
                               padding: const EdgeInsets.only(top: 6),
                               child: Text('At least one service is required.',
                                   style: TextStyle(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.3),
-                                      fontSize: 11))),
+                                      color: RC.textMute, fontSize: 11))),
                         const SizedBox(height: 24),
                         GestureDetector(
                           onTap: () =>
@@ -477,7 +468,7 @@ class _AccountScreenState extends State<AccountScreen> {
                                     border: Border.all(
                                         color: agreedToTerms
                                             ? const Color(0xFF14FFEC)
-                                            : Colors.white38,
+                                            : RC.textMute,
                                         width: 1.5),
                                   ),
                                   child: agreedToTerms
@@ -486,12 +477,12 @@ class _AccountScreenState extends State<AccountScreen> {
                                       : null,
                                 ),
                                 const SizedBox(width: 12),
-                                const Expanded(
+                                Expanded(
                                     child: Text(
                                   'I confirm that the information provided is accurate and '
                                   'I agree to the Terms & Conditions for admin access on this platform.',
                                   style: TextStyle(
-                                      color: Colors.white60,
+                                      color: RC.textSec,
                                       fontSize: 12,
                                       height: 1.5),
                                 )),
@@ -575,8 +566,7 @@ class _AccountScreenState extends State<AccountScreen> {
                         onPressed:
                             sheetLoading ? null : () => Navigator.pop(sheetCtx),
                         child: Text('Cancel',
-                            style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.4))),
+                            style: TextStyle(color: RC.textMute)),
                       )),
                 ],
               ),
@@ -679,8 +669,8 @@ class _AccountScreenState extends State<AccountScreen> {
                     smsSent
                         ? 'Enter Verification Code'
                         : 'Enable Phone Two-Factor Auth',
-                    style: const TextStyle(
-                        color: Colors.white,
+                    style: TextStyle(
+                        color: RC.textPri,
                         fontSize: 18,
                         fontWeight: FontWeight.bold),
                   )),
@@ -690,10 +680,8 @@ class _AccountScreenState extends State<AccountScreen> {
                   smsSent
                       ? 'Enter the 6-digit code sent to your phone.'
                       : 'Enter your phone number with country code (e.g. +254 712 345 678).',
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.65),
-                      fontSize: 13,
-                      height: 1.4),
+                  style:
+                      TextStyle(color: RC.textSec, fontSize: 13, height: 1.4),
                 ),
                 const SizedBox(height: 24),
 
@@ -705,7 +693,7 @@ class _AccountScreenState extends State<AccountScreen> {
                       controller: phoneController,
                       keyboardType: TextInputType.phone,
                       enabled: !sheetLoading,
-                      style: const TextStyle(color: Colors.white),
+                      style: TextStyle(color: RC.textPri),
                       decoration: _inputDecoration(
                           hint: '+254 712 345 678', icon: Icons.phone_outlined),
                       validator: (v) {
@@ -800,23 +788,21 @@ class _AccountScreenState extends State<AccountScreen> {
                       autofocus: true,
                       enabled: !sheetLoading,
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 22, letterSpacing: 10),
+                      style: TextStyle(
+                          color: RC.textPri, fontSize: 22, letterSpacing: 10),
                       textAlign: TextAlign.center,
                       decoration: InputDecoration(
                         counterText: '',
                         hintText: '------',
-                        hintStyle: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.3),
-                            letterSpacing: 8),
+                        hintStyle:
+                            TextStyle(color: RC.textMute, letterSpacing: 8),
                         filled: true,
-                        fillColor: Colors.white.withValues(alpha: 0.08),
+                        fillColor: RC.overlay(0.08),
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12)),
                         enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                                color: Colors.white.withValues(alpha: 0.3))),
+                            borderSide: BorderSide(color: RC.overlay(0.3))),
                         focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: const BorderSide(
@@ -892,9 +878,7 @@ class _AccountScreenState extends State<AccountScreen> {
                   onPressed:
                       sheetLoading ? null : () => Navigator.pop(sheetCtx),
                   child: Text('Skip for now',
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.45),
-                          fontSize: 13)),
+                      style: TextStyle(color: RC.textMute, fontSize: 13)),
                 )),
               ],
             ),
@@ -941,17 +925,17 @@ class _AccountScreenState extends State<AccountScreen> {
                       color: Color(0xFFCF6679), size: 24),
                 ),
                 const SizedBox(width: 14),
-                const Expanded(
+                Expanded(
                     child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Email Not Verified',
                         style: TextStyle(
-                            color: Colors.white,
+                            color: RC.textPri,
                             fontSize: 17,
                             fontWeight: FontWeight.bold)),
                     Text('Verify your email to enable Phone MFA',
-                        style: TextStyle(color: Colors.white38, fontSize: 12)),
+                        style: TextStyle(color: RC.textMute, fontSize: 12)),
                   ],
                 )),
               ]),
@@ -971,10 +955,8 @@ class _AccountScreenState extends State<AccountScreen> {
                   'phone two-factor authentication. We\'ll send a verification link to '
                   '${_email ?? 'your email address'}. Tap the link to verify and then '
                   'come back to enable MFA.',
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.75),
-                      fontSize: 13,
-                      height: 1.5),
+                  style:
+                      TextStyle(color: RC.textSec, fontSize: 13, height: 1.5),
                 ),
               ),
               const SizedBox(height: 20),
@@ -998,9 +980,7 @@ class _AccountScreenState extends State<AccountScreen> {
                       'Verification link sent! Check your inbox for ${_email ?? 'your email'} '
                       'and tap the link. Then return here and tap ⟳ Refresh.',
                       style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.85),
-                          fontSize: 13,
-                          height: 1.4),
+                          color: RC.textSec, fontSize: 13, height: 1.4),
                     )),
                   ]),
                 ),
@@ -1055,9 +1035,7 @@ class _AccountScreenState extends State<AccountScreen> {
                 width: double.infinity,
                 child: TextButton(
                   onPressed: () => Navigator.pop(sheetCtx),
-                  child: Text('Close',
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.45))),
+                  child: Text('Close', style: TextStyle(color: RC.textMute)),
                 ),
               ),
             ],
@@ -1131,8 +1109,7 @@ class _AccountScreenState extends State<AccountScreen> {
         pinned: true,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: Colors.white70),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: RC.textSec),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
@@ -1145,8 +1122,8 @@ class _AccountScreenState extends State<AccountScreen> {
         flexibleSpace: FlexibleSpaceBar(
           titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
           title: Text(context.tr('my_account'),
-              style: const TextStyle(
-                  color: Colors.white,
+              style: TextStyle(
+                  color: RC.textPri,
                   fontSize: 20,
                   fontWeight: FontWeight.bold)),
           background: Container(
@@ -1209,8 +1186,8 @@ class _AccountScreenState extends State<AccountScreen> {
                     Row(children: [
                       Expanded(
                           child: Text(_email ?? '—',
-                              style: const TextStyle(
-                                  color: Colors.white,
+                              style: TextStyle(
+                                  color: RC.textPri,
                                   fontSize: 14,
                                   fontWeight: FontWeight.w500),
                               overflow: TextOverflow.ellipsis)),
@@ -1221,7 +1198,7 @@ class _AccountScreenState extends State<AccountScreen> {
                           Clipboard.setData(ClipboardData(text: _email!));
                           _snack('Email copied!', ok: true);
                         },
-                        child: const Icon(Icons.copy_rounded,
+                        child: Icon(Icons.copy_rounded,
                             size: 14, color: RC.textMute),
                       ),
                     ]),
@@ -1282,7 +1259,7 @@ class _AccountScreenState extends State<AccountScreen> {
             Padding(
               padding: const EdgeInsets.only(left: 4, bottom: 14),
               child: Text(context.tr('account_bookings_section'),
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: RC.textMute,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -1299,14 +1276,14 @@ class _AccountScreenState extends State<AccountScreen> {
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                   leading: _iconCircle(Icons.calendar_month_rounded, RC.teal),
                   title: Text(context.tr('account_my_bookings'),
-                      style: const TextStyle(
-                          color: Colors.white,
+                      style: TextStyle(
+                          color: RC.textPri,
                           fontSize: 14,
                           fontWeight: FontWeight.w500)),
                   subtitle: Text(context.tr('account_my_bookings_sub'),
-                      style: const TextStyle(color: RC.textMute, fontSize: 12)),
-                  trailing: const Icon(Icons.chevron_right_rounded,
-                      color: RC.textMute),
+                      style: TextStyle(color: RC.textMute, fontSize: 12)),
+                  trailing:
+                      Icon(Icons.chevron_right_rounded, color: RC.textMute),
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const MyBookingsScreen()),
                   ),
@@ -1326,14 +1303,14 @@ class _AccountScreenState extends State<AccountScreen> {
                   leading:
                       _iconCircle(Icons.chat_bubble_outline_rounded, RC.teal),
                   title: Text(context.tr('account_my_queries'),
-                      style: const TextStyle(
-                          color: Colors.white,
+                      style: TextStyle(
+                          color: RC.textPri,
                           fontSize: 14,
                           fontWeight: FontWeight.w500)),
                   subtitle: Text(context.tr('account_my_queries_sub'),
-                      style: const TextStyle(color: RC.textMute, fontSize: 12)),
-                  trailing: const Icon(Icons.chevron_right_rounded,
-                      color: RC.textMute),
+                      style: TextStyle(color: RC.textMute, fontSize: 12)),
+                  trailing:
+                      Icon(Icons.chevron_right_rounded, color: RC.textMute),
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const MyQueriesScreen()),
                   ),
@@ -1352,14 +1329,14 @@ class _AccountScreenState extends State<AccountScreen> {
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                   leading: _iconCircle(Icons.favorite_border_rounded, RC.teal),
                   title: Text(context.tr('account_my_favorites'),
-                      style: const TextStyle(
-                          color: Colors.white,
+                      style: TextStyle(
+                          color: RC.textPri,
                           fontSize: 14,
                           fontWeight: FontWeight.w500)),
                   subtitle: Text(context.tr('account_my_favorites_sub'),
-                      style: const TextStyle(color: RC.textMute, fontSize: 12)),
-                  trailing: const Icon(Icons.chevron_right_rounded,
-                      color: RC.textMute),
+                      style: TextStyle(color: RC.textMute, fontSize: 12)),
+                  trailing:
+                      Icon(Icons.chevron_right_rounded, color: RC.textMute),
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(
                         builder: (_) => const MyFavoritesScreen()),
@@ -1380,15 +1357,14 @@ class _AccountScreenState extends State<AccountScreen> {
                         const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                     leading: _iconCircle(Icons.storefront_outlined, RC.teal),
                     title: Text(context.tr('account_place_admin_panel'),
-                        style: const TextStyle(
-                            color: Colors.white,
+                        style: TextStyle(
+                            color: RC.textPri,
                             fontSize: 14,
                             fontWeight: FontWeight.w500)),
                     subtitle: Text(context.tr('account_place_admin_panel_sub'),
-                        style:
-                            const TextStyle(color: RC.textMute, fontSize: 12)),
-                    trailing: const Icon(Icons.chevron_right_rounded,
-                        color: RC.textMute),
+                        style: TextStyle(color: RC.textMute, fontSize: 12)),
+                    trailing:
+                        Icon(Icons.chevron_right_rounded, color: RC.textMute),
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const AdminDashboard()),
                     ),
@@ -1410,15 +1386,14 @@ class _AccountScreenState extends State<AccountScreen> {
                     leading: _iconCircle(
                         Icons.admin_panel_settings_outlined, RC.teal),
                     title: Text(context.tr('account_admin_console'),
-                        style: const TextStyle(
-                            color: Colors.white,
+                        style: TextStyle(
+                            color: RC.textPri,
                             fontSize: 14,
                             fontWeight: FontWeight.w500)),
                     subtitle: Text(context.tr('account_admin_console_sub'),
-                        style:
-                            const TextStyle(color: RC.textMute, fontSize: 12)),
-                    trailing: const Icon(Icons.chevron_right_rounded,
-                        color: RC.textMute),
+                        style: TextStyle(color: RC.textMute, fontSize: 12)),
+                    trailing:
+                        Icon(Icons.chevron_right_rounded, color: RC.textMute),
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const AdminDashboard()),
                     ),
@@ -1443,7 +1418,7 @@ class _AccountScreenState extends State<AccountScreen> {
           Padding(
             padding: const EdgeInsets.only(left: 4, bottom: 14),
             child: Text(context.tr('settings_title').toUpperCase(),
-                style: const TextStyle(
+                style: TextStyle(
                     color: RC.textMute,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
@@ -1456,15 +1431,15 @@ class _AccountScreenState extends State<AccountScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(context.tr('settings_appearance'),
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: RC.textMute,
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1.2)),
                 const SizedBox(height: 14),
                 Text(context.tr('settings_theme'),
-                    style: const TextStyle(
-                        color: Colors.white,
+                    style: TextStyle(
+                        color: RC.textPri,
                         fontSize: 14,
                         fontWeight: FontWeight.w500)),
                 const SizedBox(height: 10),
@@ -1489,21 +1464,21 @@ class _AccountScreenState extends State<AccountScreen> {
                 const Divider(color: Color(0xFF1F2937), height: 1),
                 const SizedBox(height: 20),
                 Text(context.tr('settings_font'),
-                    style: const TextStyle(
-                        color: Colors.white,
+                    style: TextStyle(
+                        color: RC.textPri,
                         fontSize: 14,
                         fontWeight: FontWeight.w500)),
                 const SizedBox(height: 4),
                 Text(context.tr('settings_font_subtitle'),
-                    style: const TextStyle(color: RC.textMute, fontSize: 12)),
+                    style: TextStyle(color: RC.textMute, fontSize: 12)),
                 const SizedBox(height: 12),
                 _fontPicker(settings),
                 const SizedBox(height: 20),
                 const Divider(color: Color(0xFF1F2937), height: 1),
                 const SizedBox(height: 20),
                 Text(context.tr('settings_language_label'),
-                    style: const TextStyle(
-                        color: Colors.white,
+                    style: TextStyle(
+                        color: RC.textPri,
                         fontSize: 14,
                         fontWeight: FontWeight.w500)),
                 const SizedBox(height: 10),
@@ -1534,9 +1509,9 @@ class _AccountScreenState extends State<AccountScreen> {
       selected: selected,
       onSelected: (_) => settings.setThemeMode(mode),
       selectedColor: RC.teal,
-      backgroundColor: Colors.white.withValues(alpha: 0.06),
+      backgroundColor: RC.overlay(0.06),
       labelStyle: TextStyle(
-          color: selected ? const Color(0xFF0A1128) : Colors.white70,
+          color: selected ? const Color(0xFF0A1128) : RC.textSec,
           fontSize: 12,
           fontWeight: FontWeight.w600),
       shape: RoundedRectangleBorder(
@@ -1553,9 +1528,9 @@ class _AccountScreenState extends State<AccountScreen> {
       selected: selected,
       onSelected: (_) => settings.setLocale(locale),
       selectedColor: RC.gold,
-      backgroundColor: Colors.white.withValues(alpha: 0.06),
+      backgroundColor: RC.overlay(0.06),
       labelStyle: TextStyle(
-          color: selected ? const Color(0xFF0A1128) : Colors.white70,
+          color: selected ? const Color(0xFF0A1128) : RC.textSec,
           fontSize: 12,
           fontWeight: FontWeight.w600),
       shape: RoundedRectangleBorder(
@@ -1574,12 +1549,11 @@ class _AccountScreenState extends State<AccountScreen> {
                 style: f.previewTextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color:
-                        selected ? const Color(0xFF0A1128) : Colors.white70)),
+                    color: selected ? const Color(0xFF0A1128) : RC.textSec)),
             selected: selected,
             onSelected: (_) => settings.setFontChoice(f),
             selectedColor: RC.teal,
-            backgroundColor: Colors.white.withValues(alpha: 0.06),
+            backgroundColor: RC.overlay(0.06),
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
                 side: BorderSide(color: RC.teal.withValues(alpha: 0.4))),
@@ -1598,7 +1572,7 @@ class _AccountScreenState extends State<AccountScreen> {
             Padding(
               padding: const EdgeInsets.only(left: 4, bottom: 14),
               child: Text(context.tr('account_security_section'),
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: RC.textMute,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -1622,15 +1596,13 @@ class _AccountScreenState extends State<AccountScreen> {
         leading: _iconCircle(
             Icons.phone_android_rounded, _mfaEnabled ? RC.emerald : RC.teal),
         title: Text(context.tr('account_phone_mfa'),
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w500)),
+            style: TextStyle(
+                color: RC.textPri, fontSize: 14, fontWeight: FontWeight.w500)),
         subtitle: Text(
           _mfaEnabled
               ? context.tr('account_phone_mfa_enabled_sub')
               : context.tr('account_phone_mfa_disabled_sub'),
-          style: const TextStyle(color: RC.textMute, fontSize: 12),
+          style: TextStyle(color: RC.textMute, fontSize: 12),
         ),
         trailing: _actionLoading
             ? const SizedBox(
@@ -1660,7 +1632,7 @@ class _AccountScreenState extends State<AccountScreen> {
             Padding(
               padding: const EdgeInsets.only(left: 4, bottom: 14),
               child: Text(context.tr('account_admin_access_section'),
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: RC.textMute,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -1687,12 +1659,10 @@ class _AccountScreenState extends State<AccountScreen> {
             const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         leading: _iconCircle(
             Icons.admin_panel_settings_rounded, const Color(0xFFFF9800)),
-        title: const Text('Request Admin Role',
+        title: Text('Request Admin Role',
             style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w500)),
-        subtitle: const Text('Apply to manage places, content and more.',
+                color: RC.textPri, fontSize: 14, fontWeight: FontWeight.w500)),
+        subtitle: Text('Apply to manage places, content and more.',
             style: TextStyle(color: RC.textMute, fontSize: 12)),
         trailing: ElevatedButton(
           onPressed: _handleRequestAdminRole,
@@ -1717,16 +1687,14 @@ class _AccountScreenState extends State<AccountScreen> {
             const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         leading:
             _iconCircle(Icons.hourglass_top_rounded, const Color(0xFFFF9800)),
-        title: const Text('Admin Request Pending',
+        title: Text('Admin Request Pending',
             style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w500)),
+                color: RC.textPri, fontSize: 14, fontWeight: FontWeight.w500)),
         subtitle:
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const SizedBox(height: 4),
           Text('Submitted for ${req.facilityName}',
-              style: const TextStyle(color: RC.textMute, fontSize: 12)),
+              style: TextStyle(color: RC.textMute, fontSize: 12)),
           const SizedBox(height: 6),
           _requestStatusBadge('UNDER REVIEW', const Color(0xFFFF9800)),
         ]),
@@ -1740,15 +1708,13 @@ class _AccountScreenState extends State<AccountScreen> {
         leading: _iconCircle(Icons.verified_rounded, RC.emerald),
         title: Text(
             '${RbacService.roleLabel(req.grantedRole ?? RbacService.roleCityManager)} Role Granted',
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w500)),
+            style: TextStyle(
+                color: RC.textPri, fontSize: 14, fontWeight: FontWeight.w500)),
         subtitle:
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const SizedBox(height: 4),
           Text('Your request for ${req.facilityName} was approved.',
-              style: const TextStyle(color: RC.textMute, fontSize: 12)),
+              style: TextStyle(color: RC.textMute, fontSize: 12)),
           const SizedBox(height: 6),
           _requestStatusBadge('APPROVED', RC.emerald),
         ]),
@@ -1760,17 +1726,15 @@ class _AccountScreenState extends State<AccountScreen> {
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         leading: _iconCircle(Icons.cancel_outlined, RC.coral),
-        title: const Text('Request Declined',
+        title: Text('Request Declined',
             style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w500)),
+                color: RC.textPri, fontSize: 14, fontWeight: FontWeight.w500)),
         subtitle:
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const SizedBox(height: 4),
           if (req.denialReason != null)
             Text('Reason: ${req.denialReason}',
-                style: const TextStyle(color: RC.textMute, fontSize: 12),
+                style: TextStyle(color: RC.textMute, fontSize: 12),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis),
           const SizedBox(height: 6),
@@ -1856,27 +1820,23 @@ class _AccountScreenState extends State<AccountScreen> {
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E3A5F),
+        backgroundColor: RC.surfaceHi,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(children: [
           Icon(icon, color: iconColor),
           const SizedBox(width: 10),
           Text(title,
-              style: const TextStyle(
-                  color: Colors.white,
+              style: TextStyle(
+                  color: RC.textPri,
                   fontSize: 17,
                   fontWeight: FontWeight.bold)),
         ]),
         content: Text(body,
-            style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.75),
-                fontSize: 13,
-                height: 1.5)),
+            style: TextStyle(color: RC.textSec, fontSize: 13, height: 1.5)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+            child: Text('Cancel', style: TextStyle(color: RC.textMute)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -1977,7 +1937,7 @@ class _AccountScreenState extends State<AccountScreen> {
   BoxDecoration _cardDecoration() => BoxDecoration(
         color: RC.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: RC.overlay(0.08)),
       );
 
   Widget _iconCircle(IconData icon, Color color) => Container(
@@ -1989,29 +1949,24 @@ class _AccountScreenState extends State<AccountScreen> {
       );
 
   Widget _label(String text) => Text(text,
-      style: const TextStyle(
-          color: RC.textMute, fontSize: 11, letterSpacing: 0.5));
+      style: TextStyle(color: RC.textMute, fontSize: 11, letterSpacing: 0.5));
 
   Widget _fieldLabel(String text) => Text(text,
       style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.7),
-          fontSize: 12,
-          fontWeight: FontWeight.w600));
+          color: RC.textSec, fontSize: 12, fontWeight: FontWeight.w600));
 
   InputDecoration _inputDecoration(
           {required String hint, required IconData icon}) =>
       InputDecoration(
         hintText: hint,
-        hintStyle:
-            TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 13),
-        prefixIcon: Icon(icon, color: Colors.white38, size: 18),
+        hintStyle: TextStyle(color: RC.textMute, fontSize: 13),
+        prefixIcon: Icon(icon, color: RC.textMute, size: 18),
         filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.06),
+        fillColor: RC.overlay(0.06),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide:
-                BorderSide(color: Colors.white.withValues(alpha: 0.15))),
+            borderSide: BorderSide(color: RC.overlay(0.15))),
         focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: const BorderSide(color: Color(0xFF14FFEC), width: 1.5)),
@@ -2025,12 +1980,12 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Widget _sheetContainer({required Widget child}) => Container(
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF1E3A5F), Color(0xFF0A1128)]),
+              colors: [RC.deepBlue, RC.navy]),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+          border: Border.all(color: RC.overlay(0.15)),
         ),
         padding: const EdgeInsets.fromLTRB(28, 20, 28, 36),
         child: child,
@@ -2041,7 +1996,7 @@ class _AccountScreenState extends State<AccountScreen> {
         width: 44,
         height: 4,
         decoration: BoxDecoration(
-            color: Colors.white30, borderRadius: BorderRadius.circular(2)),
+            color: RC.overlay(0.3), borderRadius: BorderRadius.circular(2)),
       ));
 }
 

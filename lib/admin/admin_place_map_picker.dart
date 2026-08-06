@@ -6,6 +6,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:palmnazi/config/maps_config.dart';
+import 'package:palmnazi/services/admin_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AdminPlaceMapPicker
@@ -142,9 +144,8 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
           'likely an unactivated/misconfigured Maps API key.');
       setState(() {
         _isMapCrash = true;
-        _mapErrorMessage = 'The visual map preview isn\'t loading — this '
-            'usually means the Maps service isn\'t fully activated for this '
-            'app yet.';
+        _mapErrorMessage =
+            context.tr('admin_place_map_picker_watchdog_message');
       });
     });
   }
@@ -421,16 +422,17 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
 
   void _confirmSelection() {
     if (_selectedLocation == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Tap the map or search to select a location first.'),
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(context.tr('admin_place_map_picker_snack_select_first')),
         behavior: SnackBarBehavior.floating,
       ));
       return;
     }
 
     if (_resolvingAddress) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Still resolving the address for this pin — one moment.'),
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content:
+            Text(context.tr('admin_place_map_picker_snack_still_resolving')),
         behavior: SnackBarBehavior.floating,
       ));
       return;
@@ -454,13 +456,13 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
         widget.initialSelectedLocation != null ? 16.0 : _defaultZoom;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
+      backgroundColor: AdC.bg,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF111827),
-        foregroundColor: Colors.white,
+        backgroundColor: AdC.surface,
+        foregroundColor: AdC.textPri,
         elevation: 0,
-        title: const Text('Select Location on Map',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+        title: Text(context.tr('admin_place_map_picker_title'),
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
         actions: [
           // Map type toggle
           IconButton(
@@ -468,9 +470,11 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
               _mapType == MapType.hybrid
                   ? Icons.map_outlined
                   : Icons.satellite_alt,
-              color: Colors.white70,
+              color: AdC.textSec,
             ),
-            tooltip: _mapType == MapType.hybrid ? 'Normal Map' : 'Satellite',
+            tooltip: _mapType == MapType.hybrid
+                ? context.tr('admin_place_map_picker_tooltip_normal')
+                : context.tr('admin_place_map_picker_tooltip_satellite'),
             onPressed: () {
               setState(() {
                 _mapType = _mapType == MapType.hybrid
@@ -486,21 +490,23 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                 ? _confirmSelection
                 : null,
             icon: _resolvingAddress
-                ? const SizedBox(
+                ? SizedBox(
                     width: 14,
                     height: 14,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white24),
+                        strokeWidth: 2, color: AdC.textMute),
                   )
                 : const Icon(Icons.check_rounded, size: 18),
             label: Text(
-              _resolvingAddress ? 'RESOLVING…' : 'CONFIRM',
+              _resolvingAddress
+                  ? context.tr('admin_place_map_picker_resolving')
+                  : context.tr('admin_place_map_picker_confirm'),
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             style: TextButton.styleFrom(
               foregroundColor: (_selectedLocation != null && !_resolvingAddress)
-                  ? const Color(0xFF14FFEC)
-                  : Colors.white24,
+                  ? AdC.teal
+                  : AdC.textMute,
             ),
           ),
           const SizedBox(width: 8),
@@ -510,7 +516,7 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
         children: [
           // ── Search bar ───────────────────────────────────────────────────
           Container(
-            color: const Color(0xFF111827),
+            color: AdC.surface,
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -518,14 +524,13 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                 TextField(
                   controller: _searchCtrl,
                   focusNode: _searchFocus,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  style: TextStyle(color: AdC.textPri, fontSize: 14),
                   onChanged: _onSearchChanged,
                   decoration: InputDecoration(
-                    hintText: 'Search for a place, hotel, restaurant, area…',
-                    hintStyle:
-                        const TextStyle(color: Colors.white24, fontSize: 13),
-                    prefixIcon: const Icon(Icons.search_rounded,
-                        color: Colors.white38, size: 18),
+                    hintText: context.tr('admin_place_map_picker_search_hint'),
+                    hintStyle: TextStyle(color: AdC.textMute, fontSize: 13),
+                    prefixIcon: Icon(Icons.search_rounded,
+                        color: AdC.textMute, size: 18),
                     suffixIcon: _searching
                         ? const Padding(
                             padding: EdgeInsets.all(12),
@@ -533,13 +538,13 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                               width: 16,
                               height: 16,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Color(0xFF14FFEC)),
+                                  strokeWidth: 2, color: AdC.teal),
                             ),
                           )
                         : _searchCtrl.text.isNotEmpty
                             ? IconButton(
-                                icon: const Icon(Icons.clear_rounded,
-                                    color: Colors.white38, size: 16),
+                                icon: Icon(Icons.clear_rounded,
+                                    color: AdC.textMute, size: 16),
                                 onPressed: () {
                                   setState(() {
                                     _searchCtrl.clear();
@@ -549,18 +554,18 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                               )
                             : null,
                     filled: true,
-                    fillColor: const Color(0xFF0D1117),
+                    fillColor: AdC.bg,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Colors.white12),
+                      borderSide: BorderSide(color: AdC.overlay(0.12)),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Colors.white12),
+                      borderSide: BorderSide(color: AdC.overlay(0.12)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFF14FFEC)),
+                      borderSide: const BorderSide(color: AdC.teal),
                     ),
                     contentPadding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 13),
@@ -573,9 +578,9 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                   Container(
                     constraints: const BoxConstraints(maxHeight: 220),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1F2937),
+                      color: AdC.surface,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white12),
+                      border: Border.all(color: AdC.overlay(0.12)),
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(10),
@@ -584,17 +589,15 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                         padding: EdgeInsets.zero,
                         itemCount: _searchResults.length,
                         separatorBuilder: (_, __) =>
-                            const Divider(color: Colors.white10, height: 1),
+                            Divider(color: AdC.overlay(0.08), height: 1),
                         itemBuilder: (_, i) {
                           final r = _searchResults[i];
                           return Material(
                             color: Colors.transparent,
                             child: InkWell(
                               onTap: () => _onSearchResultTapped(r),
-                              highlightColor: const Color(0xFF14FFEC)
-                                  .withValues(alpha: 0.07),
-                              splashColor: const Color(0xFF14FFEC)
-                                  .withValues(alpha: 0.04),
+                              highlightColor: AdC.teal.withValues(alpha: 0.07),
+                              splashColor: AdC.teal.withValues(alpha: 0.04),
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 14, vertical: 11),
@@ -603,12 +606,11 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                                     width: 30,
                                     height: 30,
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFF14FFEC)
-                                          .withValues(alpha: 0.08),
+                                      color: AdC.teal.withValues(alpha: 0.08),
                                       shape: BoxShape.circle,
                                     ),
                                     child: const Icon(Icons.place_rounded,
-                                        color: Color(0xFF14FFEC), size: 14),
+                                        color: AdC.teal, size: 14),
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
@@ -620,8 +622,8 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                                           r['name'] as String? ?? '',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                              color: Colors.white,
+                                          style: TextStyle(
+                                              color: AdC.textPri,
                                               fontSize: 13,
                                               fontWeight: FontWeight.w500),
                                         ),
@@ -633,16 +635,16 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                                             r['address'] as String,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                                color: Colors.white38,
+                                            style: TextStyle(
+                                                color: AdC.textMute,
                                                 fontSize: 11),
                                           ),
                                         ],
                                       ],
                                     ),
                                   ),
-                                  const Icon(Icons.arrow_forward_ios_rounded,
-                                      color: Colors.white24, size: 11),
+                                  Icon(Icons.arrow_forward_ios_rounded,
+                                      color: AdC.textMute, size: 11),
                                 ]),
                               ),
                             ),
@@ -661,19 +663,19 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.03),
+                      color: AdC.overlay(0.03),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.white12),
+                      border: Border.all(color: AdC.overlay(0.12)),
                     ),
-                    child: const Row(children: [
+                    child: Row(children: [
                       Icon(Icons.search_off_rounded,
-                          color: Colors.white24, size: 14),
-                      SizedBox(width: 8),
+                          color: AdC.textMute, size: 14),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'No results found. Try a different name, or tap directly on the map.',
+                          context.tr('admin_place_map_picker_no_results'),
                           style: TextStyle(
-                              color: Colors.white38, fontSize: 11, height: 1.4),
+                              color: AdC.textMute, fontSize: 11, height: 1.4),
                         ),
                       ),
                     ]),
@@ -687,14 +689,14 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
           if (_selectedLocation != null)
             Container(
               width: double.infinity,
-              color: const Color(0xFF0D1117),
+              color: AdC.bg,
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(children: [
                     const Icon(Icons.location_on_rounded,
-                        color: Color(0xFF14FFEC), size: 14),
+                        color: AdC.teal, size: 14),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
@@ -704,15 +706,16 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                                 'Lng: ${_selectedLocation!.longitude.toStringAsFixed(6)}',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 12, height: 1.4),
+                        style: TextStyle(
+                            color: AdC.textSec, fontSize: 12, height: 1.4),
                       ),
                     ),
                     const SizedBox(width: 4),
                     IconButton(
-                      icon: const Icon(Icons.clear_rounded,
-                          color: Colors.white38, size: 16),
-                      tooltip: 'Clear pin',
+                      icon: Icon(Icons.clear_rounded,
+                          color: AdC.textMute, size: 16),
+                      tooltip: context
+                          .tr('admin_place_map_picker_tooltip_clear_pin'),
                       onPressed: _clearSelection,
                       padding: EdgeInsets.zero,
                       constraints:
@@ -723,17 +726,18 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                   ]),
                   if (_resolvingAddress) ...[
                     const SizedBox(height: 6),
-                    const Row(children: [
-                      SizedBox(
+                    Row(children: [
+                      const SizedBox(
                         width: 12,
                         height: 12,
                         child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Color(0xFF14FFEC)),
+                            strokeWidth: 2, color: AdC.teal),
                       ),
-                      SizedBox(width: 8),
-                      Text('Resolving address…',
-                          style:
-                              TextStyle(color: Colors.white38, fontSize: 11)),
+                      const SizedBox(width: 8),
+                      Text(
+                          context
+                              .tr('admin_place_map_picker_resolving_address'),
+                          style: TextStyle(color: AdC.textMute, fontSize: 11)),
                     ]),
                   ],
                 ],
@@ -746,16 +750,16 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
           // ── Bottom hint ──────────────────────────────────────────────────
           Container(
             width: double.infinity,
-            color: const Color(0xFF111827),
+            color: AdC.surface,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: const Row(children: [
-              Icon(Icons.touch_app_rounded, color: Colors.white24, size: 14),
-              SizedBox(width: 8),
+            child: Row(children: [
+              Icon(Icons.touch_app_rounded, color: AdC.textMute, size: 14),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Tap anywhere on the map to drop a pin. Drag the pin to fine-tune. Search above to find named places. Tap ✕ on the info bar above to clear a mis-placed pin.',
-                  style: TextStyle(
-                      color: Colors.white38, fontSize: 11, height: 1.4),
+                  context.tr('admin_place_map_picker_bottom_hint'),
+                  style:
+                      TextStyle(color: AdC.textMute, fontSize: 11, height: 1.4),
                 ),
               ),
             ]),
@@ -770,35 +774,35 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
     if (_isMapCrash) {
       return Container(
         width: double.infinity,
-        color: const Color(0xFF0D1117),
+        color: AdC.bg,
         padding: const EdgeInsets.all(24),
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.map_outlined, size: 48, color: Colors.white24),
+              Icon(Icons.map_outlined, size: 48, color: AdC.textMute),
               const SizedBox(height: 14),
-              const Text(
-                'Map Preview Unavailable',
+              Text(
+                context.tr('admin_place_map_picker_crash_title'),
                 style: TextStyle(
-                    color: Colors.white,
+                    color: AdC.textPri,
                     fontSize: 15,
                     fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
               Text(
-                _mapErrorMessage ?? 'The map service is unavailable.',
+                _mapErrorMessage ??
+                    context.tr('admin_place_map_picker_crash_default_message'),
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: Colors.white60, fontSize: 12, height: 1.4),
+                style:
+                    TextStyle(color: AdC.textMute, fontSize: 12, height: 1.4),
               ),
               const SizedBox(height: 6),
-              const Text(
-                'Good news: search above and Confirm still work without it — '
-                'only tap-to-drop-pin and drag-to-adjust need the visual map.',
+              Text(
+                context.tr('admin_place_map_picker_crash_fallback_note'),
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: Color(0xFF14FFEC), fontSize: 11.5, height: 1.4),
+                style: const TextStyle(
+                    color: AdC.teal, fontSize: 11.5, height: 1.4),
               ),
               const SizedBox(height: 18),
               Row(
@@ -807,18 +811,18 @@ class _AdminPlaceMapPickerState extends State<AdminPlaceMapPicker> {
                   OutlinedButton.icon(
                     onPressed: _startLoadWatchdog,
                     icon: const Icon(Icons.refresh_rounded, size: 16),
-                    label: const Text('Retry'),
+                    label: Text(context.tr('common_retry')),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF14FFEC),
-                      side: const BorderSide(color: Color(0xFF14FFEC)),
+                      foregroundColor: AdC.teal,
+                      side: const BorderSide(color: AdC.teal),
                     ),
                   ),
                   const SizedBox(width: 10),
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    style:
-                        TextButton.styleFrom(foregroundColor: Colors.white60),
-                    child: const Text('Close & Enter Manually'),
+                    style: TextButton.styleFrom(foregroundColor: AdC.textMute),
+                    child:
+                        Text(context.tr('admin_place_map_picker_close_manual')),
                   ),
                 ],
               ),

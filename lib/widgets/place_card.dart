@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:palmnazi/models/place_model.dart';
+import 'package:palmnazi/services/app_colors.dart';
+import 'package:palmnazi/services/app_settings_controller.dart';
+import 'package:palmnazi/services/app_strings.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PlaceCard
@@ -11,9 +14,27 @@ import 'package:palmnazi/models/place_model.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 abstract final class PlaceCardColors {
+  static bool get _isDark =>
+      AppSettingsController.instance.resolvedBrightness == Brightness.dark;
+
   static const Color aqua = Color(0xFF00B8D4);
   static const Color aquaBright = Color(0xFF00E5FF);
-  static const Color deepBlue = Color(0xFF071829);
+  static Color get deepBlue =>
+      _isDark ? const Color(0xFF071829) : const Color(0xFFE8EDF2);
+
+  // Text on PlaceCardColors.deepBlue
+  static Color get textPri => _isDark ? Colors.white : const Color(0xFF121F2E);
+  static Color get textSec =>
+      _isDark ? Colors.white70 : const Color(0xFF3D4F60);
+  static Color get textMute =>
+      _isDark ? Colors.white38 : const Color(0xFF7C93A8);
+
+  /// Subtle fill for chip/border backgrounds that used to be a flat
+  /// `Colors.white.withValues(alpha: x)` — invisible once the card
+  /// background turns light. Black in light mode keeps the same "faint
+  /// tint over the surface" effect in both modes.
+  static Color overlay(double alpha) =>
+      (_isDark ? Colors.white : Colors.black).withValues(alpha: alpha);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -125,7 +146,7 @@ class PlaceCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Image section with overlay badges
-              _buildPlaceImage(),
+              _buildPlaceImage(context),
 
               // Text summary
               Padding(
@@ -139,10 +160,10 @@ class PlaceCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             place.name,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                              color: PlaceCardColors.textPri,
                             ),
                           ),
                         ),
@@ -152,7 +173,7 @@ class PlaceCard extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFFB300),
+                              color: AC.warning,
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Row(
@@ -192,14 +213,14 @@ class PlaceCard extends StatelessWidget {
                         if ((place.reviewCount ?? 0) > 0) ...[
                           const SizedBox(width: 8),
                           Text('•',
-                              style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.5))),
+                              style:
+                                  TextStyle(color: PlaceCardColors.textMute)),
                           const SizedBox(width: 8),
                           Text(
-                            '${place.reviewCount} reviews',
+                            '${place.reviewCount} ${context.tr('widget_place_card_reviews_suffix')}',
                             style: TextStyle(
                               fontSize: 13,
-                              color: Colors.white.withValues(alpha: 0.70),
+                              color: PlaceCardColors.textSec,
                             ),
                           ),
                         ],
@@ -213,7 +234,7 @@ class PlaceCard extends StatelessWidget {
                         place.description!,
                         style: TextStyle(
                           fontSize: 13,
-                          color: Colors.white.withValues(alpha: 0.80),
+                          color: PlaceCardColors.textSec,
                           height: 1.4,
                         ),
                         maxLines: 2,
@@ -232,14 +253,15 @@ class PlaceCard extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.10),
+                              color: PlaceCardColors.overlay(0.10),
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.20)),
+                                  color: PlaceCardColors.overlay(0.20)),
                             ),
                             child: Text(f,
-                                style: const TextStyle(
-                                    fontSize: 11, color: Colors.white70)),
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: PlaceCardColors.textSec)),
                           );
                         }).toList(),
                       ),
@@ -268,19 +290,19 @@ class PlaceCard extends StatelessWidget {
                             ),
                           ],
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
-                              'View Details',
-                              style: TextStyle(
+                              context.tr('widget_place_card_view_details'),
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14,
                               ),
                             ),
-                            SizedBox(width: 8),
-                            Icon(Icons.arrow_forward,
+                            const SizedBox(width: 8),
+                            const Icon(Icons.arrow_forward,
                                 color: Colors.white, size: 16),
                           ],
                         ),
@@ -297,7 +319,7 @@ class PlaceCard extends StatelessWidget {
   }
 
   // ── Place image with Open/Closed and price badges ─────────────────────────
-  Widget _buildPlaceImage() {
+  Widget _buildPlaceImage(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final imageH = constraints.maxWidth * 0.55;
@@ -352,7 +374,9 @@ class PlaceCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      place.isOpen! ? 'Open' : 'Closed',
+                      place.isOpen!
+                          ? context.tr('widget_place_card_open')
+                          : context.tr('widget_place_card_closed'),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 11,
@@ -408,7 +432,7 @@ class PlaceCard extends StatelessWidget {
             style: TextStyle(
               fontSize: 48,
               fontWeight: FontWeight.bold,
-              color: Colors.white.withValues(alpha: 0.35),
+              color: PlaceCardColors.overlay(0.35),
             ),
           ),
         ),

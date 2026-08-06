@@ -13,7 +13,15 @@
       "Bash(firebase --version)",
       "Bash(FUNCTIONS_DISCOVERY_TIMEOUT=30 firebase deploy --only functions)",
       "Bash(FUNCTIONS_DISCOVERY_TIMEOUT=30 firebase deploy --only functions:initiateMpesaPayment,functions:mpesaCallback,functions:queryMpesaStatus)",
-      "Bash(flutter test *)"
+      "Bash(flutter test *)",
+      "Bash(sed -i 's/gradient: const LinearGradient\\(/gradient: LinearGradient\\(/g' lib/screens/auth_screen.dart)",
+      "Bash(sed -i '2327s/colors: AC.heroGradient\\)/colors: AC.heroGradient\\)/' lib/screens/auth_screen.dart)",
+      "Bash(grep -n \"const SizedBox\\($\" lib/screens/auth_screen.dart)",
+      "Bash(awk '$1>2')",
+      "Bash(python3 -c ' *)",
+      "Bash(flutter --version)",
+      "Bash(which chromium-cli *)",
+      "Read(//c/Program Files/Google/Chrome/Application/**)"
     ]
   }
 }

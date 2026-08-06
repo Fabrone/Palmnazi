@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:palmnazi/models/contact_message_model.dart';
 import 'package:palmnazi/models/system_settings_model.dart';
+import 'package:palmnazi/screens/landing_page.dart' show RC;
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/contact_message_service.dart';
 import 'package:palmnazi/services/system_settings_service.dart';
 
@@ -15,15 +17,6 @@ import 'package:palmnazi/services/system_settings_service.dart';
 // required, since a footer contact link has to work for a visitor who isn't
 // logged in. Also offers a direct mailto: quick-action as a fallback.
 // ─────────────────────────────────────────────────────────────────────────────
-
-abstract final class _P {
-  static const Color navy = Color(0xFF121F2E);
-  static const Color deepBlue = Color(0xFF1C2E42);
-  static const Color surface = Color(0xFF23374D);
-  static const Color gold = Color(0xFFD4AF37);
-  static const Color textSec = Color(0xFFC7D6E3);
-  static const Color textMute = Color(0xFF7C93A8);
-}
 
 class ContactScreen extends StatefulWidget {
   const ContactScreen({super.key});
@@ -91,8 +84,7 @@ class _ContactScreenState extends State<ContactScreen> {
       if (!mounted) return;
       setState(() => _submitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Could not send your message. Please try again.')),
+        SnackBar(content: Text(context.tr('contact_error_send_failed'))),
       );
     }
   }
@@ -104,7 +96,7 @@ class _ContactScreenState extends State<ContactScreen> {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!launched && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open your email app.')),
+          SnackBar(content: Text(context.tr('contact_error_email_app'))),
         );
       }
     } catch (e, st) {
@@ -112,7 +104,7 @@ class _ContactScreenState extends State<ContactScreen> {
           name: 'ContactScreen', error: e, stackTrace: st);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open your email app.')),
+          SnackBar(content: Text(context.tr('contact_error_email_app'))),
         );
       }
     }
@@ -121,123 +113,127 @@ class _ContactScreenState extends State<ContactScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _P.navy,
+      backgroundColor: RC.navy,
       appBar: AppBar(
-        backgroundColor: _P.deepBlue,
-        title: const Text('Contact Us', style: TextStyle(color: Colors.white)),
-        iconTheme: const IconThemeData(color: Colors.white),
+        backgroundColor: RC.deepBlue,
+        title: Text(context.tr('contact_page_title'),
+            style: TextStyle(color: RC.textPri)),
+        iconTheme: IconThemeData(color: RC.textPri),
       ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560),
-            child: _submitted ? _buildSuccess() : _buildForm(),
+            child: _submitted ? _buildSuccess(context) : _buildForm(context),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildSuccess() {
+  Widget _buildSuccess(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const Icon(Icons.check_circle_outline_rounded,
-            color: _P.gold, size: 56),
+            color: RC.gold, size: 56),
         const SizedBox(height: 20),
-        const Text('Message sent',
+        Text(context.tr('contact_success_title'),
             style: TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.bold)),
+                color: RC.textPri, fontSize: 22, fontWeight: FontWeight.bold)),
         const SizedBox(height: 10),
-        const Text(
-          "Thanks for reaching out — we'll get back to you as soon as we can.",
+        Text(
+          context.tr('contact_success_body'),
           textAlign: TextAlign.center,
-          style: TextStyle(color: _P.textSec, fontSize: 14, height: 1.6),
+          style: TextStyle(color: RC.textSec, fontSize: 14, height: 1.6),
         ),
         const SizedBox(height: 24),
         OutlinedButton(
           onPressed: () => Navigator.of(context).pop(),
           style: OutlinedButton.styleFrom(
-            foregroundColor: _P.gold,
-            side: const BorderSide(color: _P.gold),
+            foregroundColor: RC.gold,
+            side: const BorderSide(color: RC.gold),
           ),
-          child: const Text('Back'),
+          child: Text(context.tr('contact_back_button')),
         ),
       ],
     );
   }
 
-  Widget _buildForm() {
+  Widget _buildForm(BuildContext context) {
     return Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Get in Touch',
+          Text(context.tr('contact_hero_heading'),
               style: TextStyle(
-                  color: Colors.white,
+                  color: RC.textPri,
                   fontSize: 26,
                   fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
-          const Text(
-            "Questions about a booking, a place you'd like to see added, or "
-            "just feedback — send us a message and we'll reply by email.",
-            style: TextStyle(color: _P.textSec, fontSize: 14, height: 1.6),
+          Text(
+            context.tr('contact_hero_body'),
+            style: TextStyle(color: RC.textSec, fontSize: 14, height: 1.6),
           ),
           const SizedBox(height: 24),
-          _field(_nameCtrl, 'Your Name', TextInputType.name,
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Enter your name' : null),
+          _field(
+              _nameCtrl, context.tr('contact_field_name'), TextInputType.name,
+              validator: (v) => (v == null || v.trim().isEmpty)
+                  ? context.tr('contact_error_name_required')
+                  : null),
           const SizedBox(height: 14),
-          _field(_emailCtrl, 'Your Email', TextInputType.emailAddress,
-              validator: (v) {
+          _field(_emailCtrl, context.tr('contact_field_email'),
+              TextInputType.emailAddress, validator: (v) {
             final value = v?.trim() ?? '';
-            if (value.isEmpty) return 'Enter your email';
+            if (value.isEmpty) {
+              return context.tr('contact_error_email_required');
+            }
             if (!value.contains('@') || !value.contains('.')) {
-              return 'Enter a valid email';
+              return context.tr('contact_error_email_invalid');
             }
             return null;
           }),
           const SizedBox(height: 14),
-          _field(_messageCtrl, 'Message', TextInputType.multiline,
+          _field(_messageCtrl, context.tr('contact_field_message'),
+              TextInputType.multiline,
               maxLines: 5,
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Enter a message' : null),
+              validator: (v) => (v == null || v.trim().isEmpty)
+                  ? context.tr('contact_error_message_required')
+                  : null),
           const SizedBox(height: 22),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
               onPressed: _submitting ? null : _submit,
               style: ElevatedButton.styleFrom(
-                backgroundColor: _P.gold,
-                foregroundColor: _P.navy,
+                backgroundColor: RC.gold,
+                foregroundColor: RC.navy,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
               ),
               child: _submitting
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(
-                          color: _P.navy, strokeWidth: 2),
+                          color: RC.navy, strokeWidth: 2),
                     )
-                  : const Text('Send Message',
-                      style:
-                          TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                  : Text(context.tr('contact_send_button'),
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.bold)),
             ),
           ),
           const SizedBox(height: 16),
           Center(
             child: TextButton.icon(
               onPressed: _emailDirectly,
-              icon: const Icon(Icons.email_outlined,
-                  color: _P.textMute, size: 16),
-              label: Text('Or email us directly at $_supportEmail',
-                  style: const TextStyle(color: _P.textMute, fontSize: 13)),
+              icon: Icon(Icons.email_outlined, color: RC.textMute, size: 16),
+              label: Text(
+                  '${context.tr('contact_email_directly_prefix')} $_supportEmail',
+                  style: TextStyle(color: RC.textMute, fontSize: 13)),
             ),
           ),
           if (_supportPhone.isNotEmpty) ...[
@@ -246,11 +242,10 @@ class _ContactScreenState extends State<ContactScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.phone_outlined,
-                      color: _P.textMute, size: 14),
+                  Icon(Icons.phone_outlined, color: RC.textMute, size: 14),
                   const SizedBox(width: 6),
                   Text(_supportPhone,
-                      style: const TextStyle(color: _P.textMute, fontSize: 13)),
+                      style: TextStyle(color: RC.textMute, fontSize: 13)),
                 ],
               ),
             ),
@@ -272,12 +267,12 @@ class _ContactScreenState extends State<ContactScreen> {
       keyboardType: type,
       maxLines: maxLines,
       validator: validator,
-      style: const TextStyle(color: Colors.white),
+      style: TextStyle(color: RC.textPri),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(color: _P.textMute),
+        labelStyle: TextStyle(color: RC.textMute),
         filled: true,
-        fillColor: _P.surface,
+        fillColor: RC.surface,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide.none,

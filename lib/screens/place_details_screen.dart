@@ -12,6 +12,8 @@ import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/payment_method_model.dart';
 import 'package:palmnazi/models/place_model.dart';
 import 'package:palmnazi/models/place_query_model.dart';
+import 'package:palmnazi/models/menu_item_model.dart';
+import 'package:palmnazi/models/room_model.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/booking_screen.dart';
 import 'package:palmnazi/services/analytics_service.dart';
@@ -19,8 +21,12 @@ import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/services/favorite_service.dart';
 import 'package:palmnazi/services/payment_methods_service.dart';
 import 'package:palmnazi/services/place_details_service.dart';
+import 'package:palmnazi/services/menu_service.dart';
 import 'package:palmnazi/services/place_lookup_service.dart';
 import 'package:palmnazi/services/place_query_service.dart';
+import 'package:palmnazi/services/room_service.dart';
+import 'package:palmnazi/services/app_settings_controller.dart';
+import 'package:palmnazi/services/app_strings.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // place_details_screen.dart
@@ -57,11 +63,28 @@ import 'package:palmnazi/services/place_query_service.dart';
 
 // ── Shared palette ─────────────────────────────────────────────────────────
 abstract final class _P {
+  static bool get _isDark =>
+      AppSettingsController.instance.resolvedBrightness == Brightness.dark;
+
   static const Color aquaBright = Color(0xFF00E5FF);
   static const Color aqua = Color(0xFF00B8D4);
   //static const Color amber      = Color(0xFFFFB300);
-  static const Color deepNavy = Color(0xFF01263F);
-  static const Color deepBlue = Color(0xFF071829);
+  static Color get deepNavy =>
+      _isDark ? const Color(0xFF01263F) : const Color(0xFFF5F7FA);
+  static Color get deepBlue =>
+      _isDark ? const Color(0xFF071829) : const Color(0xFFE8EDF2);
+
+  // Text on deepNavy surfaces (e.g. the sign-in / ask-question dialogs).
+  static Color get textPri => _isDark ? Colors.white : const Color(0xFF121F2E);
+  static Color get textSec =>
+      _isDark ? Colors.white70 : const Color(0xFF3D4F60);
+  static Color get textMute =>
+      _isDark ? Colors.white38 : const Color(0xFF7C93A8);
+
+  /// Subtle fill for input/button backgrounds that used to be a flat
+  /// `Colors.white.withValues(alpha: x)` on the deepNavy dialog surface.
+  static Color overlay(double alpha) =>
+      (_isDark ? Colors.white : Colors.black).withValues(alpha: alpha);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,6 +100,11 @@ class _PlaceDetailApi {
   /// showing an error banner for what is a "nice to have" section.
   static Future<List<Map<String, dynamic>>> fetchNestedItems(
       String placeId, String path) async {
+    // Rooms and menu items no longer go through here as of Phase 3 — both
+    // now read from Firestore (see _fetchRoomsFromFirestore /
+    // _fetchMenuItemsFromFirestore below), since the equivalent REST list
+    // endpoints proved unreliable. This helper still serves shows/
+    // exhibitions/artifacts, which remain REST-only.
     final uri = Uri.parse(ApiEndpoints.url('/api/places/$placeId/$path'));
     try {
       final resp = await http.get(uri).timeout(_timeout);
@@ -195,6 +223,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
 
   bool get _isAccommodationType => _place.taxonomy.any((t) =>
       t.contains('accommodation') ||
+      // The live "Accomodation" category is misspelled (single m) on the
+      // backend — match that actual slug too, not just the correct one.
+      t.contains('accomodation') ||
       t.contains('hotel') ||
       t.contains('resort') ||
       t.contains('lodge'));
@@ -300,23 +331,23 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         context: context,
         builder: (_) => AlertDialog(
           backgroundColor: _P.deepNavy,
-          title: const Text('Sign in required',
-              style: TextStyle(color: Colors.white)),
-          content: const Text(
-            'You need an account to save favorites. Sign in (or create one), then come back to this place to continue.',
-            style: TextStyle(color: Colors.white70),
+          title: Text(context.tr('place_details_dialog_signin_title'),
+              style: TextStyle(color: _P.textPri)),
+          content: Text(
+            context.tr('place_details_dialog_signin_favorites_body'),
+            style: TextStyle(color: _P.textSec),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child:
-                  const Text('Cancel', style: TextStyle(color: Colors.white54)),
+              child: Text(context.tr('common_cancel'),
+                  style: TextStyle(color: _P.textMute)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: _P.aquaBright),
               onPressed: () => Navigator.pop(context, true),
-              child:
-                  const Text('Sign In', style: TextStyle(color: _P.deepNavy)),
+              child: Text(context.tr('nav_sign_in'),
+                  style: TextStyle(color: _P.deepNavy)),
             ),
           ],
         ),
@@ -333,7 +364,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     } catch (e, st) {
       developer.log('Failed to toggle favorite for ${_place.id}',
           name: 'PlaceDetails', error: e, stackTrace: st);
-      _showActionFailure('Could not update favorites. Please try again.');
+      if (!mounted) return;
+      _showActionFailure(context.tr('place_details_error_favorites'));
     }
   }
 
@@ -395,9 +427,16 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     try {
       // Kick requests off in parallel, then await — they're independent.
       final detailsFuture = PlaceDetailsService.getPlaceDetails(_place.id);
-      final itemsFuture = type.isNotEmpty
-          ? _PlaceDetailApi.fetchNestedItems(_place.id, path)
-          : Future.value(const <Map<String, dynamic>>[]);
+      // Phase 3: Rooms/MenuItems now read from Firestore (authoritative —
+      // the backend REST list endpoints for both have proven unreliable).
+      // Shows/Exhibitions/Artifacts are unaffected, still REST-only.
+      final itemsFuture = type == 'rooms'
+          ? _fetchRoomsFromFirestore()
+          : type == 'menuItems'
+              ? _fetchMenuItemsFromFirestore()
+              : type.isNotEmpty
+                  ? _PlaceDetailApi.fetchNestedItems(_place.id, path)
+                  : Future.value(const <Map<String, dynamic>>[]);
       final artifactsFuture = _isCulturalType
           ? _PlaceDetailApi.fetchNestedItems(_place.id, 'artifacts')
           : Future.value(const <Map<String, dynamic>>[]);
@@ -456,6 +495,53 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     }
   }
 
+  /// Phase 3: Rooms now read from Firestore (RoomService) — the backend
+  /// REST list endpoint has proven unreliable (500s without an explicit
+  /// `roomType` filter). Converts back to the same Map shape the rest of
+  /// this polymorphic nested-item pipeline already expects.
+  Future<List<Map<String, dynamic>>> _fetchRoomsFromFirestore() async {
+    try {
+      final rooms = await RoomService.getForPlace(_place.id);
+      return rooms
+          .map((r) => <String, dynamic>{
+                'id': r.id,
+                'placeId': r.placeId,
+                ...r.toCreateMap(),
+              })
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Phase 3: Menu items now read from Firestore (MenuService) — the
+  /// backend REST list endpoint has proven unreliable (500s on a missing DB
+  /// column). Each item is tagged with its section's name (`sectionName`)
+  /// for the grouped display, same as the REST fan-out this replaced used to
+  /// do.
+  Future<List<Map<String, dynamic>>> _fetchMenuItemsFromFirestore() async {
+    try {
+      final sections = await MenuService.getSectionsForPlace(_place.id);
+      final sectionNameById = {
+        for (final s in sections)
+          if (s.id != null) s.id!: s.name,
+      };
+      final items = await MenuService.getItemsForPlace(_place.id);
+      return items
+          .map((it) => <String, dynamic>{
+                'id': it.id,
+                'placeId': it.placeId,
+                'sectionId': it.sectionId,
+                if (it.sectionId != null)
+                  'sectionName': sectionNameById[it.sectionId],
+                ...it.toCreateMap(),
+              })
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   // NOTE: AuthScreen always pushAndRemoveUntil's to LandingPage on a
   // successful sign-in (see auth_screen.dart _navigateToLanding) — it never
   // returns control to whoever pushed it. So a logged-out tourist tapping
@@ -468,23 +554,23 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         context: context,
         builder: (_) => AlertDialog(
           backgroundColor: _P.deepNavy,
-          title: const Text('Sign in required',
-              style: TextStyle(color: Colors.white)),
-          content: const Text(
-            'You need an account to request a booking. Sign in (or create one), then come back to this place to continue.',
-            style: TextStyle(color: Colors.white70),
+          title: Text(context.tr('place_details_dialog_signin_title'),
+              style: TextStyle(color: _P.textPri)),
+          content: Text(
+            context.tr('place_details_dialog_signin_booking_body'),
+            style: TextStyle(color: _P.textSec),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child:
-                  const Text('Cancel', style: TextStyle(color: Colors.white54)),
+              child: Text(context.tr('common_cancel'),
+                  style: TextStyle(color: _P.textMute)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: _P.aquaBright),
               onPressed: () => Navigator.pop(context, true),
-              child:
-                  const Text('Sign In', style: TextStyle(color: _P.deepNavy)),
+              child: Text(context.tr('nav_sign_in'),
+                  style: TextStyle(color: _P.deepNavy)),
             ),
           ],
         ),
@@ -519,23 +605,23 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         context: context,
         builder: (_) => AlertDialog(
           backgroundColor: _P.deepNavy,
-          title: const Text('Sign in required',
-              style: TextStyle(color: Colors.white)),
-          content: const Text(
-            'You need an account to ask a question. Sign in (or create one), then come back to this place to continue.',
-            style: TextStyle(color: Colors.white70),
+          title: Text(context.tr('place_details_dialog_signin_title'),
+              style: TextStyle(color: _P.textPri)),
+          content: Text(
+            context.tr('place_details_dialog_signin_question_body'),
+            style: TextStyle(color: _P.textSec),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child:
-                  const Text('Cancel', style: TextStyle(color: Colors.white54)),
+              child: Text(context.tr('common_cancel'),
+                  style: TextStyle(color: _P.textMute)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: _P.aquaBright),
               onPressed: () => Navigator.pop(context, true),
-              child:
-                  const Text('Sign In', style: TextStyle(color: _P.deepNavy)),
+              child: Text(context.tr('nav_sign_in'),
+                  style: TextStyle(color: _P.deepNavy)),
             ),
           ],
         ),
@@ -556,17 +642,17 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         backgroundColor: _P.deepNavy,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text('Ask ${_place.name} a question',
-            style: const TextStyle(color: Colors.white, fontSize: 16)),
+            style: TextStyle(color: _P.textPri, fontSize: 16)),
         content: TextField(
           controller: ctrl,
           maxLines: 4,
           autofocus: true,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: _P.textPri),
           decoration: InputDecoration(
-            hintText: 'What would you like to know?',
-            hintStyle: const TextStyle(color: Colors.white38),
+            hintText: context.tr('place_details_ask_question_hint'),
+            hintStyle: TextStyle(color: _P.textMute),
             filled: true,
-            fillColor: Colors.white.withValues(alpha: 0.06),
+            fillColor: _P.overlay(0.06),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
               borderSide: BorderSide.none,
@@ -576,8 +662,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, false),
-            child:
-                const Text('Cancel', style: TextStyle(color: Colors.white54)),
+            child: Text(context.tr('common_cancel'),
+                style: TextStyle(color: _P.textMute)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: _P.aquaBright),
@@ -594,16 +680,17 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               ));
               if (dialogCtx.mounted) Navigator.pop(dialogCtx, true);
             },
-            child: const Text('Send', style: TextStyle(color: _P.deepNavy)),
+            child: Text(context.tr('common_send'),
+                style: TextStyle(color: _P.deepNavy)),
           ),
         ],
       ),
     );
 
     if (sent == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Your question has been sent.'),
-        backgroundColor: Color(0xFF006064),
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(context.tr('place_details_question_sent')),
+        backgroundColor: const Color(0xFF006064),
       ));
     }
   }
@@ -931,9 +1018,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                     color: Colors.green.withValues(alpha: 0.85),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Text(
-                    'Bookable',
-                    style: TextStyle(
+                  child: Text(
+                    context.tr('place_details_bookable_badge'),
+                    style: const TextStyle(
                         color: Colors.white,
                         fontSize: 11,
                         fontWeight: FontWeight.bold),
@@ -1028,7 +1115,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                 CircularProgressIndicator(color: _P.aquaBright, strokeWidth: 2),
           ),
           const SizedBox(width: 10),
-          Text('Loading full details…',
+          Text(context.tr('place_details_loading_full_details'),
               style: TextStyle(
                   fontSize: 12, color: Colors.white.withValues(alpha: 0.60))),
         ],
@@ -1054,7 +1141,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Could not load full details. Tap to retry.',
+                context.tr('place_details_error_load_details'),
                 style: TextStyle(
                     fontSize: 12, color: Colors.white.withValues(alpha: 0.65)),
               ),
@@ -1078,27 +1165,39 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           if (phone.isNotEmpty) ...[
             Expanded(
               child: _buildQuickActionButton(
-                  Icons.phone, 'Call', _P.aqua, () => _launchCall(phone)),
+                  Icons.phone,
+                  context.tr('place_details_quick_action_call'),
+                  _P.aqua,
+                  () => _launchCall(phone)),
             ),
             const SizedBox(width: 12),
           ],
           if (hasMap) ...[
             Expanded(
-              child: _buildQuickActionButton(Icons.directions, 'Directions',
-                  const Color(0xFF2979FF), _launchDirections),
+              child: _buildQuickActionButton(
+                  Icons.directions,
+                  context.tr('place_details_quick_action_directions'),
+                  const Color(0xFF2979FF),
+                  _launchDirections),
             ),
             const SizedBox(width: 12),
           ],
           if (website.isNotEmpty) ...[
             Expanded(
-              child: _buildQuickActionButton(Icons.language, 'Website',
-                  const Color(0xFFAA00FF), () => _launchWebsite(website)),
+              child: _buildQuickActionButton(
+                  Icons.language,
+                  context.tr('place_details_quick_action_website'),
+                  const Color(0xFFAA00FF),
+                  () => _launchWebsite(website)),
             ),
             const SizedBox(width: 12),
           ],
           Expanded(
             child: _buildQuickActionButton(
-                Icons.share, 'Share', const Color(0xFF00BFA5), _sharePlace),
+                Icons.share,
+                context.tr('place_details_quick_action_share'),
+                const Color(0xFF00BFA5),
+                _sharePlace),
           ),
         ],
       ),
@@ -1116,11 +1215,15 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     try {
       final launched =
           await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!launched) _showActionFailure('Could not open the dialer.');
+      if (!mounted) return;
+      if (!launched) {
+        _showActionFailure(context.tr('place_details_error_dialer'));
+      }
     } catch (e, st) {
       developer.log('Failed to launch dialer for $phone',
           name: 'PlaceDetails', error: e, stackTrace: st);
-      _showActionFailure('Could not open the dialer.');
+      if (!mounted) return;
+      _showActionFailure(context.tr('place_details_error_dialer'));
     }
   }
 
@@ -1133,11 +1236,15 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     try {
       final launched =
           await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!launched) _showActionFailure('Could not open maps.');
+      if (!mounted) return;
+      if (!launched) {
+        _showActionFailure(context.tr('place_details_error_maps'));
+      }
     } catch (e, st) {
       developer.log('Failed to launch directions for ${_place.id}',
           name: 'PlaceDetails', error: e, stackTrace: st);
-      _showActionFailure('Could not open maps.');
+      if (!mounted) return;
+      _showActionFailure(context.tr('place_details_error_maps'));
     }
   }
 
@@ -1148,17 +1255,21 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             : 'https://$website';
     final uri = Uri.tryParse(normalized);
     if (uri == null) {
-      _showActionFailure('This website address looks invalid.');
+      _showActionFailure(context.tr('place_details_error_website_invalid'));
       return;
     }
     try {
       final launched =
           await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!launched) _showActionFailure('Could not open the website.');
+      if (!mounted) return;
+      if (!launched) {
+        _showActionFailure(context.tr('place_details_error_website'));
+      }
     } catch (e, st) {
       developer.log('Failed to launch website $website',
           name: 'PlaceDetails', error: e, stackTrace: st);
-      _showActionFailure('Could not open the website.');
+      if (!mounted) return;
+      _showActionFailure(context.tr('place_details_error_website'));
     }
   }
 
@@ -1173,7 +1284,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     } catch (e, st) {
       developer.log('Failed to open share sheet for ${_place.id}',
           name: 'PlaceDetails', error: e, stackTrace: st);
-      _showActionFailure('Could not open the share sheet.');
+      if (!mounted) return;
+      _showActionFailure(context.tr('place_details_error_share'));
     }
   }
 
@@ -1216,9 +1328,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'About',
-            style: TextStyle(
+          Text(
+            context.tr('place_details_section_about'),
+            style: const TextStyle(
                 fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
           const SizedBox(height: 12),
@@ -1239,11 +1351,11 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(24, 12, 24, 10),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 10),
           child: Text(
-            'Gallery',
-            style: TextStyle(
+            context.tr('place_details_section_gallery'),
+            style: const TextStyle(
                 fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
         ),
@@ -1336,9 +1448,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Features & Amenities',
-            style: TextStyle(
+          Text(
+            context.tr('place_details_section_features'),
+            style: const TextStyle(
                 fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
           const SizedBox(height: 16),
@@ -1416,7 +1528,11 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               onChanged: (v) => setState(() => _nestedItemsSearchQuery = v),
               style: const TextStyle(color: Colors.white, fontSize: 13),
               decoration: InputDecoration(
-                hintText: 'Search ${_nestedItemsLabel.toLowerCase()}…',
+                hintText:
+                    // Dynamic label mixed into the hint — the label itself
+                    // comes from live category data (e.g. "Rooms"/"Menu"),
+                    // so only the surrounding chrome ("Search …") is static.
+                    '${context.tr('place_details_search_prefix')} ${_nestedItemsLabel.toLowerCase()}…',
                 hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
                 prefixIcon: const Icon(Icons.search_rounded,
                     color: Colors.white38, size: 16),
@@ -1439,6 +1555,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                   'No ${_nestedItemsLabel.toLowerCase()} match "$query".',
                   style: const TextStyle(color: Colors.white38, fontSize: 13)),
             )
+          else if (_nestedItemsType == 'menuItems')
+            _buildGroupedMenuItems(visibleEntries)
           else
             ...visibleEntries.map((e) {
               final images = e.key < _nestedItemImages.length
@@ -1455,6 +1573,46 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     );
   }
 
+  /// Groups menu items by their section name (e.g. "Starters", "Mains") —
+  /// items predating this feature carry no `sectionName` and fall into an
+  /// unheaded group at the top, same list they'd have shown in before.
+  Widget _buildGroupedMenuItems(
+      Iterable<MapEntry<int, Map<String, dynamic>>> entries) {
+    final groups = <String, List<MapEntry<int, Map<String, dynamic>>>>{};
+    for (final e in entries) {
+      final section = (e.value['sectionName'] as String?)?.trim();
+      groups.putIfAbsent(section ?? '', () => []).add(e);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: groups.entries.expand((g) {
+        final header = g.key.isEmpty
+            ? const SizedBox.shrink()
+            : Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 6),
+                child: Text(g.key,
+                    style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700)),
+              );
+        return [
+          header,
+          ...g.value.map((e) {
+            final images = e.key < _nestedItemImages.length
+                ? _nestedItemImages[e.key]
+                : const <String>[];
+            return _NestedServiceCard(
+              item: e.value,
+              images: images,
+              itemType: _nestedItemsType,
+            );
+          }),
+        ];
+      }).toList(),
+    );
+  }
+
   // ── Artifacts (cultural places only — display case, not bookable) ────────
   Widget _buildArtifactsSection() {
     if (_artifactItems.isEmpty) return const SizedBox.shrink();
@@ -1464,8 +1622,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Artifacts',
-              style: TextStyle(
+          Text(context.tr('place_details_section_artifacts'),
+              style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                   color: Colors.white)),
@@ -1500,8 +1658,8 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Accepted Payment Methods',
-              style: TextStyle(
+          Text(context.tr('place_details_section_payment_methods'),
+              style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: Colors.white)),
@@ -1567,30 +1725,37 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Contact Information',
-            style: TextStyle(
+          Text(
+            context.tr('place_details_section_contact'),
+            style: const TextStyle(
                 fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
           const SizedBox(height: 16),
           if ((address ?? '').isNotEmpty) ...[
-            _buildContactItem(Icons.location_on, 'Address', address!),
+            _buildContactItem(Icons.location_on,
+                context.tr('place_details_contact_address'), address!),
             const SizedBox(height: 12),
           ],
           if ((area ?? '').isNotEmpty) ...[
-            _buildContactItem(Icons.map_outlined, 'Area', area!),
+            _buildContactItem(Icons.map_outlined,
+                context.tr('place_details_contact_area'), area!),
             const SizedBox(height: 12),
           ],
           if ((contact?.phone ?? '').isNotEmpty) ...[
-            _buildContactItem(Icons.phone, 'Phone', contact!.phone!),
+            _buildContactItem(Icons.phone,
+                context.tr('place_details_contact_phone'), contact!.phone!),
             const SizedBox(height: 12),
           ],
           if ((contact?.email ?? '').isNotEmpty) ...[
-            _buildContactItem(Icons.email_outlined, 'Email', contact!.email!),
+            _buildContactItem(Icons.email_outlined,
+                context.tr('place_details_contact_email'), contact!.email!),
             const SizedBox(height: 12),
           ],
           if ((contact?.website ?? '').isNotEmpty)
-            _buildContactItem(Icons.language, 'Website', contact!.website!),
+            _buildContactItem(
+                Icons.language,
+                context.tr('place_details_quick_action_website'),
+                contact!.website!),
         ],
       ),
     );
@@ -1644,34 +1809,43 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Booking & Pricing',
-            style: TextStyle(
+          Text(
+            context.tr('place_details_section_booking_pricing'),
+            style: const TextStyle(
                 fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
           const SizedBox(height: 14),
           if (_priceRangeLabel != null) ...[
-            _buildInfoRow(Icons.sell_outlined, 'Price', _priceRangeLabel!),
+            _buildInfoRow(Icons.sell_outlined,
+                context.tr('place_details_info_price'), _priceRangeLabel!),
             const SizedBox(height: 10),
           ],
           if (bs?.advanceNotice != null) ...[
             _buildInfoRow(
-                Icons.schedule, 'Advance notice', '${bs!.advanceNotice} hours'),
+                Icons.schedule,
+                context.tr('place_details_info_advance_notice'),
+                '${bs!.advanceNotice} hours'),
             const SizedBox(height: 10),
           ],
           if (bs?.minDuration != null) ...[
             _buildInfoRow(
-                Icons.timelapse, 'Min stay', '${bs!.minDuration} nights'),
+                Icons.timelapse,
+                context.tr('place_details_info_min_stay'),
+                '${bs!.minDuration} nights'),
             const SizedBox(height: 10),
           ],
           if (bs?.maxDuration != null) ...[
             _buildInfoRow(
-                Icons.calendar_today, 'Max stay', '${bs!.maxDuration} nights'),
+                Icons.calendar_today,
+                context.tr('place_details_info_max_stay'),
+                '${bs!.maxDuration} nights'),
             const SizedBox(height: 10),
           ],
           if ((bs?.cancellationPolicy ?? '').isNotEmpty)
             _buildInfoRow(
-                Icons.policy_outlined, 'Cancellation', bs!.cancellationPolicy!),
+                Icons.policy_outlined,
+                context.tr('place_details_info_cancellation'),
+                bs!.cancellationPolicy!),
         ],
       ),
     );
@@ -1767,9 +1941,10 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               child: ElevatedButton.icon(
                 onPressed: _startBooking,
                 icon: const Icon(Icons.calendar_today, size: 20),
-                label: const Text(
-                  'Book Now',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                label: Text(
+                  context.tr('place_details_button_book_now'),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _P.aquaBright,
@@ -1787,9 +1962,10 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               child: OutlinedButton.icon(
                 onPressed: _askQuestion,
                 icon: const Icon(Icons.chat_bubble_outline, size: 20),
-                label: const Text(
-                  'Enquire',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                label: Text(
+                  context.tr('place_details_button_enquire'),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _P.aquaBright,
@@ -1809,7 +1985,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               ),
               child: IconButton(
                 onPressed: _askQuestion,
-                tooltip: 'Ask a Question',
+                tooltip: context.tr('place_details_tooltip_ask_question'),
                 icon: const Icon(Icons.chat_bubble_outline,
                     color: _P.aquaBright, size: 20),
               ),
@@ -1823,8 +1999,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             ),
             child: IconButton(
               onPressed: _toggleFavorite,
-              tooltip:
-                  _isFavorited ? 'Remove from favorites' : 'Add to favorites',
+              tooltip: _isFavorited
+                  ? context.tr('place_details_tooltip_remove_favorite')
+                  : context.tr('place_details_tooltip_add_favorite'),
               icon: Icon(
                 _isFavorited ? Icons.favorite : Icons.favorite_border,
                 color: _isFavorited ? const Color(0xFFFF6B6B) : _P.aquaBright,
@@ -1859,7 +2036,8 @@ class _NestedServiceCard extends StatelessWidget {
     required this.itemType,
   });
 
-  String get _title => item['name'] as String? ?? 'Untitled';
+  String _title(BuildContext context) =>
+      item['name'] as String? ?? context.tr('place_details_untitled');
 
   String? get _subtitle {
     switch (itemType) {
@@ -1898,8 +2076,98 @@ class _NestedServiceCard extends StatelessWidget {
     }
   }
 
+  // Room-only detail chips (beds, size, balcony/kitchen/living-room,
+  // top amenities) — reads the item Map directly rather than instantiating
+  // a full RoomModel, since this card is a read-only consumer of the
+  // polymorphic nested-item pipeline shared by rooms/menu items/shows/
+  // exhibitions/artifacts.
+  List<Widget> _roomDetailChips(BuildContext context) {
+    if (itemType != 'rooms') return const [];
+    final chips = <Widget>[];
+
+    final bedsSummary = RoomModel.bedsSummaryFromMap(item);
+    if (bedsSummary.isNotEmpty) {
+      chips.add(_detailChip(Icons.bed_outlined, bedsSummary));
+    }
+    final size = item['sizeSquareMeters'];
+    if (size != null) {
+      chips.add(_detailChip(Icons.straighten_rounded, '$size m²'));
+    }
+    if (item['hasBalcony'] == true) {
+      chips.add(_detailChip(
+          Icons.balcony_outlined, context.tr('place_details_room_balcony')));
+    }
+    if (item['hasKitchen'] == true) {
+      chips.add(_detailChip(
+          Icons.kitchen_outlined, context.tr('place_details_room_kitchen')));
+    }
+    if (item['hasLivingRoom'] == true) {
+      chips.add(_detailChip(Icons.weekend_outlined,
+          context.tr('place_details_room_living_room')));
+    }
+
+    final amenities = (item['amenities'] as List<dynamic>?)
+            ?.map((a) => a.toString())
+            .toList() ??
+        const [];
+    for (final a in amenities.take(3)) {
+      chips.add(_detailChip(Icons.check_circle_outline_rounded, a));
+    }
+    if (amenities.length > 3) {
+      chips.add(_detailChip(Icons.more_horiz_rounded,
+          '+${amenities.length - 3} ${context.tr('place_details_room_more_amenities')}'));
+    }
+    return chips;
+  }
+
+  // Menu-item-only detail chips (dietary tags, spicy level, prep time) —
+  // same read-only-Map-consumer approach as _roomDetailChips.
+  List<Widget> _menuItemDetailChips(BuildContext context) {
+    if (itemType != 'menuItems') return const [];
+    final chips = <Widget>[];
+
+    final dietary = MenuItemModel.dietarySummaryFromMap(item);
+    if (dietary.isNotEmpty) {
+      chips.add(_detailChip(Icons.eco_outlined, dietary));
+    }
+    final spicyLevel = (item['spicyLevel'] as num?)?.toInt() ?? 0;
+    if (spicyLevel > 0) {
+      chips.add(_detailChip(
+          Icons.local_fire_department_outlined, '🌶️' * spicyLevel));
+    }
+    final prepTime = item['prepTime'];
+    if (prepTime != null) {
+      chips.add(_detailChip(Icons.schedule_outlined, '$prepTime min'));
+    }
+    if (item['isSignatureDish'] == true) {
+      chips.add(_detailChip(Icons.star_outline_rounded,
+          context.tr('place_details_menu_signature')));
+    }
+    if (item['isChefSpecial'] == true) {
+      chips.add(_detailChip(Icons.restaurant_menu_rounded,
+          context.tr('place_details_menu_chef_special')));
+    }
+    return chips;
+  }
+
+  Widget _detailChip(IconData icon, String label) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _P.aqua.withValues(alpha: 0.15)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 12, color: _P.textMute),
+          const SizedBox(width: 4),
+          Text(label, style: TextStyle(color: _P.textSec, fontSize: 11)),
+        ]),
+      );
+
   @override
   Widget build(BuildContext context) {
+    final roomChips = _roomDetailChips(context);
+    final menuChips = _menuItemDetailChips(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
@@ -1911,7 +2179,7 @@ class _NestedServiceCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(_title,
+          Text(_title(context),
               style: const TextStyle(
                   color: Colors.white,
                   fontSize: 15,
@@ -1921,6 +2189,14 @@ class _NestedServiceCard extends StatelessWidget {
             Text(_subtitle!,
                 style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.65), fontSize: 12)),
+          ],
+          if (roomChips.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(spacing: 6, runSpacing: 6, children: roomChips),
+          ],
+          if (menuChips.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(spacing: 6, runSpacing: 6, children: menuChips),
           ],
           if (images.isNotEmpty) ...[
             const SizedBox(height: 10),

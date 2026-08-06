@@ -4,6 +4,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:palmnazi/admin/admin_shared_widgets.dart';
 import 'package:palmnazi/models/audit_log_entry.dart';
+import 'package:palmnazi/services/admin_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/audit_log_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,9 +15,6 @@ import 'package:palmnazi/services/audit_log_service.dart';
 // — see AuditLogService.log, called from every admin screen that mutates
 // data). MainAdmin-only, same convention as AdminRoleRequestsScreen.
 // ─────────────────────────────────────────────────────────────────────────────
-
-const _kSurface = Color(0xFF111827);
-const _kTeal = Color(0xFF14FFEC);
 
 class AdminAuditLogScreen extends StatefulWidget {
   const AdminAuditLogScreen({super.key});
@@ -30,7 +29,14 @@ class _AdminAuditLogScreenState extends State<AdminAuditLogScreen> {
 
   Future<void> _export() async {
     final rows = [
-      ['Timestamp', 'Admin', 'Action', 'Module', 'Target', 'Details'],
+      [
+        context.tr('admin_audit_log_csv_header_timestamp'),
+        context.tr('admin_audit_log_csv_header_admin'),
+        context.tr('admin_audit_log_csv_header_action'),
+        context.tr('admin_audit_log_csv_header_module'),
+        context.tr('admin_audit_log_csv_header_target'),
+        context.tr('admin_audit_log_csv_header_details'),
+      ],
       ..._latest.map((e) => [
             e.timestamp?.toIso8601String() ?? '',
             e.adminEmail,
@@ -48,8 +54,9 @@ class _AdminAuditLogScreenState extends State<AdminAuditLogScreen> {
     await FilePicker.saveFile(fileName: fileName, bytes: utf8.encode(csv));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Exported ${_latest.length} row(s).'),
-        backgroundColor: const Color(0xFF0D7377),
+        content: Text(
+            '${context.tr('admin_audit_log_export_success_prefix')} ${_latest.length} ${context.tr('admin_audit_log_export_success_suffix')}'),
+        backgroundColor: AdC.tealDark,
       ));
     }
   }
@@ -64,7 +71,9 @@ class _AdminAuditLogScreenState extends State<AdminAuditLogScreen> {
         }
         if (snap.hasError) {
           return AdminErrorView(
-              error: 'Could not load audit log: ${snap.error}', onRetry: () {});
+              error:
+                  '${context.tr('admin_audit_log_error_load_prefix')} ${snap.error}',
+              onRetry: () {});
         }
         final all = snap.data ?? const <AuditLogEntry>[];
         _latest = all;
@@ -83,7 +92,8 @@ class _AdminAuditLogScreenState extends State<AdminAuditLogScreen> {
                     scrollDirection: Axis.horizontal,
                     child: Row(children: [
                       _FilterChip(
-                        label: 'All (${all.length})',
+                        label:
+                            '${context.tr('admin_audit_log_filter_all_prefix')} (${all.length})',
                         selected: _moduleFilter == null,
                         onTap: () => setState(() => _moduleFilter = null),
                       ),
@@ -102,22 +112,20 @@ class _AdminAuditLogScreenState extends State<AdminAuditLogScreen> {
                 OutlinedButton.icon(
                   onPressed: all.isEmpty ? null : _export,
                   icon: const Icon(Icons.download_rounded, size: 14),
-                  label: const Text('Export CSV'),
+                  label: Text(context.tr('admin_audit_log_export_button')),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: _kTeal,
-                    side: BorderSide(color: _kTeal.withValues(alpha: 0.4)),
+                    foregroundColor: AdC.teal,
+                    side: BorderSide(color: AdC.teal.withValues(alpha: 0.4)),
                   ),
                 ),
               ]),
             ),
             Expanded(
               child: visible.isEmpty
-                  ? const AdminEmptyState(
+                  ? AdminEmptyState(
                       icon: Icons.history_rounded,
-                      title: 'No activity yet',
-                      body: 'Admin actions (creating/editing/deleting places, '
-                          'cities, categories, roles, blog posts) will show '
-                          'up here as they happen.',
+                      title: context.tr('admin_audit_log_empty_title'),
+                      body: context.tr('admin_audit_log_empty_body'),
                     )
                   : ListView.separated(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -146,15 +154,16 @@ class _FilterChip extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
           decoration: BoxDecoration(
-            color: selected ? _kTeal.withValues(alpha: 0.15) : _kSurface,
+            color: selected ? AdC.teal.withValues(alpha: 0.15) : AdC.surface,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-                color:
-                    selected ? _kTeal.withValues(alpha: 0.5) : Colors.white12),
+                color: selected
+                    ? AdC.teal.withValues(alpha: 0.5)
+                    : AdC.overlay(0.12)),
           ),
           child: Text(label,
               style: TextStyle(
-                  color: selected ? _kTeal : Colors.white54,
+                  color: selected ? AdC.teal : AdC.textMute,
                   fontSize: 12,
                   fontWeight: FontWeight.w600)),
         ),
@@ -185,14 +194,14 @@ class _EntryTile extends StatelessWidget {
   Color get _color {
     switch (entry.action) {
       case 'create':
-        return const Color(0xFF00C853);
+        return AdC.green;
       case 'delete':
-        return const Color(0xFFCF6679);
+        return AdC.red;
       case 'role_grant':
       case 'role_revoke':
-        return const Color(0xFFFF9800);
+        return AdC.orange;
       default:
-        return _kTeal;
+        return AdC.teal;
     }
   }
 
@@ -206,9 +215,9 @@ class _EntryTile extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: _kSurface,
+          color: AdC.surface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.white12),
+          border: Border.all(color: AdC.overlay(0.12)),
         ),
         child: Row(children: [
           Icon(_icon, color: _color, size: 16),
@@ -220,8 +229,8 @@ class _EntryTile extends StatelessWidget {
                 Text(
                     '${entry.action.replaceAll('_', ' ')} · ${entry.module}'
                     '${entry.targetLabel.isNotEmpty ? ' — ${entry.targetLabel}' : ''}',
-                    style: const TextStyle(
-                        color: Colors.white,
+                    style: TextStyle(
+                        color: AdC.textPri,
                         fontSize: 12.5,
                         fontWeight: FontWeight.w600)),
                 if (entry.details.isNotEmpty) ...[
@@ -229,13 +238,11 @@ class _EntryTile extends StatelessWidget {
                   Text(entry.details,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style:
-                          const TextStyle(color: Colors.white38, fontSize: 11)),
+                      style: TextStyle(color: AdC.textMute, fontSize: 11)),
                 ],
                 const SizedBox(height: 2),
                 Text('${entry.adminEmail} · ${_fmt(entry.timestamp)}',
-                    style:
-                        const TextStyle(color: Colors.white24, fontSize: 10.5)),
+                    style: TextStyle(color: AdC.textMute, fontSize: 10.5)),
               ],
             ),
           ),

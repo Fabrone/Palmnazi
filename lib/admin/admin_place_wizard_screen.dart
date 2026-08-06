@@ -13,9 +13,17 @@ import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/place_model.dart';
 import 'package:palmnazi/models/payment_method_model.dart';
+import 'package:palmnazi/models/menu_item_model.dart';
+import 'package:palmnazi/models/room_model.dart';
+import 'package:palmnazi/services/admin_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/audit_log_service.dart';
+import 'package:palmnazi/services/backend_menu_sync.dart';
+import 'package:palmnazi/services/backend_room_sync.dart';
+import 'package:palmnazi/services/menu_service.dart';
 import 'package:palmnazi/services/payment_methods_service.dart';
 import 'package:palmnazi/services/place_details_service.dart';
+import 'package:palmnazi/services/room_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AdminPlaceWizardScreen
@@ -125,6 +133,22 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   // this count — the create endpoints are additive, not upserts, so
   // re-sending already-persisted items would duplicate them on the backend.
   int _existingRoomCount = 0;
+  // Indices into _rooms (< _existingRoomCount) whose fields were edited this
+  // session — the simple new-vs-saved prefix split above doesn't cover
+  // "existing room, modified," so these need their own PATCH via
+  // updateRoom() in _saveStep6 rather than being re-POSTed. Cleared after a
+  // successful save.
+  final Set<int> _dirtyExistingRoomIndexes = {};
+  int _existingSectionCount = 0;
+  final Set<int> _dirtyExistingSectionIndexes = {};
+  final Set<int> _dirtyExistingMenuItemIndexes = {};
+  // Which section's items are currently shown in the Dining editor — a menu
+  // item can only be added once a section exists and is selected.
+  String? _selectedSectionId;
+  // Counter for client-only 'localKey' ids assigned to not-yet-persisted
+  // sections (see _showSectionDialog) so new menu items can reference a
+  // section before it has a real backend id.
+  int _localSectionSeq = 0;
   int _existingMenuItemCount = 0;
   int _existingShowCount = 0;
   int _existingExhibitionCount = 0;
@@ -405,7 +429,17 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       }
 
       if (_isAccommodationType) {
-        final rooms = await widget.apiService.getRooms(place.id);
+        // Phase 3: Firestore (RoomService) is the authoritative read path —
+        // the backend REST API's rooms list has proven unreliable.
+        final roomModels = await RoomService.getForPlace(place.id);
+        final rooms = roomModels
+            .map((r) => <String, dynamic>{
+                  'id': r.id,
+                  'placeId': r.placeId,
+                  if (r.restId != null) 'restId': r.restId,
+                  ...r.toCreateMap(),
+                })
+            .toList();
         final savedRooms = (details?['rooms'] as List<dynamic>?) ?? const [];
         if (mounted) {
           setState(() {
@@ -420,11 +454,35 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           });
         }
       } else if (_isDiningType) {
-        final items = await widget.apiService.getMenuItems(place.id);
+        // Phase 3: Firestore (MenuService) is the authoritative read path —
+        // the backend REST API's menu-items list has proven unreliable.
+        final sectionModels = await MenuService.getSectionsForPlace(place.id);
+        final sections = sectionModels
+            .map((s) => <String, dynamic>{
+                  'id': s.id,
+                  'placeId': s.placeId,
+                  if (s.restId != null) 'restId': s.restId,
+                  ...s.toCreateMap(),
+                })
+            .toList();
+        final itemModels = await MenuService.getItemsForPlace(place.id);
+        final items = itemModels
+            .map((it) => <String, dynamic>{
+                  'id': it.id,
+                  'placeId': it.placeId,
+                  'sectionId': it.sectionId,
+                  if (it.restId != null) 'restId': it.restId,
+                  ...it.toCreateMap(),
+                })
+            .toList();
         final savedItems =
             (details?['menuItems'] as List<dynamic>?) ?? const [];
         if (mounted) {
           setState(() {
+            _menuSections
+              ..clear()
+              ..addAll(sections);
+            _existingSectionCount = sections.length;
             _menuItems
               ..clear()
               ..addAll(items);
@@ -433,6 +491,9 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
               ..addAll(
                   List.generate(items.length, (i) => imagesAt(savedItems, i)));
             _existingMenuItemCount = items.length;
+            if (sections.isNotEmpty) {
+              _selectedSectionId = sections.first['id'] as String?;
+            }
           });
         }
       } else if (_isEntertainmentType) {
@@ -601,7 +662,10 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
 
   bool get _isAccommodationType {
     final slug = _primaryCategorySlug ?? '';
+    // Matches both the correct spelling and the "accomodation" (single m)
+    // typo actually used by the live "Accomodation" category on the backend.
     return slug.contains('accommodation') ||
+        slug.contains('accomodation') ||
         slug.contains('hotel') ||
         slug.contains('resort') ||
         slug.contains('lodge');
@@ -862,8 +926,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Photos',
-            style: TextStyle(color: Colors.white54, fontSize: 12)),
+        Text('Photos', style: TextStyle(color: AdC.textMute, fontSize: 12)),
         const SizedBox(height: 6),
         if (images.isNotEmpty)
           Padding(
@@ -919,14 +982,13 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                   width: 14,
                   height: 14,
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Color(0xFF14FFEC)))
+                      strokeWidth: 2, color: AdC.teal))
               : const Icon(Icons.add_photo_alternate_outlined,
-                  size: 15, color: Color(0xFF14FFEC)),
+                  size: 15, color: AdC.teal),
           label: Text(uploading ? 'Uploading…' : 'Add Photo',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF14FFEC))),
+              style: const TextStyle(fontSize: 12, color: AdC.teal)),
           style: OutlinedButton.styleFrom(
-            side: BorderSide(
-                color: const Color(0xFF14FFEC).withValues(alpha: 0.5)),
+            side: BorderSide(color: AdC.teal.withValues(alpha: 0.5)),
             padding: const EdgeInsets.symmetric(vertical: 8),
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
@@ -939,9 +1001,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   Widget _nestedImageBrokenTile() => Container(
         width: 56,
         height: 56,
-        color: Colors.white12,
-        child: const Icon(Icons.broken_image_rounded,
-            color: Colors.white24, size: 20),
+        color: AdC.overlay(0.12),
+        child: Icon(Icons.broken_image_rounded, color: AdC.textMute, size: 20),
       );
 
   // ── Gallery slot management (keeps parallel lists in sync) ────────────────
@@ -1176,13 +1237,16 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     debugPrint(
         '📝 [Wizard/Step1] Creating draft — name="${_nameCtrl.text.trim()}"  cityId=$_selectedCityId  primaryCategory=$_primaryCategorySlug');
     if (_nameCtrl.text.trim().isEmpty) {
-      throw AdminApiException(message: 'Name is required');
+      throw AdminApiException(
+          message: context.tr('admin_wizard_error_name_required'));
     }
     if (_selectedCityId == null) {
-      throw AdminApiException(message: 'Select a resort city');
+      throw AdminApiException(
+          message: context.tr('admin_wizard_error_select_city'));
     }
     if (_primaryCategorySlug == null) {
-      throw AdminApiException(message: 'Select a primary category');
+      throw AdminApiException(
+          message: context.tr('admin_wizard_error_select_category'));
     }
     _place = await widget.apiService.createPlaceDraft(
       name: _nameCtrl.text.trim(),
@@ -1351,16 +1415,15 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       child: TextField(
         controller: _nestedSearchCtrl,
         onChanged: (v) => setState(() => _nestedSearchQuery = v),
-        style: const TextStyle(color: Colors.white, fontSize: 13),
+        style: TextStyle(color: AdC.textPri, fontSize: 13),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(color: Colors.white24, fontSize: 12),
-          prefixIcon:
-              const Icon(Icons.search_rounded, color: Colors.white38, size: 16),
+          hintStyle: TextStyle(color: AdC.textMute, fontSize: 12),
+          prefixIcon: Icon(Icons.search_rounded, color: AdC.textMute, size: 16),
           suffixIcon: _nestedSearchQuery.isNotEmpty
               ? IconButton(
-                  icon: const Icon(Icons.clear_rounded,
-                      color: Colors.white38, size: 14),
+                  icon:
+                      Icon(Icons.clear_rounded, color: AdC.textMute, size: 14),
                   onPressed: () => setState(() {
                     _nestedSearchCtrl.clear();
                     _nestedSearchQuery = '';
@@ -1368,10 +1431,10 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                 )
               : null,
           filled: true,
-          fillColor: const Color(0xFF0D1117),
+          fillColor: AdC.bg,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Colors.white12),
+            borderSide: BorderSide(color: AdC.overlay(0.12)),
           ),
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1388,49 +1451,106 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     debugPrint(
         '📝 [Wizard/Step6] Saving nested data — placeId=${_place!.id}  type: accommodation=$_isAccommodationType  dining=$_isDiningType  entertainment=$_isEntertainmentType');
 
-    // Only the items added since the last successful save are new — the
-    // create endpoints are additive, not upserts, so re-sending
-    // already-persisted items (loaded on edit via _loadExistingNestedData)
-    // would duplicate them on the backend.
+    // Phase 3: Firestore (RoomService / MenuService) is the authoritative
+    // store for Rooms and Dining — each write below is awaited and any
+    // failure is a real error the admin must see. The backend REST API is
+    // now only a best-effort mirror (BackendRoomSync / BackendMenuSync):
+    // fired unawaited right after the matching Firestore write succeeds,
+    // fully error-swallowing, logged only. An item's own `id` (Firestore doc
+    // id) tells us create-vs-update; no more sublist/batch-response
+    // bookkeeping is needed since Firestore hands back a real id per item
+    // immediately, unlike the REST batch-create endpoints this used to lean
+    // on.
     if (_isAccommodationType) {
-      final newRooms = _rooms.sublist(_existingRoomCount);
-      if (newRooms.isNotEmpty) {
-        debugPrint('   ↳ POSTing ${newRooms.length} room(s)');
-        final created =
-            await widget.apiService.createRooms(_place!.id, newRooms);
-        // Merge server-assigned ids back so a later delete can target them.
-        for (var i = 0;
-            i < created.length && (_existingRoomCount + i) < _rooms.length;
-            i++) {
-          _rooms[_existingRoomCount + i] = created[i];
+      for (var i = 0; i < _rooms.length; i++) {
+        final map = _rooms[i];
+        final id = map['id'] as String?;
+        final room = RoomModel.fromMap(map);
+        if (id == null) {
+          final newId = await RoomService.create(room, placeId: _place!.id);
+          _rooms[i] = {...map, 'id': newId, 'placeId': _place!.id};
+          unawaited(BackendRoomSync.pushCreateSilently(
+              widget.apiService, newId, _place!.id, room));
+        } else if (_dirtyExistingRoomIndexes.contains(i)) {
+          await RoomService.update(id, room, placeId: _place!.id);
+          unawaited(BackendRoomSync.pushUpdateSilently(
+              widget.apiService, map['restId'] as String?, room));
         }
-        debugPrint('✅ [Wizard/Step6] Rooms saved');
       }
+      _dirtyExistingRoomIndexes.clear();
       if (_rooms.isNotEmpty) {
         await PlaceDetailsService.saveNestedItemImages(_place!.id,
             rooms: _zipNamesImages(_rooms, _roomImages));
       }
       _existingRoomCount = _rooms.length;
+      debugPrint('✅ [Wizard/Step6] Rooms saved to Firestore');
     } else if (_isDiningType) {
-      if (_menuSections.isNotEmpty) {
-        debugPrint('   ↳ POSTing ${_menuSections.length} menu section(s)');
-        await widget.apiService.createMenuSections(_place!.id, _menuSections);
-        debugPrint('✅ [Wizard/Step6] Menu sections saved');
+      // Sections must be created (and their real Firestore ids known)
+      // before any new item can be created under them — items are
+      // section-scoped. Not-yet-saved sections carry a client-only
+      // `localKey` (see _showSectionDialog); any item that referenced one
+      // gets remapped to the section's real id the moment it's created.
+      for (var i = 0; i < _menuSections.length; i++) {
+        final map = _menuSections[i];
+        final id = map['id'] as String?;
+        final section = MenuSectionModel.fromJson(map);
+        if (id == null) {
+          final oldKey = _sectionKey(map);
+          final newId =
+              await MenuService.createSection(section, placeId: _place!.id);
+          _menuSections[i] = {...map, 'id': newId}..remove('localKey');
+          unawaited(BackendMenuSync.pushCreateSectionSilently(
+              widget.apiService, newId, _place!.id, section));
+          if (oldKey != null && oldKey != newId) {
+            for (var j = 0; j < _menuItems.length; j++) {
+              if (_menuItems[j]['sectionId'] == oldKey) {
+                _menuItems[j] = {..._menuItems[j], 'sectionId': newId};
+              }
+            }
+            if (_selectedSectionId == oldKey) _selectedSectionId = newId;
+          }
+        } else if (_dirtyExistingSectionIndexes.contains(i)) {
+          await MenuService.updateSection(id, section, placeId: _place!.id);
+          unawaited(BackendMenuSync.pushUpdateSectionSilently(widget.apiService,
+              _place!.id, map['restId'] as String?, section));
+        }
       }
-      final newMenuItems = _menuItems.sublist(_existingMenuItemCount);
-      if (newMenuItems.isNotEmpty) {
-        debugPrint('   ↳ POSTing ${newMenuItems.length} menu item(s)');
-        await widget.apiService.createMenuItems(_place!.id, newMenuItems);
-        debugPrint('✅ [Wizard/Step6] Menu items saved');
+      _dirtyExistingSectionIndexes.clear();
+      _existingSectionCount = _menuSections.length;
+      debugPrint('✅ [Wizard/Step6] Menu sections saved to Firestore');
+
+      for (var i = 0; i < _menuItems.length; i++) {
+        final map = _menuItems[i];
+        final id = map['id'] as String?;
+        final sectionId = map['sectionId'] as String?;
+        if (sectionId == null) continue; // dialog always assigns one
+        final item = MenuItemModel.fromMap(map);
+        final section = _menuSections.firstWhere((s) => s['id'] == sectionId,
+            orElse: () => const <String, dynamic>{});
+        if (id == null) {
+          final newId = await MenuService.createItem(item,
+              placeId: _place!.id, sectionId: sectionId);
+          _menuItems[i] = {...map, 'id': newId};
+          unawaited(BackendMenuSync.pushCreateItemSilently(widget.apiService,
+              newId, _place!.id, section['restId'] as String?, item));
+        } else if (_dirtyExistingMenuItemIndexes.contains(i)) {
+          await MenuService.updateItem(id, item,
+              placeId: _place!.id, sectionId: sectionId);
+          unawaited(BackendMenuSync.pushUpdateItemSilently(
+              widget.apiService,
+              _place!.id,
+              section['restId'] as String?,
+              map['restId'] as String?,
+              item));
+        }
       }
+      _dirtyExistingMenuItemIndexes.clear();
       if (_menuItems.isNotEmpty) {
         await PlaceDetailsService.saveNestedItemImages(_place!.id,
             menuItems: _zipNamesImages(_menuItems, _menuItemImages));
       }
       _existingMenuItemCount = _menuItems.length;
-      if (_menuSections.isEmpty && newMenuItems.isEmpty) {
-        debugPrint('⏭️ [Wizard/Step6] No menu data to save — skipping');
-      }
+      debugPrint('✅ [Wizard/Step6] Menu items saved to Firestore');
     } else if (_isEntertainmentType) {
       final newShows = _shows.sublist(_existingShowCount);
       if (newShows.isNotEmpty) {
@@ -1639,10 +1759,10 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
+      backgroundColor: AdC.bg,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF111827),
-        foregroundColor: Colors.white,
+        backgroundColor: AdC.surface,
+        foregroundColor: AdC.textPri,
         elevation: 0,
         title: Text(
           widget.existingPlace != null
@@ -1786,38 +1906,33 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       children: [
         AdminField(
             ctrl: _nameCtrl,
-            label: 'Place Name',
-            hint: 'e.g. Serena Beach Resort & Spa',
+            label: context.tr('admin_wizard_field_place_name'),
+            hint: context.tr('admin_wizard_field_place_name_hint'),
             required: true),
         const SizedBox(height: 4),
-        const Text('Resort City',
+        Text(context.tr('admin_wizard_field_resort_city'),
             style: TextStyle(
-                color: Colors.white70,
-                fontSize: 13,
-                fontWeight: FontWeight.w500)),
+                color: AdC.textSec, fontSize: 13, fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
         _AdminDropdown<String>(
           value: _selectedCityId,
-          hint: 'Select the city this place is in',
+          hint: context.tr('admin_wizard_field_resort_city_hint'),
           items: widget.cities
               .map((c) => DropdownMenuItem(value: c.id, child: Text(c.name)))
               .toList(),
           onChanged: (v) => setState(() => _selectedCityId = v),
         ),
         const SizedBox(height: 16),
-        const Text('Primary Category',
+        Text(context.tr('admin_wizard_field_primary_category'),
             style: TextStyle(
-                color: Colors.white70,
-                fontSize: 13,
-                fontWeight: FontWeight.w500)),
+                color: AdC.textSec, fontSize: 13, fontWeight: FontWeight.w500)),
         const SizedBox(height: 4),
-        const Text(
-            'Used to determine what kind of nested data this place supports.',
-            style: TextStyle(color: Colors.white38, fontSize: 11)),
+        Text(context.tr('admin_wizard_field_primary_category_desc'),
+            style: TextStyle(color: AdC.textMute, fontSize: 11)),
         const SizedBox(height: 8),
         _AdminDropdown<String>(
           value: _primaryCategorySlug,
-          hint: 'Select primary category',
+          hint: context.tr('admin_wizard_field_primary_category_hint'),
           items: rootCats
               .map((c) => DropdownMenuItem(
                     value: c.slug,
@@ -1841,19 +1956,19 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         children: [
           AdminField(
               ctrl: _shortDescCtrl,
-              label: 'Short Description',
-              hint: 'One sentence summary (max 300 chars)',
+              label: context.tr('admin_wizard_field_short_desc'),
+              hint: context.tr('admin_wizard_field_short_desc_hint'),
               maxLines: 2),
           AdminField(
               ctrl: _descCtrl,
-              label: 'Full Description',
-              hint: 'Detailed description of this place (min 100 chars)',
+              label: context.tr('admin_wizard_field_full_desc'),
+              hint: context.tr('admin_wizard_field_full_desc_hint'),
               maxLines: 5,
               required: true),
           AdminField(
               ctrl: _areaCtrl,
-              label: 'Area / Neighbourhood',
-              hint: 'e.g. Shanzu, Westlands'),
+              label: context.tr('admin_wizard_field_area'),
+              hint: context.tr('admin_wizard_field_area_hint')),
         ],
       );
 
@@ -1870,12 +1985,12 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFF111827),
+            color: AdC.surface,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: hasCoords
-                  ? const Color(0xFF14FFEC).withValues(alpha: 0.4)
-                  : Colors.white12,
+                  ? AdC.teal.withValues(alpha: 0.4)
+                  : AdC.overlay(0.12),
             ),
           ),
           child: Column(
@@ -1886,11 +2001,11 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF14FFEC).withValues(alpha: 0.1),
+                    color: AdC.teal.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.map_rounded,
-                      color: Color(0xFF14FFEC), size: 18),
+                  child:
+                      const Icon(Icons.map_rounded, color: AdC.teal, size: 18),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1898,19 +2013,21 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        hasCoords ? 'Location Selected' : 'Pick on Map',
-                        style: const TextStyle(
-                            color: Colors.white,
+                        hasCoords
+                            ? context.tr('admin_wizard_location_selected')
+                            : context.tr('admin_wizard_pick_on_map'),
+                        style: TextStyle(
+                            color: AdC.textPri,
                             fontSize: 14,
                             fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         hasCoords
-                            ? 'Tap to adjust the pin position'
-                            : 'Open interactive map to search and pin a location',
-                        style: const TextStyle(
-                            color: Colors.white38, fontSize: 11, height: 1.4),
+                            ? context.tr('admin_wizard_tap_adjust_pin')
+                            : context.tr('admin_wizard_open_map_search'),
+                        style: TextStyle(
+                            color: AdC.textMute, fontSize: 11, height: 1.4),
                       ),
                     ],
                   ),
@@ -1933,9 +2050,9 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0D1117),
+                    color: AdC.bg,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.white10),
+                    border: Border.all(color: AdC.overlay(0.1)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1943,28 +2060,27 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                       if (_addressCtrl.text.isNotEmpty) ...[
                         Row(children: [
                           const Icon(Icons.location_on_rounded,
-                              color: Color(0xFF14FFEC), size: 12),
+                              color: AdC.teal, size: 12),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               _addressCtrl.text,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 12),
+                              style:
+                                  TextStyle(color: AdC.textSec, fontSize: 12),
                             ),
                           ),
                         ]),
                         const SizedBox(height: 6),
                       ],
                       Row(children: [
-                        const Icon(Icons.gps_fixed_rounded,
-                            color: Colors.white24, size: 11),
+                        Icon(Icons.gps_fixed_rounded,
+                            color: AdC.textMute, size: 11),
                         const SizedBox(width: 6),
                         Text(
                           'Lat: ${lat?.toStringAsFixed(6) ?? _latCtrl.text}  •  Lng: ${lng?.toStringAsFixed(6) ?? _lngCtrl.text}',
-                          style: const TextStyle(
-                              color: Colors.white38, fontSize: 11),
+                          style: TextStyle(color: AdC.textMute, fontSize: 11),
                         ),
                       ]),
                     ],
@@ -1985,23 +2101,21 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                     size: 16,
                   ),
                   label: Text(
-                    hasCoords ? 'Adjust on Map' : 'Open Map Picker',
+                    hasCoords
+                        ? context.tr('admin_wizard_adjust_on_map')
+                        : context.tr('admin_wizard_open_map_picker'),
                     style: const TextStyle(
                         fontWeight: FontWeight.w600, fontSize: 13),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: hasCoords
-                        ? const Color(0xFF14FFEC).withValues(alpha: 0.12)
-                        : const Color(0xFF14FFEC),
-                    foregroundColor:
-                        hasCoords ? const Color(0xFF14FFEC) : Colors.black,
+                    backgroundColor:
+                        hasCoords ? AdC.teal.withValues(alpha: 0.12) : AdC.teal,
+                    foregroundColor: hasCoords ? AdC.teal : Colors.black,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(9)),
                     side: hasCoords
-                        ? BorderSide(
-                            color:
-                                const Color(0xFF14FFEC).withValues(alpha: 0.4))
+                        ? BorderSide(color: AdC.teal.withValues(alpha: 0.4))
                         : BorderSide.none,
                   ),
                 ),
@@ -2013,30 +2127,30 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         const SizedBox(height: 20),
 
         // ── Divider ────────────────────────────────────────────────────────
-        Row(children: const [
-          Expanded(child: Divider(color: Colors.white10)),
+        Row(children: [
+          Expanded(child: Divider(color: AdC.overlay(0.1))),
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: 10),
-            child: Text('or enter manually',
-                style: TextStyle(color: Colors.white24, fontSize: 10)),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(context.tr('admin_wizard_or_enter_manually'),
+                style: TextStyle(color: AdC.textMute, fontSize: 10)),
           ),
-          Expanded(child: Divider(color: Colors.white10)),
+          Expanded(child: Divider(color: AdC.overlay(0.1))),
         ]),
         const SizedBox(height: 16),
 
         // ── Manual fields (always visible as fallback) ──────────────────────
         AdminField(
           ctrl: _addressCtrl,
-          label: 'Full Address',
-          hint: 'e.g. Shanzu Beach Road, Mombasa',
+          label: context.tr('admin_wizard_field_full_address'),
+          hint: context.tr('admin_wizard_field_full_address_hint'),
           maxLines: 2,
         ),
         Row(children: [
           Expanded(
             child: AdminField(
               ctrl: _latCtrl,
-              label: 'Latitude',
-              hint: 'e.g. -3.9875',
+              label: context.tr('admin_resort_field_latitude'),
+              hint: context.tr('admin_wizard_lat_hint'),
               keyboardType: const TextInputType.numberWithOptions(
                   decimal: true, signed: true),
             ),
@@ -2045,8 +2159,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           Expanded(
             child: AdminField(
               ctrl: _lngCtrl,
-              label: 'Longitude',
-              hint: 'e.g. 39.7392',
+              label: context.tr('admin_resort_field_longitude'),
+              hint: context.tr('admin_wizard_lng_hint'),
               keyboardType: const TextInputType.numberWithOptions(
                   decimal: true, signed: true),
             ),
@@ -2058,20 +2172,19 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.03),
+              color: AdC.overlay(0.03),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.white12),
+              border: Border.all(color: AdC.overlay(0.12)),
             ),
-            child: const Row(children: [
+            child: Row(children: [
               Icon(Icons.lightbulb_outline_rounded,
-                  color: Colors.white38, size: 14),
-              SizedBox(width: 8),
+                  color: AdC.textMute, size: 14),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Tip: Use the Map Picker for precise coordinates. '
-                  'You can search by place name, tap on the map, or drag the pin.',
-                  style: TextStyle(
-                      color: Colors.white38, fontSize: 11, height: 1.4),
+                  context.tr('admin_wizard_map_tip'),
+                  style:
+                      TextStyle(color: AdC.textMute, fontSize: 11, height: 1.4),
                 ),
               ),
             ]),
@@ -2118,17 +2231,17 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         children: [
           AdminField(
               ctrl: _phoneCtrl,
-              label: 'Phone Number',
+              label: context.tr('admin_wizard_field_phone'),
               hint: '+254722123456',
               keyboardType: TextInputType.phone),
           AdminField(
               ctrl: _emailCtrl,
-              label: 'Email Address',
+              label: context.tr('admin_wizard_field_email'),
               hint: 'reservations@example.co.ke',
               keyboardType: TextInputType.emailAddress),
           AdminField(
               ctrl: _websiteCtrl,
-              label: 'Website URL',
+              label: context.tr('admin_wizard_field_website'),
               hint: 'https://www.example.co.ke',
               keyboardType: TextInputType.url),
         ],
@@ -2191,13 +2304,13 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.03),
+          color: AdC.overlay(0.03),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.white12),
+          border: Border.all(color: AdC.overlay(0.12)),
         ),
-        child: const Text(
+        child: Text(
             'Additional attributes specific to this category type can be added after creation.',
-            style: TextStyle(color: Colors.white38, fontSize: 12)),
+            style: TextStyle(color: AdC.textMute, fontSize: 12)),
       ),
     ]);
   }
@@ -2218,19 +2331,18 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: const Color(0xFF111827),
+          color: AdC.surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white12),
+          border: Border.all(color: AdC.overlay(0.12)),
         ),
         child: Column(children: [
-          const Icon(Icons.layers_outlined, color: Colors.white24, size: 40),
+          Icon(Icons.layers_outlined, color: AdC.textMute, size: 40),
           const SizedBox(height: 12),
-          const Text('No nested data for this category type',
-              style: TextStyle(color: Colors.white54, fontSize: 14)),
+          Text('No nested data for this category type',
+              style: TextStyle(color: AdC.textMute, fontSize: 14)),
           const SizedBox(height: 8),
-          const Text(
-              'This step is optional for the selected category. Tap Continue.',
-              style: TextStyle(color: Colors.white38, fontSize: 12),
+          Text('This step is optional for the selected category. Tap Continue.',
+              style: TextStyle(color: AdC.textMute, fontSize: 12),
               textAlign: TextAlign.center),
         ]),
       ),
@@ -2242,18 +2354,17 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(children: [
-          const Expanded(
+          Expanded(
               child: Text('Rooms',
                   style: TextStyle(
-                      color: Colors.white70,
+                      color: AdC.textSec,
                       fontSize: 14,
                       fontWeight: FontWeight.w600))),
           TextButton.icon(
-            onPressed: _showAddRoomDialog,
-            icon: const Icon(Icons.add_rounded,
-                size: 16, color: Color(0xFF14FFEC)),
+            onPressed: () => _showRoomDialog(),
+            icon: const Icon(Icons.add_rounded, size: 16, color: AdC.teal),
             label: const Text('Add Room',
-                style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+                style: TextStyle(color: AdC.teal, fontSize: 13)),
           ),
         ]),
         const SizedBox(height: 8),
@@ -2261,151 +2372,417 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Center(
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Color(0xFF14FFEC))),
+                child:
+                    CircularProgressIndicator(strokeWidth: 2, color: AdC.teal)),
           )
         else if (_rooms.isEmpty)
           _EmptyNestedState(
-              label: 'No rooms added yet', onAdd: _showAddRoomDialog)
+              label: 'No rooms added yet', onAdd: () => _showRoomDialog())
         else ...[
           if (_rooms.length > 3)
             _buildNestedSearchField('Search rooms by name…'),
-          ..._filteredNestedEntries(_rooms).map((e) => _NestedItemRow(
-                title: e.value['name'] as String? ?? 'Room ${e.key + 1}',
-                subtitle:
-                    '${e.value['roomType'] ?? ''} · KES ${e.value['basePrice'] ?? 0}',
-                imageCount:
-                    e.key < _roomImages.length ? _roomImages[e.key].length : 0,
-                onDelete: () => _deleteRoom(e.key),
-              )),
+          ..._filteredNestedEntries(_rooms).map((e) {
+            final bedsSummary = RoomModel.bedsSummaryFromMap(e.value);
+            final subtitle = [
+              '${e.value['roomType'] ?? ''}',
+              '${e.value['currency'] ?? 'KES'} ${e.value['basePrice'] ?? 0}',
+              if (bedsSummary.isNotEmpty) bedsSummary,
+            ].join(' · ');
+            return _NestedItemRow(
+              title: e.value['name'] as String? ?? 'Room ${e.key + 1}',
+              subtitle: subtitle,
+              imageCount:
+                  e.key < _roomImages.length ? _roomImages[e.key].length : 0,
+              onDelete: () => _deleteRoom(e.key),
+              onTap: () => _showRoomDialog(
+                  existing: RoomModel.fromMap(e.value), editIndex: e.key),
+            );
+          }),
         ],
       ],
     );
   }
 
-  /// Removes room [index]. Rooms loaded from the API (index < _existingRoomCount)
-  /// are deleted via the API first so the backend and local list stay in sync;
-  /// rooms only added this session are removed locally without an API call
-  /// since nothing has been POSTed for them yet.
+  /// Shifts a dirty-index set down after removing [removedIndex] from its
+  /// backing list, so indices recorded before the removal keep pointing at
+  /// the same logical item afterward.
+  void _reindexAfterRemoval(Set<int> dirtySet, int removedIndex) {
+    final updated = <int>{};
+    for (final i in dirtySet) {
+      if (i == removedIndex) continue;
+      updated.add(i > removedIndex ? i - 1 : i);
+    }
+    dirtySet
+      ..clear()
+      ..addAll(updated);
+  }
+
+  /// Removes room [index]. Rooms already persisted to Firestore (have an
+  /// `id`) are deleted there first — the authoritative store — so it and the
+  /// local list stay in sync; a best-effort REST delete follows unawaited.
+  /// Rooms only added this session (no `id` yet) are removed locally only.
   Future<void> _deleteRoom(int index) async {
-    final isExisting = index < _existingRoomCount;
-    if (isExisting) {
-      final id = _rooms[index]['id'] as String?;
-      if (id != null) {
-        try {
-          await widget.apiService.deleteRoom(id);
-        } catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Failed to delete room: $e'),
-              backgroundColor: Colors.red.shade700,
-              behavior: SnackBarBehavior.floating,
-            ));
-          }
-          return;
+    final map = _rooms[index];
+    final id = map['id'] as String?;
+    if (id != null) {
+      try {
+        await RoomService.delete(id);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Failed to delete room: $e'),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+          ));
         }
+        return;
       }
+      unawaited(BackendRoomSync.pushDeleteSilently(
+          widget.apiService, map['restId'] as String?));
     }
     setState(() {
       _rooms.removeAt(index);
       if (index < _roomImages.length) _roomImages.removeAt(index);
-      if (isExisting) _existingRoomCount--;
+      if (id != null) _existingRoomCount--;
+      _reindexAfterRemoval(_dirtyExistingRoomIndexes, index);
     });
-    if (isExisting && _place != null) {
+    if (id != null && _place != null) {
       await PlaceDetailsService.saveNestedItemImages(_place!.id,
           rooms: _zipNamesImages(_rooms, _roomImages));
     }
   }
 
-  void _showAddRoomDialog() {
-    final nameCtrl = TextEditingController();
-    final priceCtrl = TextEditingController();
-    final guestsCtrl = TextEditingController(text: '2');
-    String roomType = 'DOUBLE';
-    final images = <String>[];
+  // Curated common amenities shown as quick-pick chips; the admin can also
+  // add anything else via the free-text field alongside them.
+  static const _curatedRoomAmenities = [
+    'WiFi',
+    'Air Conditioning',
+    'TV',
+    'Mini Bar',
+    'Safe',
+    'Room Service',
+    'Hair Dryer',
+    'Coffee Maker',
+    'Bathtub',
+    'Iron',
+    'Desk',
+  ];
+
+  void _showRoomDialog({RoomModel? existing, int? editIndex}) {
+    final room = existing ??
+        const RoomModel(name: '', basePrice: 0, beds: [
+          BedModel(bedType: BedType.double_),
+        ]);
+
+    final nameCtrl = TextEditingController(text: room.name);
+    final descriptionCtrl = TextEditingController(text: room.description ?? '');
+    final roomNumberCtrl = TextEditingController(text: room.roomNumber ?? '');
+    final floorCtrl = TextEditingController(text: room.floor?.toString() ?? '');
+    final maxGuestsCtrl = TextEditingController(text: '${room.maxGuests}');
+    final maxAdultsCtrl = TextEditingController(text: '${room.maxAdults}');
+    final maxChildrenCtrl = TextEditingController(text: '${room.maxChildren}');
+    final sizeCtrl =
+        TextEditingController(text: room.sizeSquareMeters?.toString() ?? '');
+    final basePriceCtrl = TextEditingController(
+        text: room.basePrice == 0 ? '' : '${room.basePrice}');
+    final weekendPriceCtrl =
+        TextEditingController(text: room.weekendPrice?.toString() ?? '');
+    final amenityInputCtrl = TextEditingController();
+
+    RoomType roomType = room.roomType;
+    bool hasBalcony = room.hasBalcony;
+    bool hasKitchen = room.hasKitchen;
+    bool hasLivingRoom = room.hasLivingRoom;
+    bool isAvailable = room.isAvailable;
+    String currency = room.currency;
+    final amenities = Set<String>.from(room.amenities);
+    var beds = List<BedModel>.from(room.beds.isEmpty
+        ? const [BedModel(bedType: BedType.double_)]
+        : room.beds);
+    final images = editIndex != null && editIndex < _roomImages.length
+        ? List<String>.from(_roomImages[editIndex])
+        : <String>[];
     bool uploadingImage = false;
 
     showDialog(
       context: context,
       builder: (_) => StatefulBuilder(builder: (ctx, setSt) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF111827),
-          title: const Text('Add Room', style: TextStyle(color: Colors.white)),
-          content: SingleChildScrollView(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-            _SimpleField(
-                ctrl: nameCtrl,
-                label: 'Room Name',
-                hint: 'Deluxe Ocean View Room'),
-            const SizedBox(height: 12),
-            const Text('Room Type',
-                style: TextStyle(color: Colors.white54, fontSize: 12)),
-            const SizedBox(height: 4),
-            _AdminDropdown<String>(
-              value: roomType,
-              items: [
-                'SINGLE',
-                'DOUBLE',
-                'TWIN',
-                'SUITE',
-                'FAMILY',
-                'PENTHOUSE',
-                'VILLA'
-              ].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-              onChanged: (v) => setSt(() => roomType = v ?? 'DOUBLE'),
-            ),
-            const SizedBox(height: 12),
-            _SimpleField(
-                ctrl: guestsCtrl,
-                label: 'Max Guests',
-                hint: '2',
-                keyboardType: TextInputType.number),
-            _SimpleField(
-                ctrl: priceCtrl,
-                label: 'Base Price (KES)',
-                hint: '15000',
-                keyboardType: TextInputType.number),
-            const SizedBox(height: 4),
-            _buildNestedImagePicker(
-              itemType: 'rooms',
-              images: images,
-              uploading: uploadingImage,
-              setSt: setSt,
-              onUploadingChanged: (v) => setSt(() => uploadingImage = v),
-            ),
-          ])),
+          backgroundColor: AdC.surface,
+          title: Text(existing != null ? 'Edit Room' : 'Add Room',
+              style: TextStyle(color: AdC.textPri)),
+          content: SizedBox(
+            width: 480,
+            child: SingleChildScrollView(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text('BASICS',
+                  style: TextStyle(
+                      color: AdC.teal,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6)),
+              const SizedBox(height: 8),
+              _SimpleField(
+                  ctrl: nameCtrl,
+                  label: 'Room Name',
+                  hint: 'Deluxe Ocean View Room'),
+              _SimpleField(
+                  ctrl: descriptionCtrl,
+                  label: 'Description (optional)',
+                  hint: 'Spacious room with panoramic ocean views'),
+              Text('Room Type',
+                  style: TextStyle(color: AdC.textMute, fontSize: 12)),
+              const SizedBox(height: 4),
+              _AdminDropdown<RoomType>(
+                value: roomType,
+                items: RoomType.values
+                    .map(
+                        (t) => DropdownMenuItem(value: t, child: Text(t.label)))
+                    .toList(),
+                onChanged: (v) => setSt(() => roomType = v ?? RoomType.double_),
+              ),
+              const SizedBox(height: 12),
+              Row(children: [
+                Expanded(
+                    child: _SimpleField(
+                        ctrl: roomNumberCtrl,
+                        label: 'Room Number (optional)',
+                        hint: '304')),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: _SimpleField(
+                        ctrl: floorCtrl,
+                        label: 'Floor (optional)',
+                        hint: '3',
+                        keyboardType: TextInputType.number)),
+              ]),
+              const SizedBox(height: 12),
+              Text('CAPACITY & SIZE',
+                  style: TextStyle(
+                      color: AdC.teal,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6)),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                    child: _SimpleField(
+                        ctrl: maxGuestsCtrl,
+                        label: 'Max Guests',
+                        hint: '2',
+                        keyboardType: TextInputType.number)),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: _SimpleField(
+                        ctrl: maxAdultsCtrl,
+                        label: 'Max Adults',
+                        hint: '2',
+                        keyboardType: TextInputType.number)),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: _SimpleField(
+                        ctrl: maxChildrenCtrl,
+                        label: 'Max Children',
+                        hint: '0',
+                        keyboardType: TextInputType.number)),
+              ]),
+              _SimpleField(
+                  ctrl: sizeCtrl,
+                  label: 'Size — m² (optional)',
+                  hint: '32',
+                  keyboardType: TextInputType.number),
+              Text('FEATURES',
+                  style: TextStyle(
+                      color: AdC.teal,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6)),
+              const SizedBox(height: 8),
+              _AdminToggleRow(
+                  label: 'Balcony',
+                  value: hasBalcony,
+                  onChanged: (v) => setSt(() => hasBalcony = v)),
+              _AdminToggleRow(
+                  label: 'Kitchen',
+                  value: hasKitchen,
+                  onChanged: (v) => setSt(() => hasKitchen = v)),
+              _AdminToggleRow(
+                  label: 'Separate Living Room',
+                  value: hasLivingRoom,
+                  onChanged: (v) => setSt(() => hasLivingRoom = v)),
+              const SizedBox(height: 8),
+              Text('AMENITIES',
+                  style: TextStyle(
+                      color: AdC.teal,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children:
+                    {..._curatedRoomAmenities, ...amenities}.toList().map((a) {
+                  final selected = amenities.contains(a);
+                  return FilterChip(
+                    label: Text(a),
+                    selected: selected,
+                    onSelected: (v) => setSt(() {
+                      if (v) {
+                        amenities.add(a);
+                      } else {
+                        amenities.remove(a);
+                      }
+                    }),
+                    selectedColor: AdC.teal.withValues(alpha: 0.2),
+                    checkmarkColor: AdC.teal,
+                    backgroundColor: AdC.bg,
+                    labelStyle: TextStyle(
+                        color: selected ? AdC.teal : AdC.textSec, fontSize: 12),
+                    side: BorderSide(
+                        color: selected
+                            ? AdC.teal.withValues(alpha: 0.5)
+                            : AdC.overlay(0.12)),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                    child: _SimpleField(
+                        ctrl: amenityInputCtrl,
+                        label: 'Add another amenity',
+                        hint: 'Ocean View')),
+                const SizedBox(width: 8),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: TextButton(
+                    onPressed: () {
+                      final v = amenityInputCtrl.text.trim();
+                      if (v.isEmpty) return;
+                      setSt(() {
+                        amenities.add(v);
+                        amenityInputCtrl.clear();
+                      });
+                    },
+                    child: const Text('Add'),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 8),
+              Text('BEDS',
+                  style: TextStyle(
+                      color: AdC.teal,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6)),
+              const SizedBox(height: 8),
+              _BedConfigEditor(
+                beds: beds,
+                onChanged: (v) => setSt(() => beds = v),
+              ),
+              Text('PRICING',
+                  style: TextStyle(
+                      color: AdC.teal,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6)),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                    child: _SimpleField(
+                        ctrl: basePriceCtrl,
+                        label: 'Base Price',
+                        hint: '15000',
+                        keyboardType: TextInputType.number)),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: _SimpleField(
+                        ctrl: weekendPriceCtrl,
+                        label: 'Weekend Price (optional)',
+                        hint: '18000',
+                        keyboardType: TextInputType.number)),
+              ]),
+              _LabeledDropdown(
+                label: 'Currency',
+                value: currency,
+                items: const ['KES', 'USD', 'EUR', 'GBP'],
+                onChanged: (v) => setSt(() => currency = v ?? 'KES'),
+              ),
+              _AdminToggleRow(
+                  label: 'Available for booking',
+                  value: isAvailable,
+                  onChanged: (v) => setSt(() => isAvailable = v)),
+              const SizedBox(height: 4),
+              _buildNestedImagePicker(
+                itemType: 'rooms',
+                images: images,
+                uploading: uploadingImage,
+                setSt: setSt,
+                onUploadingChanged: (v) => setSt(() => uploadingImage = v),
+              ),
+            ])),
+          ),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text('Cancel')),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2196F3)),
+              style: ElevatedButton.styleFrom(backgroundColor: AdC.blue),
               onPressed: () {
                 if (nameCtrl.text.trim().isEmpty ||
-                    priceCtrl.text.trim().isEmpty) {
+                    basePriceCtrl.text.trim().isEmpty) {
                   return;
                 }
+                final built = RoomModel(
+                  name: nameCtrl.text.trim(),
+                  description: descriptionCtrl.text.trim().isEmpty
+                      ? null
+                      : descriptionCtrl.text.trim(),
+                  roomType: roomType,
+                  roomNumber: roomNumberCtrl.text.trim().isEmpty
+                      ? null
+                      : roomNumberCtrl.text.trim(),
+                  floor: int.tryParse(floorCtrl.text),
+                  maxGuests: int.tryParse(maxGuestsCtrl.text) ?? 2,
+                  maxAdults: int.tryParse(maxAdultsCtrl.text) ?? 2,
+                  maxChildren: int.tryParse(maxChildrenCtrl.text) ?? 0,
+                  sizeSquareMeters: double.tryParse(sizeCtrl.text),
+                  hasBalcony: hasBalcony,
+                  hasKitchen: hasKitchen,
+                  hasLivingRoom: hasLivingRoom,
+                  amenities: amenities.toList(),
+                  basePrice: double.tryParse(basePriceCtrl.text) ?? 0,
+                  weekendPrice: double.tryParse(weekendPriceCtrl.text),
+                  currency: currency,
+                  isAvailable: isAvailable,
+                  images: images,
+                  sortOrder: editIndex ?? _rooms.length,
+                  beds: beds,
+                );
                 setState(() {
-                  _rooms.add({
-                    'name': nameCtrl.text.trim(),
-                    'roomType': roomType,
-                    'maxGuests': int.tryParse(guestsCtrl.text) ?? 2,
-                    'maxAdults': int.tryParse(guestsCtrl.text) ?? 2,
-                    'maxChildren': 1,
-                    'beds': [
-                      {'bedType': 'DOUBLE', 'quantity': 1}
-                    ],
-                    'amenities': ['WiFi', 'Air Conditioning'],
-                    'basePrice': double.tryParse(priceCtrl.text) ?? 0,
-                    'currency': 'KES',
-                    'sortOrder': _rooms.length + 1,
-                  });
-                  _roomImages.add(List<String>.from(images));
+                  if (editIndex != null) {
+                    final originalId = _rooms[editIndex]['id'];
+                    final originalPlaceId = _rooms[editIndex]['placeId'];
+                    _rooms[editIndex] = {
+                      if (originalId != null) 'id': originalId,
+                      if (originalPlaceId != null) 'placeId': originalPlaceId,
+                      ...built.toCreateMap(),
+                    };
+                    if (editIndex < _roomImages.length) {
+                      _roomImages[editIndex] = List<String>.from(images);
+                    }
+                    if (editIndex < _existingRoomCount) {
+                      _dirtyExistingRoomIndexes.add(editIndex);
+                    }
+                  } else {
+                    _rooms.add(built.toCreateMap());
+                    _roomImages.add(List<String>.from(images));
+                  }
                 });
                 Navigator.pop(ctx);
               },
-              child: const Text('Add Room'),
+              child: Text(existing != null ? 'Save Room' : 'Add Room'),
             ),
           ],
         );
@@ -2413,23 +2790,42 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     );
   }
 
+  /// A section's stable identifier for selection/filtering purposes — its
+  /// real backend id once persisted, or its client-only `localKey` while
+  /// still unsaved this session (see _showSectionDialog).
+  String? _sectionKey(Map<String, dynamic> section) =>
+      section['id'] as String? ?? section['localKey'] as String?;
+
   Widget _buildMenuEditor() {
+    final selectedSection = _selectedSectionId == null
+        ? null
+        : _menuSections.cast<Map<String, dynamic>?>().firstWhere(
+            (s) => _sectionKey(s!) == _selectedSectionId,
+            orElse: () => null);
+    final itemsInSection = _selectedSectionId == null
+        ? const <MapEntry<int, Map<String, dynamic>>>[]
+        : _menuItems.asMap().entries.where((e) {
+            if (e.value['sectionId'] != _selectedSectionId) return false;
+            final q = _nestedSearchQuery.trim().toLowerCase();
+            if (q.isEmpty) return true;
+            return (e.value['name'] as String? ?? '').toLowerCase().contains(q);
+          }).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(children: [
-          const Expanded(
-              child: Text('Menu Items',
+          Expanded(
+              child: Text('Menu Sections',
                   style: TextStyle(
-                      color: Colors.white70,
+                      color: AdC.textSec,
                       fontSize: 14,
                       fontWeight: FontWeight.w600))),
           TextButton.icon(
-            onPressed: _showAddMenuItemDialog,
-            icon: const Icon(Icons.add_rounded,
-                size: 16, color: Color(0xFF14FFEC)),
-            label: const Text('Add Item',
-                style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+            onPressed: () => _showSectionDialog(),
+            icon: const Icon(Icons.add_rounded, size: 16, color: AdC.teal),
+            label: const Text('Add Section',
+                style: TextStyle(color: AdC.teal, fontSize: 13)),
           ),
         ]),
         const SizedBox(height: 8),
@@ -2437,114 +2833,484 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Center(
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Color(0xFF14FFEC))),
+                child:
+                    CircularProgressIndicator(strokeWidth: 2, color: AdC.teal)),
           )
-        else if (_menuItems.isEmpty)
+        else if (_menuSections.isEmpty)
           _EmptyNestedState(
-              label: 'No menu items added yet', onAdd: _showAddMenuItemDialog)
+              label: 'Add a section first (e.g. Starters, Mains, Desserts)',
+              onAdd: () => _showSectionDialog())
         else ...[
-          if (_menuItems.length > 3)
-            _buildNestedSearchField('Search menu items by name…'),
-          ..._filteredNestedEntries(_menuItems).map((e) => _NestedItemRow(
-                title: e.value['name'] as String? ?? 'Item ${e.key + 1}',
-                subtitle:
-                    '${e.value['mealType'] ?? ''} · KES ${e.value['price'] ?? 0}',
-                imageCount: e.key < _menuItemImages.length
-                    ? _menuItemImages[e.key].length
-                    : 0,
-                onDelete: () => _deleteMenuItem(e.key),
-              )),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _menuSections.asMap().entries.map((e) {
+              final key = _sectionKey(e.value);
+              final count =
+                  _menuItems.where((m) => m['sectionId'] == key).length;
+              return _SectionChip(
+                label: '${e.value['name']} ($count)',
+                selected: key != null && key == _selectedSectionId,
+                onTap: () => setState(() => _selectedSectionId = key),
+                onEdit: () => _showSectionDialog(
+                    existing: MenuSectionModel(
+                      id: e.value['id'] as String?,
+                      placeId: e.value['placeId'] as String?,
+                      name: e.value['name'] as String? ?? '',
+                      description: e.value['description'] as String?,
+                      sortOrder: (e.value['sortOrder'] as num?)?.toInt() ?? 0,
+                    ),
+                    editIndex: e.key),
+                onDelete: () => _deleteSection(e.key),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 16),
+          if (selectedSection != null) ...[
+            Row(children: [
+              Expanded(
+                  child: Text('Items in "${selectedSection['name']}"',
+                      style: TextStyle(
+                          color: AdC.textSec,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600))),
+              TextButton.icon(
+                onPressed: () => _showMenuItemDialog(),
+                icon: const Icon(Icons.add_rounded, size: 16, color: AdC.teal),
+                label: const Text('Add Item',
+                    style: TextStyle(color: AdC.teal, fontSize: 13)),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            if (itemsInSection.isEmpty)
+              _EmptyNestedState(
+                  label: 'No items in this section yet',
+                  onAdd: () => _showMenuItemDialog())
+            else ...[
+              if (_menuItems.length > 3)
+                _buildNestedSearchField('Search menu items by name…'),
+              ...itemsInSection.map((e) {
+                final dietary = MenuItemModel.dietarySummaryFromMap(e.value);
+                final subtitle = [
+                  '${e.value['mealType'] ?? ''}',
+                  '${e.value['currency'] ?? 'KES'} ${e.value['price'] ?? 0}',
+                  if (dietary.isNotEmpty) dietary,
+                ].join(' · ');
+                return _NestedItemRow(
+                  title: e.value['name'] as String? ?? 'Item ${e.key + 1}',
+                  subtitle: subtitle,
+                  imageCount: e.key < _menuItemImages.length
+                      ? _menuItemImages[e.key].length
+                      : 0,
+                  onDelete: () => _deleteMenuItem(e.key),
+                  onTap: () => _showMenuItemDialog(
+                      existing: MenuItemModel.fromMap(e.value),
+                      editIndex: e.key),
+                );
+              }),
+            ],
+          ],
         ],
       ],
     );
   }
 
-  /// Removes menu item [index]. See _deleteRoom for the existing-vs-new logic.
-  /// Menu items created earlier this session (already POSTed but without a
-  /// known id, since createMenuItems returns void) are removed locally only —
-  /// they'll be visible again as "existing" the next time this place is
-  /// reopened, when _loadExistingNestedData fetches real ids.
-  Future<void> _deleteMenuItem(int index) async {
-    final isExisting = index < _existingMenuItemCount;
-    if (isExisting) {
-      final id = _menuItems[index]['id'] as String?;
-      if (id != null) {
-        try {
-          await widget.apiService.deleteMenuItem(id);
-        } catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Failed to delete menu item: $e'),
-              backgroundColor: Colors.red.shade700,
-              behavior: SnackBarBehavior.floating,
-            ));
-          }
-          return;
+  void _showSectionDialog({MenuSectionModel? existing, int? editIndex}) {
+    final section = existing ?? const MenuSectionModel(name: '');
+    final nameCtrl = TextEditingController(text: section.name);
+    final descCtrl = TextEditingController(text: section.description ?? '');
+    final sortCtrl = TextEditingController(text: '${section.sortOrder}');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AdC.surface,
+        title: Text(existing != null ? 'Edit Section' : 'Add Section',
+            style: TextStyle(color: AdC.textPri)),
+        content: SizedBox(
+          width: 360,
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              _SimpleField(
+                  ctrl: nameCtrl, label: 'Section Name', hint: 'Starters'),
+              _SimpleField(
+                  ctrl: descCtrl,
+                  label: 'Description (optional)',
+                  hint: 'Small dishes to start your meal'),
+              _SimpleField(
+                  ctrl: sortCtrl,
+                  label: 'Sort Order',
+                  hint: '1',
+                  keyboardType: TextInputType.number),
+            ]),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFF50057)),
+            onPressed: () {
+              if (nameCtrl.text.trim().isEmpty) return;
+              final built = MenuSectionModel(
+                name: nameCtrl.text.trim(),
+                description:
+                    descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
+                sortOrder: int.tryParse(sortCtrl.text) ?? 0,
+              );
+              setState(() {
+                if (editIndex != null) {
+                  final originalId = _menuSections[editIndex]['id'];
+                  final originalPlaceId = _menuSections[editIndex]['placeId'];
+                  final originalLocalKey = _menuSections[editIndex]['localKey'];
+                  _menuSections[editIndex] = {
+                    if (originalId != null) 'id': originalId,
+                    if (originalPlaceId != null) 'placeId': originalPlaceId,
+                    if (originalLocalKey != null) 'localKey': originalLocalKey,
+                    ...built.toCreateMap(),
+                  };
+                  if (editIndex < _existingSectionCount) {
+                    _dirtyExistingSectionIndexes.add(editIndex);
+                  }
+                } else {
+                  final localKey = 'local_${_localSectionSeq++}';
+                  _menuSections.add({
+                    'localKey': localKey,
+                    ...built.toCreateMap(),
+                  });
+                  _selectedSectionId = localKey;
+                }
+              });
+              Navigator.pop(ctx);
+            },
+            child: Text(existing != null ? 'Save' : 'Add Section'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Removes section [index]. Blocked (locally, mirroring the backend's own
+  /// 409 rule) while any menu item still references it — the admin must move
+  /// or delete those items first, so nothing is orphaned.
+  Future<void> _deleteSection(int index) async {
+    final key = _sectionKey(_menuSections[index]);
+    final hasItems = _menuItems.any((m) => m['sectionId'] == key);
+    if (hasItems) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Move or delete this section\'s items first.'),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      return;
+    }
+    final map = _menuSections[index];
+    final id = map['id'] as String?;
+    if (id != null) {
+      try {
+        await MenuService.deleteSection(id);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Failed to delete section: $e'),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+          ));
         }
+        return;
+      }
+      if (_place != null) {
+        unawaited(BackendMenuSync.pushDeleteSectionSilently(
+            widget.apiService, _place!.id, map['restId'] as String?));
+      }
+    }
+    setState(() {
+      _menuSections.removeAt(index);
+      if (id != null) _existingSectionCount--;
+      _reindexAfterRemoval(_dirtyExistingSectionIndexes, index);
+      if (_selectedSectionId == key) {
+        _selectedSectionId =
+            _menuSections.isNotEmpty ? _sectionKey(_menuSections.first) : null;
+      }
+    });
+  }
+
+  /// Removes menu item [index]. See _deleteRoom for the existing-vs-new logic.
+  Future<void> _deleteMenuItem(int index) async {
+    final map = _menuItems[index];
+    final id = map['id'] as String?;
+    final sectionId = map['sectionId'] as String?;
+    if (id != null) {
+      try {
+        await MenuService.deleteItem(id);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Failed to delete menu item: $e'),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+          ));
+        }
+        return;
+      }
+      if (_place != null && sectionId != null) {
+        final section = _menuSections.firstWhere((s) => s['id'] == sectionId,
+            orElse: () => const <String, dynamic>{});
+        unawaited(BackendMenuSync.pushDeleteItemSilently(
+            widget.apiService,
+            _place!.id,
+            section['restId'] as String?,
+            map['restId'] as String?));
       }
     }
     setState(() {
       _menuItems.removeAt(index);
       if (index < _menuItemImages.length) _menuItemImages.removeAt(index);
-      if (isExisting) _existingMenuItemCount--;
+      if (id != null) _existingMenuItemCount--;
+      _dirtyExistingMenuItemIndexes.remove(index);
+      _reindexAfterRemoval(_dirtyExistingMenuItemIndexes, index);
     });
-    if (isExisting && _place != null) {
+    if (id != null && _place != null) {
       await PlaceDetailsService.saveNestedItemImages(_place!.id,
           menuItems: _zipNamesImages(_menuItems, _menuItemImages));
     }
   }
 
-  void _showAddMenuItemDialog() {
-    final nameCtrl = TextEditingController();
-    final priceCtrl = TextEditingController();
-    String mealType = 'LUNCH';
-    final images = <String>[];
+  void _showMenuItemDialog({MenuItemModel? existing, int? editIndex}) {
+    if (_selectedSectionId == null) return;
+    final item = existing ?? MenuItemModel(name: '', price: 0);
+
+    final nameCtrl = TextEditingController(text: item.name);
+    final descriptionCtrl = TextEditingController(text: item.description ?? '');
+    final prepTimeCtrl =
+        TextEditingController(text: item.prepTime?.toString() ?? '');
+    final caloriesCtrl =
+        TextEditingController(text: item.calories?.toString() ?? '');
+    final servingSizeCtrl = TextEditingController(text: item.servingSize ?? '');
+    final priceCtrl =
+        TextEditingController(text: item.price == 0 ? '' : '${item.price}');
+    final ingredientInputCtrl = TextEditingController();
+    final allergenInputCtrl = TextEditingController();
+
+    DiningCategory? category = item.category;
+    MealType mealType = item.mealType;
+    CuisineType? cuisineType = item.cuisineType;
+    int spicyLevel = item.spicyLevel;
+    bool isVegetarian = item.isVegetarian;
+    bool isVegan = item.isVegan;
+    bool isGlutenFree = item.isGlutenFree;
+    bool isAvailable = item.isAvailable;
+    bool isSignatureDish = item.isSignatureDish;
+    bool isChefSpecial = item.isChefSpecial;
+    bool isSeasonalDish = item.isSeasonalDish;
+    String currency = item.currency;
+    final dietaryOptions = Set<DietaryOption>.from(item.dietaryOptions);
+    final ingredients = List<String>.from(item.ingredients);
+    final allergens = List<String>.from(item.allergens);
+    final images = editIndex != null && editIndex < _menuItemImages.length
+        ? List<String>.from(_menuItemImages[editIndex])
+        : <String>[];
     bool uploadingImage = false;
 
     showDialog(
       context: context,
       builder: (_) => StatefulBuilder(builder: (ctx, setSt) {
+        Widget sectionLabel(String text) => Text(text,
+            style: TextStyle(
+                color: AdC.teal,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6));
+
         return AlertDialog(
-          backgroundColor: const Color(0xFF111827),
-          title: const Text('Add Menu Item',
-              style: TextStyle(color: Colors.white)),
-          content: SingleChildScrollView(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-            _SimpleField(
-                ctrl: nameCtrl, label: 'Item Name', hint: 'Grilled Lobster'),
-            const SizedBox(height: 12),
-            const Text('Meal Type',
-                style: TextStyle(color: Colors.white54, fontSize: 12)),
-            const SizedBox(height: 4),
-            _AdminDropdown<String>(
-              value: mealType,
-              items: [
-                'BREAKFAST',
-                'LUNCH',
-                'DINNER',
-                'BRUNCH',
-                'SNACK',
-                'DESSERT',
-                'BEVERAGE'
-              ].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-              onChanged: (v) => setSt(() => mealType = v ?? 'LUNCH'),
-            ),
-            const SizedBox(height: 12),
-            _SimpleField(
-                ctrl: priceCtrl,
-                label: 'Price (KES)',
-                hint: '1500',
-                keyboardType: TextInputType.number),
-            const SizedBox(height: 4),
-            _buildNestedImagePicker(
-              itemType: 'menu-items',
-              images: images,
-              uploading: uploadingImage,
-              setSt: setSt,
-              onUploadingChanged: (v) => setSt(() => uploadingImage = v),
-            ),
-          ])),
+          backgroundColor: AdC.surface,
+          title: Text(existing != null ? 'Edit Menu Item' : 'Add Menu Item',
+              style: TextStyle(color: AdC.textPri)),
+          content: SizedBox(
+            width: 480,
+            child: SingleChildScrollView(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+              sectionLabel('BASICS'),
+              const SizedBox(height: 8),
+              _SimpleField(
+                  ctrl: nameCtrl, label: 'Item Name', hint: 'Grilled Lobster'),
+              _SimpleField(
+                  ctrl: descriptionCtrl,
+                  label: 'Description (optional)',
+                  hint: 'Fresh lobster grilled with garlic butter'),
+              _LabeledDropdown(
+                label: 'Meal Type',
+                value: mealType.wireValue,
+                items: MealType.values.map((m) => m.wireValue).toList(),
+                onChanged: (v) => setSt(() => mealType = MealType.fromWire(v)),
+              ),
+              Text('Category (optional)',
+                  style: TextStyle(color: AdC.textMute, fontSize: 12)),
+              const SizedBox(height: 4),
+              _AdminDropdown<DiningCategory?>(
+                value: category,
+                hint: 'None',
+                items: DiningCategory.values
+                    .map(
+                        (c) => DropdownMenuItem(value: c, child: Text(c.label)))
+                    .toList(),
+                onChanged: (v) => setSt(() => category = v),
+              ),
+              const SizedBox(height: 12),
+              Text('Cuisine (optional)',
+                  style: TextStyle(color: AdC.textMute, fontSize: 12)),
+              const SizedBox(height: 4),
+              _AdminDropdown<CuisineType?>(
+                value: cuisineType,
+                hint: 'None',
+                items: CuisineType.values
+                    .map(
+                        (c) => DropdownMenuItem(value: c, child: Text(c.label)))
+                    .toList(),
+                onChanged: (v) => setSt(() => cuisineType = v),
+              ),
+              const SizedBox(height: 12),
+              sectionLabel('DIETARY'),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: DietaryOption.values.map((d) {
+                  final selected = dietaryOptions.contains(d);
+                  return FilterChip(
+                    label: Text(d.label),
+                    selected: selected,
+                    onSelected: (v) => setSt(() {
+                      if (v) {
+                        dietaryOptions.add(d);
+                      } else {
+                        dietaryOptions.remove(d);
+                      }
+                    }),
+                    selectedColor: AdC.teal.withValues(alpha: 0.2),
+                    checkmarkColor: AdC.teal,
+                    backgroundColor: AdC.bg,
+                    labelStyle: TextStyle(
+                        color: selected ? AdC.teal : AdC.textSec, fontSize: 12),
+                    side: BorderSide(
+                        color: selected
+                            ? AdC.teal.withValues(alpha: 0.5)
+                            : AdC.overlay(0.12)),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 8),
+              _AdminToggleRow(
+                  label: 'Vegetarian',
+                  value: isVegetarian,
+                  onChanged: (v) => setSt(() => isVegetarian = v)),
+              _AdminToggleRow(
+                  label: 'Vegan',
+                  value: isVegan,
+                  onChanged: (v) => setSt(() => isVegan = v)),
+              _AdminToggleRow(
+                  label: 'Gluten-Free',
+                  value: isGlutenFree,
+                  onChanged: (v) => setSt(() => isGlutenFree = v)),
+              Text('Spicy Level',
+                  style: TextStyle(color: AdC.textMute, fontSize: 12)),
+              const SizedBox(height: 4),
+              _AdminDropdown<int>(
+                value: spicyLevel,
+                items: List.generate(
+                    6,
+                    (n) => DropdownMenuItem(
+                        value: n,
+                        child: Text(n == 0 ? '0 (Not spicy)' : '$n'))),
+                onChanged: (v) => setSt(() => spicyLevel = v ?? 0),
+              ),
+              const SizedBox(height: 12),
+              _TagListEditor(
+                label: 'Allergens',
+                tags: allergens,
+                inputCtrl: allergenInputCtrl,
+                hint: 'Gluten',
+                onChanged: (v) => setSt(() {
+                  allergens
+                    ..clear()
+                    ..addAll(v);
+                }),
+              ),
+              sectionLabel('DETAILS'),
+              const SizedBox(height: 8),
+              _TagListEditor(
+                label: 'Ingredients',
+                tags: ingredients,
+                inputCtrl: ingredientInputCtrl,
+                hint: 'Garlic butter',
+                onChanged: (v) => setSt(() {
+                  ingredients
+                    ..clear()
+                    ..addAll(v);
+                }),
+              ),
+              Row(children: [
+                Expanded(
+                    child: _SimpleField(
+                        ctrl: prepTimeCtrl,
+                        label: 'Prep Time — min (optional)',
+                        hint: '15',
+                        keyboardType: TextInputType.number)),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: _SimpleField(
+                        ctrl: caloriesCtrl,
+                        label: 'Calories (optional)',
+                        hint: '320',
+                        keyboardType: TextInputType.number)),
+              ]),
+              _SimpleField(
+                  ctrl: servingSizeCtrl,
+                  label: 'Serving Size (optional)',
+                  hint: '4 pieces'),
+              sectionLabel('PRICING'),
+              const SizedBox(height: 8),
+              _SimpleField(
+                  ctrl: priceCtrl,
+                  label: 'Price',
+                  hint: '850',
+                  keyboardType: TextInputType.number),
+              _LabeledDropdown(
+                label: 'Currency',
+                value: currency,
+                items: const ['KES', 'USD', 'EUR', 'GBP'],
+                onChanged: (v) => setSt(() => currency = v ?? 'KES'),
+              ),
+              sectionLabel('FLAGS'),
+              const SizedBox(height: 8),
+              _AdminToggleRow(
+                  label: 'Signature Dish',
+                  value: isSignatureDish,
+                  onChanged: (v) => setSt(() => isSignatureDish = v)),
+              _AdminToggleRow(
+                  label: "Chef's Special",
+                  value: isChefSpecial,
+                  onChanged: (v) => setSt(() => isChefSpecial = v)),
+              _AdminToggleRow(
+                  label: 'Seasonal Dish',
+                  value: isSeasonalDish,
+                  onChanged: (v) => setSt(() => isSeasonalDish = v)),
+              _AdminToggleRow(
+                  label: 'Available',
+                  value: isAvailable,
+                  onChanged: (v) => setSt(() => isAvailable = v)),
+              const SizedBox(height: 4),
+              _buildNestedImagePicker(
+                itemType: 'menu-items',
+                images: images,
+                uploading: uploadingImage,
+                setSt: setSt,
+                onUploadingChanged: (v) => setSt(() => uploadingImage = v),
+              ),
+            ])),
+          ),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx),
@@ -2557,20 +3323,63 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                     priceCtrl.text.trim().isEmpty) {
                   return;
                 }
+                final built = MenuItemModel(
+                  sectionId: _selectedSectionId,
+                  name: nameCtrl.text.trim(),
+                  description: descriptionCtrl.text.trim().isEmpty
+                      ? null
+                      : descriptionCtrl.text.trim(),
+                  category: category,
+                  mealType: mealType,
+                  cuisineType: cuisineType,
+                  ingredients: ingredients,
+                  allergens: allergens,
+                  dietaryOptions: dietaryOptions.toList(),
+                  spicyLevel: spicyLevel,
+                  isVegetarian: isVegetarian,
+                  isVegan: isVegan,
+                  isGlutenFree: isGlutenFree,
+                  prepTime: int.tryParse(prepTimeCtrl.text),
+                  calories: int.tryParse(caloriesCtrl.text),
+                  servingSize: servingSizeCtrl.text.trim().isEmpty
+                      ? null
+                      : servingSizeCtrl.text.trim(),
+                  price: double.tryParse(priceCtrl.text) ?? 0,
+                  currency: currency,
+                  isAvailable: isAvailable,
+                  isSignatureDish: isSignatureDish,
+                  isChefSpecial: isChefSpecial,
+                  isSeasonalDish: isSeasonalDish,
+                  images: images,
+                  sortOrder: editIndex ?? _menuItems.length,
+                );
                 setState(() {
-                  _menuItems.add({
-                    'name': nameCtrl.text.trim(),
-                    'mealType': mealType,
-                    'price': double.tryParse(priceCtrl.text) ?? 0,
-                    'currency': 'KES',
-                    'isAvailable': true,
-                    'sortOrder': _menuItems.length + 1,
-                  });
-                  _menuItemImages.add(List<String>.from(images));
+                  if (editIndex != null) {
+                    final originalId = _menuItems[editIndex]['id'];
+                    final originalPlaceId = _menuItems[editIndex]['placeId'];
+                    _menuItems[editIndex] = {
+                      if (originalId != null) 'id': originalId,
+                      if (originalPlaceId != null) 'placeId': originalPlaceId,
+                      ...built.toCreateMap(),
+                      'sectionId': _selectedSectionId,
+                    };
+                    if (editIndex < _menuItemImages.length) {
+                      _menuItemImages[editIndex] = List<String>.from(images);
+                    }
+                    if (editIndex < _existingMenuItemCount) {
+                      _dirtyExistingMenuItemIndexes.add(editIndex);
+                    }
+                  } else {
+                    _menuItems.add({
+                      ...built.toCreateMap(),
+                      'sectionId': _selectedSectionId,
+                    });
+                    _menuItemImages.add(List<String>.from(images));
+                  }
                 });
                 Navigator.pop(ctx);
               },
-              child: const Text('Add Item'),
+              child: Text(existing != null ? 'Save Item' : 'Add Item'),
             ),
           ],
         );
@@ -2582,18 +3391,17 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Expanded(
+            Expanded(
                 child: Text('Shows / Events',
                     style: TextStyle(
-                        color: Colors.white70,
+                        color: AdC.textSec,
                         fontSize: 14,
                         fontWeight: FontWeight.w600))),
             TextButton.icon(
               onPressed: _showAddShowDialog,
-              icon: const Icon(Icons.add_rounded,
-                  size: 16, color: Color(0xFF14FFEC)),
+              icon: const Icon(Icons.add_rounded, size: 16, color: AdC.teal),
               label: const Text('Add Show',
-                  style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+                  style: TextStyle(color: AdC.teal, fontSize: 13)),
             ),
           ]),
           if (_loadingNestedData)
@@ -2601,7 +3409,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
               padding: EdgeInsets.symmetric(vertical: 16),
               child: Center(
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Color(0xFF14FFEC))),
+                      strokeWidth: 2, color: AdC.teal)),
             )
           else if (_shows.isEmpty)
             _EmptyNestedState(
@@ -2638,8 +3446,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       context: context,
       builder: (_) => StatefulBuilder(builder: (ctx, setSt) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF111827),
-          title: const Text('Add Show', style: TextStyle(color: Colors.white)),
+          backgroundColor: AdC.surface,
+          title: Text('Add Show', style: TextStyle(color: AdC.textPri)),
           content: SingleChildScrollView(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
             _SimpleField(
@@ -2647,8 +3455,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                 label: 'Show Name',
                 hint: 'Sunset Beach Concert'),
             const SizedBox(height: 12),
-            const Text('Category',
-                style: TextStyle(color: Colors.white54, fontSize: 12)),
+            Text('Category',
+                style: TextStyle(color: AdC.textMute, fontSize: 12)),
             const SizedBox(height: 4),
             _AdminDropdown<String>(
               value: category,
@@ -2687,8 +3495,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text('Cancel')),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2196F3)),
+              style: ElevatedButton.styleFrom(backgroundColor: AdC.blue),
               onPressed: () {
                 if (nameCtrl.text.trim().isEmpty) return;
                 setState(() {
@@ -2716,18 +3523,17 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Expanded(
+            Expanded(
                 child: Text('Exhibitions',
                     style: TextStyle(
-                        color: Colors.white70,
+                        color: AdC.textSec,
                         fontSize: 14,
                         fontWeight: FontWeight.w600))),
             TextButton.icon(
               onPressed: _showAddExhibitionDialog,
-              icon: const Icon(Icons.add_rounded,
-                  size: 16, color: Color(0xFF14FFEC)),
+              icon: const Icon(Icons.add_rounded, size: 16, color: AdC.teal),
               label: const Text('Add Exhibition',
-                  style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+                  style: TextStyle(color: AdC.teal, fontSize: 13)),
             ),
           ]),
           if (_loadingNestedData)
@@ -2735,7 +3541,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
               padding: EdgeInsets.symmetric(vertical: 16),
               child: Center(
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Color(0xFF14FFEC))),
+                      strokeWidth: 2, color: AdC.teal)),
             )
           else if (_exhibitions.isEmpty)
             _EmptyNestedState(
@@ -2773,9 +3579,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       context: context,
       builder: (_) => StatefulBuilder(builder: (ctx, setSt) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF111827),
-          title: const Text('Add Exhibition',
-              style: TextStyle(color: Colors.white)),
+          backgroundColor: AdC.surface,
+          title: Text('Add Exhibition', style: TextStyle(color: AdC.textPri)),
           content: SingleChildScrollView(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
             _SimpleField(
@@ -2801,8 +3606,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text('Cancel')),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2196F3)),
+              style: ElevatedButton.styleFrom(backgroundColor: AdC.blue),
               onPressed: () {
                 if (nameCtrl.text.trim().isEmpty) return;
                 setState(() {
@@ -2827,18 +3631,17 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Expanded(
+            Expanded(
                 child: Text('Artifacts',
                     style: TextStyle(
-                        color: Colors.white70,
+                        color: AdC.textSec,
                         fontSize: 14,
                         fontWeight: FontWeight.w600))),
             TextButton.icon(
               onPressed: _showAddArtifactDialog,
-              icon: const Icon(Icons.add_rounded,
-                  size: 16, color: Color(0xFF14FFEC)),
+              icon: const Icon(Icons.add_rounded, size: 16, color: AdC.teal),
               label: const Text('Add Artifact',
-                  style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+                  style: TextStyle(color: AdC.teal, fontSize: 13)),
             ),
           ]),
           if (_loadingNestedData)
@@ -2846,7 +3649,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
               padding: EdgeInsets.symmetric(vertical: 16),
               child: Center(
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Color(0xFF14FFEC))),
+                      strokeWidth: 2, color: AdC.teal)),
             )
           else if (_artifacts.isEmpty)
             _EmptyNestedState(
@@ -2883,9 +3686,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       context: context,
       builder: (_) => StatefulBuilder(builder: (ctx, setSt) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF111827),
-          title:
-              const Text('Add Artifact', style: TextStyle(color: Colors.white)),
+          backgroundColor: AdC.surface,
+          title: Text('Add Artifact', style: TextStyle(color: AdC.textPri)),
           content: SingleChildScrollView(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
             _SimpleField(
@@ -2911,8 +3713,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text('Cancel')),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2196F3)),
+              style: ElevatedButton.styleFrom(backgroundColor: AdC.blue),
               onPressed: () {
                 if (nameCtrl.text.trim().isEmpty) return;
                 setState(() {
@@ -2941,15 +3742,12 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // ── Cover Image ──────────────────────────────────────────────────
-        const Text('Cover Image',
+        Text('Cover Image',
             style: TextStyle(
-                color: Colors.white70,
-                fontSize: 13,
-                fontWeight: FontWeight.w500)),
+                color: AdC.textSec, fontSize: 13, fontWeight: FontWeight.w500)),
         const SizedBox(height: 4),
-        const Text(
-            'Main image shown on place cards. Upload a photo or paste a URL.',
-            style: TextStyle(color: Colors.white38, fontSize: 11)),
+        Text('Main image shown on place cards. Upload a photo or paste a URL.',
+            style: TextStyle(color: AdC.textMute, fontSize: 11)),
         const SizedBox(height: 10),
 
         // Preview + upload zone
@@ -2976,15 +3774,13 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         const SizedBox(height: 20),
 
         // ── Gallery Images ───────────────────────────────────────────────
-        const Text('Gallery Images',
+        Text('Gallery Images',
             style: TextStyle(
-                color: Colors.white70,
-                fontSize: 13,
-                fontWeight: FontWeight.w500)),
+                color: AdC.textSec, fontSize: 13, fontWeight: FontWeight.w500)),
         const SizedBox(height: 4),
-        const Text(
+        Text(
             'Upload additional photos — the first slot is the primary gallery image.',
-            style: TextStyle(color: Colors.white38, fontSize: 11)),
+            style: TextStyle(color: AdC.textMute, fontSize: 11)),
         const SizedBox(height: 10),
 
         // Gallery slots
@@ -2999,8 +3795,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                   children: [
                     Text(
                       i == 0 ? 'Image 1 — Primary' : 'Image ${i + 1}',
-                      style:
-                          const TextStyle(color: Colors.white54, fontSize: 12),
+                      style: TextStyle(color: AdC.textMute, fontSize: 12),
                     ),
                     const Spacer(),
                     // Remove button — only shown when more than one slot
@@ -3045,17 +3840,13 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           icon: Icon(
             Icons.add_photo_alternate_outlined,
             size: 16,
-            color: (_saving || anyUploading)
-                ? Colors.white24
-                : const Color(0xFF14FFEC),
+            color: (_saving || anyUploading) ? AdC.textMute : AdC.teal,
           ),
           label: Text(
             'Add another image',
             style: TextStyle(
               fontSize: 13,
-              color: (_saving || anyUploading)
-                  ? Colors.white24
-                  : const Color(0xFF14FFEC),
+              color: (_saving || anyUploading) ? AdC.textMute : AdC.teal,
             ),
           ),
         ),
@@ -3091,10 +3882,10 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                     size: 20,
                   ),
                   const SizedBox(width: 10),
-                  const Expanded(
+                  Expanded(
                     child: Text('Enable Booking',
                         style: TextStyle(
-                            color: Colors.white,
+                            color: AdC.textPri,
                             fontSize: 15,
                             fontWeight: FontWeight.w700)),
                   ),
@@ -3120,10 +3911,10 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
             ),
           ),
           if (_isBookable) ...[
-            const Divider(color: Colors.white12, height: 24),
-            const Text('Pricing',
+            Divider(color: AdC.overlay(0.12), height: 24),
+            Text('Pricing',
                 style: TextStyle(
-                    color: Colors.white54, fontSize: 12, letterSpacing: 1)),
+                    color: AdC.textMute, fontSize: 12, letterSpacing: 1)),
             const SizedBox(height: 10),
             Row(children: [
               Expanded(
@@ -3166,7 +3957,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                   setState(() => _cancellationPolicy = v ?? 'flexible'),
             ),
           ],
-          const Divider(color: Colors.white12, height: 24),
+          Divider(color: AdC.overlay(0.12), height: 24),
           _buildPaymentMethodsSection(),
         ],
       );
@@ -3176,31 +3967,31 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Accepted Payment Methods',
-            style: TextStyle(
-                color: Colors.white54, fontSize: 12, letterSpacing: 1)),
+        Text('Accepted Payment Methods',
+            style:
+                TextStyle(color: AdC.textMute, fontSize: 12, letterSpacing: 1)),
         const SizedBox(height: 4),
-        const Text('Which payment options can customers use at this place?',
-            style: TextStyle(color: Colors.white38, fontSize: 11)),
+        Text('Which payment options can customers use at this place?',
+            style: TextStyle(color: AdC.textMute, fontSize: 11)),
         const SizedBox(height: 10),
         if (_loadingPaymentMethods)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Center(
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Color(0xFF14FFEC))),
+                child:
+                    CircularProgressIndicator(strokeWidth: 2, color: AdC.teal)),
           )
         else if (_paymentMethods.isEmpty)
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.03),
+              color: AdC.overlay(0.03),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.white12),
+              border: Border.all(color: AdC.overlay(0.12)),
             ),
-            child: const Text(
+            child: Text(
                 'No payment methods configured yet. Add some from the Payment Methods section of the admin dashboard.',
-                style: TextStyle(color: Colors.white38, fontSize: 12)),
+                style: TextStyle(color: AdC.textMute, fontSize: 12)),
           )
         else
           Wrap(
@@ -3221,16 +4012,15 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                     _selectedPaymentMethodIds.remove(m.id);
                   }
                 }),
-                selectedColor: const Color(0xFF14FFEC).withValues(alpha: 0.2),
-                checkmarkColor: const Color(0xFF14FFEC),
-                backgroundColor: const Color(0xFF0D1117),
+                selectedColor: AdC.teal.withValues(alpha: 0.2),
+                checkmarkColor: AdC.teal,
+                backgroundColor: AdC.bg,
                 labelStyle: TextStyle(
-                    color: selected ? const Color(0xFF14FFEC) : Colors.white70,
-                    fontSize: 12),
+                    color: selected ? AdC.teal : AdC.textSec, fontSize: 12),
                 side: BorderSide(
                     color: selected
-                        ? const Color(0xFF14FFEC).withValues(alpha: 0.5)
-                        : Colors.white12),
+                        ? AdC.teal.withValues(alpha: 0.5)
+                        : AdC.overlay(0.12)),
               );
             }).toList(),
           ),
@@ -3247,20 +4037,17 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: const Color(0xFF0D1117),
+            color: AdC.bg,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-                color: const Color(0xFF2196F3).withValues(alpha: 0.3)),
+            border: Border.all(color: AdC.blue.withValues(alpha: 0.3)),
           ),
-          child: const Row(children: [
-            Icon(Icons.info_outline_rounded,
-                color: Color(0xFF2196F3), size: 14),
-            SizedBox(width: 8),
+          child: Row(children: [
+            const Icon(Icons.info_outline_rounded, color: AdC.blue, size: 14),
+            const SizedBox(width: 8),
             Expanded(
-                child: Text(
-                    'Select every category this place offers. A hotel that offers accommodation AND dining AND wellness should have all three selected.',
+                child: Text(context.tr('admin_wizard_categories_info'),
                     style: TextStyle(
-                        color: Colors.white54, fontSize: 12, height: 1.4))),
+                        color: AdC.textMute, fontSize: 12, height: 1.4))),
           ]),
         ),
         const SizedBox(height: 20),
@@ -3275,12 +4062,12 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFF111827),
+              color: AdC.surface,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
                   color: anySelected
-                      ? const Color(0xFF2196F3).withValues(alpha: 0.4)
-                      : Colors.white12),
+                      ? AdC.blue.withValues(alpha: 0.4)
+                      : AdC.overlay(0.12)),
             ),
             child: Material(
               color: Colors.transparent,
@@ -3297,14 +4084,14 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                       ),
                     Expanded(
                       child: Text(root.name,
-                          style: const TextStyle(
-                              color: Colors.white,
+                          style: TextStyle(
+                              color: AdC.textPri,
                               fontWeight: FontWeight.w600,
                               fontSize: 14)),
                     ),
                     Checkbox(
                       value: _selectedCategoryIds.contains(root.id),
-                      activeColor: const Color(0xFF2196F3),
+                      activeColor: AdC.blue,
                       checkColor: Colors.white,
                       onChanged: (v) => setState(() {
                         if (v == true) {
@@ -3320,16 +4107,16 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                     const SizedBox(height: 4),
                     ...childrenOfRoot.map((child) => Row(children: [
                           const SizedBox(width: 24),
-                          const Icon(Icons.subdirectory_arrow_right_rounded,
-                              color: Colors.white24, size: 14),
+                          Icon(Icons.subdirectory_arrow_right_rounded,
+                              color: AdC.textMute, size: 14),
                           const SizedBox(width: 4),
                           Expanded(
                               child: Text(child.name,
-                                  style: const TextStyle(
-                                      color: Colors.white54, fontSize: 13))),
+                                  style: TextStyle(
+                                      color: AdC.textMute, fontSize: 13))),
                           Checkbox(
                             value: _selectedCategoryIds.contains(child.id),
-                            activeColor: const Color(0xFF2196F3),
+                            activeColor: AdC.blue,
                             checkColor: Colors.white,
                             onChanged: (v) => setState(() {
                               if (v == true) {
@@ -3349,8 +4136,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         if (_selectedCategoryIds.isNotEmpty) ...[
           const SizedBox(height: 8),
           Text(
-              '${_selectedCategoryIds.length} categor${_selectedCategoryIds.length == 1 ? 'y' : 'ies'} selected',
-              style: const TextStyle(color: Color(0xFF14FFEC), fontSize: 12)),
+              '${_selectedCategoryIds.length} ${_selectedCategoryIds.length == 1 ? context.tr('admin_wizard_category_selected_singular') : context.tr('admin_wizard_category_selected_plural')}',
+              style: const TextStyle(color: AdC.teal, fontSize: 12)),
         ],
       ],
     );
@@ -3372,12 +4159,11 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
             const SizedBox(
               width: 40,
               height: 40,
-              child: CircularProgressIndicator(
-                  strokeWidth: 3, color: Color(0xFF14FFEC)),
+              child: CircularProgressIndicator(strokeWidth: 3, color: AdC.teal),
             ),
             const SizedBox(height: 16),
-            const Text('Checking required fields…',
-                style: TextStyle(color: Colors.white54, fontSize: 13)),
+            Text('Checking required fields…',
+                style: TextStyle(color: AdC.textMute, fontSize: 13)),
           ],
         ),
       );
@@ -3391,24 +4177,23 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: const Color(0xFF111827),
+              color: AdC.surface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white12),
+              border: Border.all(color: AdC.overlay(0.12)),
             ),
             child: Column(children: [
-              const Icon(Icons.fact_check_rounded,
-                  color: Color(0xFF14FFEC), size: 44),
+              const Icon(Icons.fact_check_rounded, color: AdC.teal, size: 44),
               const SizedBox(height: 14),
-              const Text('Ready to validate?',
+              Text('Ready to validate?',
                   style: TextStyle(
-                      color: Colors.white,
+                      color: AdC.textPri,
                       fontSize: 16,
                       fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'This checks that all required fields are filled in before you submit the place.',
                 style:
-                    TextStyle(color: Colors.white54, fontSize: 13, height: 1.5),
+                    TextStyle(color: AdC.textMute, fontSize: 13, height: 1.5),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 20),
@@ -3421,7 +4206,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                       style:
                           TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF14FFEC),
+                    backgroundColor: AdC.teal,
                     foregroundColor: Colors.black,
                     padding: const EdgeInsets.symmetric(vertical: 13),
                     shape: RoundedRectangleBorder(
@@ -3481,9 +4266,9 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
         // ── Missing fields — each row is a tappable jump link ────────────
         if (result.missing.isNotEmpty) ...[
           const SizedBox(height: 16),
-          const Text('MISSING FIELDS',
+          Text('MISSING FIELDS',
               style: TextStyle(
-                  color: Colors.white38,
+                  color: AdC.textMute,
                   fontSize: 10,
                   letterSpacing: 1.2,
                   fontWeight: FontWeight.w600)),
@@ -3513,8 +4298,7 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(m,
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 13)),
+                        style: TextStyle(color: AdC.textSec, fontSize: 13)),
                   ),
                   if (target != null) ...[
                     const SizedBox(width: 8),
@@ -3560,11 +4344,11 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
             label:
                 const Text('Re-run Validation', style: TextStyle(fontSize: 13)),
             style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF14FFEC),
+              foregroundColor: AdC.teal,
               side: BorderSide(
                 color: (_saving || _validating)
-                    ? Colors.white12
-                    : const Color(0xFF14FFEC).withValues(alpha: 0.4),
+                    ? AdC.overlay(0.12)
+                    : AdC.teal.withValues(alpha: 0.4),
               ),
               padding: const EdgeInsets.symmetric(vertical: 11),
               shape: RoundedRectangleBorder(
@@ -3582,25 +4366,24 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: const Color(0xFF111827),
+              color: AdC.surface,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.white12),
+              border: Border.all(color: AdC.overlay(0.12)),
             ),
             child: Column(children: [
               const Icon(Icons.rocket_launch_rounded,
-                  color: Color(0xFF14FFEC), size: 48),
+                  color: AdC.teal, size: 48),
               const SizedBox(height: 16),
               Text(_place?.name ?? '',
-                  style: const TextStyle(
-                      color: Colors.white,
+                  style: TextStyle(
+                      color: AdC.textPri,
                       fontSize: 18,
                       fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center),
               const SizedBox(height: 8),
-              const Text(
-                  'Tapping "Submit & Activate" will change this place from PENDING to ACTIVE, making it visible in the user-facing app.',
-                  style: TextStyle(
-                      color: Colors.white54, fontSize: 13, height: 1.5),
+              Text(context.tr('admin_wizard_submit_tap_notice'),
+                  style:
+                      TextStyle(color: AdC.textMute, fontSize: 13, height: 1.5),
                   textAlign: TextAlign.center),
               if (_place != null) ...[
                 const SizedBox(height: 20),
@@ -3609,15 +4392,18 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
                       icon: Icons.location_on_rounded,
                       label: _place!.cityName.isNotEmpty
                           ? _place!.cityName
-                          : 'City set'),
+                          : context.tr('admin_wizard_summary_city_set')),
                   const SizedBox(width: 8),
                   _SummaryPill(
                       icon: Icons.category_rounded,
-                      label: '${_selectedCategoryIds.length} categories'),
+                      label:
+                          '${_selectedCategoryIds.length} ${context.tr('admin_wizard_summary_categories_suffix')}'),
                   const SizedBox(width: 8),
                   _SummaryPill(
                       icon: Icons.photo_rounded,
-                      label: _place!.hasMedia ? 'Has media' : 'No media'),
+                      label: _place!.hasMedia
+                          ? context.tr('admin_wizard_summary_has_media')
+                          : context.tr('admin_wizard_summary_no_media')),
                 ]),
               ],
             ]),
@@ -3649,22 +4435,22 @@ class _StepProgressBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const labels = [
-      'Draft',
-      'Info',
-      'Location',
-      'Contact',
-      'Attrs',
-      'Data',
-      'Media',
-      'Booking',
-      'Categories',
-      'Validate',
-      'Submit'
+    final labels = [
+      context.tr('admin_wizard_step_draft'),
+      context.tr('admin_wizard_step_info_short'),
+      context.tr('admin_wizard_step_location'),
+      context.tr('admin_wizard_step_contact'),
+      context.tr('admin_wizard_step_attrs_short'),
+      context.tr('admin_wizard_step_data_short'),
+      context.tr('admin_wizard_step_media'),
+      context.tr('admin_wizard_step_booking'),
+      context.tr('admin_wizard_step_categories'),
+      context.tr('admin_wizard_step_validate'),
+      context.tr('admin_wizard_step_submit'),
     ];
 
     return Container(
-      color: const Color(0xFF111827),
+      color: AdC.surface,
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: Column(children: [
         // ── Segmented progress bar with dot indicators ────────────────────
@@ -3681,13 +4467,13 @@ class _StepProgressBar extends StatelessWidget {
             // Bar colour priority: current > invalid > saved > untouched
             final Color barColor;
             if (isCurrent) {
-              barColor = const Color(0xFF14FFEC);
+              barColor = AdC.teal;
             } else if (isInvalid) {
               barColor = Colors.orangeAccent.withValues(alpha: 0.8);
             } else if (isSaved) {
-              barColor = const Color(0xFF14FFEC).withValues(alpha: 0.45);
+              barColor = AdC.teal.withValues(alpha: 0.45);
             } else {
-              barColor = Colors.white12;
+              barColor = AdC.overlay(0.12);
             }
 
             // Dot indicator below the bar
@@ -3709,7 +4495,7 @@ class _StepProgressBar extends StatelessWidget {
                 height: 5,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: const Color(0xFF14FFEC).withValues(alpha: 0.6),
+                  color: AdC.teal.withValues(alpha: 0.6),
                 ),
               );
             } else {
@@ -3753,22 +4539,20 @@ class _StepProgressBar extends StatelessWidget {
         // ── Step label row ───────────────────────────────────────────────
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Text(
-            'Step ${currentStep + 1} of $totalSteps',
-            style: const TextStyle(color: Colors.white38, fontSize: 11),
+            '${context.tr('admin_wizard_step_of_prefix')} ${currentStep + 1} '
+            '${context.tr('admin_wizard_step_of_middle')} $totalSteps',
+            style: TextStyle(color: AdC.textMute, fontSize: 11),
           ),
           Row(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.touch_app_rounded,
-                size: 10, color: Colors.white24),
+            Icon(Icons.touch_app_rounded, size: 10, color: AdC.textMute),
             const SizedBox(width: 4),
-            const Text('Tap a segment to jump',
-                style: TextStyle(color: Colors.white24, fontSize: 10)),
+            Text(context.tr('admin_wizard_tap_segment'),
+                style: TextStyle(color: AdC.textMute, fontSize: 10)),
             const SizedBox(width: 8),
             Text(
               labels[currentStep],
               style: const TextStyle(
-                  color: Color(0xFF14FFEC),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600),
+                  color: AdC.teal, fontSize: 11, fontWeight: FontWeight.w600),
             ),
           ]),
         ]),
@@ -3786,11 +4570,11 @@ class _StepProgressBar extends StatelessWidget {
                       height: 6,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: const Color(0xFF14FFEC).withValues(alpha: 0.6),
+                        color: AdC.teal.withValues(alpha: 0.6),
                       )),
                   const SizedBox(width: 4),
-                  const Text('Saved',
-                      style: TextStyle(color: Colors.white24, fontSize: 9)),
+                  Text(context.tr('admin_wizard_saved_legend'),
+                      style: TextStyle(color: AdC.textMute, fontSize: 9)),
                   const SizedBox(width: 12),
                 ],
                 if (invalidSteps.isNotEmpty) ...[
@@ -3802,8 +4586,8 @@ class _StepProgressBar extends StatelessWidget {
                         color: Colors.orangeAccent.withValues(alpha: 0.9),
                       )),
                   const SizedBox(width: 4),
-                  const Text('Needs attention',
-                      style: TextStyle(color: Colors.white24, fontSize: 9)),
+                  Text(context.tr('admin_wizard_needs_attention'),
+                      style: TextStyle(color: AdC.textMute, fontSize: 9)),
                 ],
               ],
             ),
@@ -3834,24 +4618,23 @@ class _IncompleteStepsStrip extends StatelessWidget {
     required this.onJump,
   });
 
-  static const _stepNames = [
-    'Draft',
-    'Basic Info',
-    'Location',
-    'Contact',
-    'Attributes',
-    'Nested Data',
-    'Media',
-    'Booking',
-    'Categories',
-    'Validate',
-    'Submit',
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final stepNames = [
+      context.tr('admin_wizard_step_draft'),
+      context.tr('admin_wizard_step_basic_info_full'),
+      context.tr('admin_wizard_step_location'),
+      context.tr('admin_wizard_step_contact'),
+      context.tr('admin_wizard_step_attributes_full'),
+      context.tr('admin_wizard_step_nested_data_full'),
+      context.tr('admin_wizard_step_media'),
+      context.tr('admin_wizard_step_booking'),
+      context.tr('admin_wizard_step_categories'),
+      context.tr('admin_wizard_step_validate'),
+      context.tr('admin_wizard_step_submit'),
+    ];
     return Container(
-      color: const Color(0xFF0D1117),
+      color: AdC.bg,
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
       child: Row(
         children: [
@@ -3859,9 +4642,9 @@ class _IncompleteStepsStrip extends StatelessWidget {
           const Icon(Icons.warning_amber_rounded,
               size: 13, color: Colors.orangeAccent),
           const SizedBox(width: 6),
-          const Text(
-            'Incomplete:',
-            style: TextStyle(
+          Text(
+            context.tr('admin_wizard_incomplete_prefix'),
+            style: const TextStyle(
                 color: Colors.orangeAccent,
                 fontSize: 11,
                 fontWeight: FontWeight.w600),
@@ -3885,22 +4668,22 @@ class _IncompleteStepsStrip extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: isInvalid
                               ? Colors.orangeAccent.withValues(alpha: 0.12)
-                              : Colors.white.withValues(alpha: 0.05),
+                              : AdC.overlay(0.05),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
                             color: isInvalid
                                 ? Colors.orangeAccent.withValues(alpha: 0.45)
-                                : Colors.white24,
+                                : AdC.overlay(0.24),
                           ),
                         ),
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
                           Text(
-                            _stepNames[stepIdx],
+                            stepNames[stepIdx],
                             style: TextStyle(
                               fontSize: 11,
                               color: isInvalid
                                   ? Colors.orangeAccent
-                                  : Colors.white54,
+                                  : AdC.textMute,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -3908,9 +4691,8 @@ class _IncompleteStepsStrip extends StatelessWidget {
                           Icon(
                             Icons.arrow_forward_ios_rounded,
                             size: 9,
-                            color: isInvalid
-                                ? Colors.orangeAccent
-                                : Colors.white38,
+                            color:
+                                isInvalid ? Colors.orangeAccent : AdC.textMute,
                           ),
                         ]),
                       ),
@@ -3931,45 +4713,44 @@ class _StepHeader extends StatelessWidget {
   final String nestedLabel;
   const _StepHeader({required this.step, required this.nestedLabel});
 
-  static const _titles = [
-    'Create Draft',
-    'Basic Information',
-    'Location',
-    'Contact Details',
-    'Attributes',
-    '',
-    'Media & Images',
-    'Booking & Pricing',
-    'Link Categories',
-    'Validate',
-    'Submit & Activate'
-  ];
-  static const _subs = [
-    'Set the name, city, and primary category',
-    'Add a description and area information',
-    'Set address and GPS coordinates',
-    'Add phone, email, and website',
-    'Add category-specific details',
-    '',
-    'Add cover photo and gallery images',
-    'Configure pricing and booking options',
-    'Select all applicable service categories',
-    'Check required fields are complete',
-    'Make this place live in the app'
-  ];
-
   @override
   Widget build(BuildContext context) {
-    final title = step == 5 ? nestedLabel : _titles[step];
+    final titles = [
+      context.tr('admin_wizard_title_draft'),
+      context.tr('admin_wizard_title_basic_info'),
+      context.tr('admin_wizard_step_location'),
+      context.tr('admin_wizard_title_contact'),
+      context.tr('admin_wizard_step_attributes_full'),
+      '',
+      context.tr('admin_wizard_title_media'),
+      context.tr('admin_wizard_title_booking'),
+      context.tr('admin_wizard_title_categories'),
+      context.tr('admin_wizard_step_validate'),
+      context.tr('admin_wizard_title_submit_activate'),
+    ];
+    final subs = [
+      context.tr('admin_wizard_sub_draft'),
+      context.tr('admin_wizard_sub_basic_info'),
+      context.tr('admin_wizard_sub_location'),
+      context.tr('admin_wizard_sub_contact'),
+      context.tr('admin_wizard_sub_attributes'),
+      '',
+      context.tr('admin_wizard_sub_media'),
+      context.tr('admin_wizard_sub_booking'),
+      context.tr('admin_wizard_sub_categories'),
+      context.tr('admin_wizard_sub_validate'),
+      context.tr('admin_wizard_sub_submit'),
+    ];
+    final title = step == 5 ? nestedLabel : titles[step];
     final sub = step == 5
-        ? 'Add ${nestedLabel.toLowerCase()} for this place (optional)'
-        : _subs[step];
+        ? '${context.tr('admin_wizard_nested_sub_prefix')} ${nestedLabel.toLowerCase()} ${context.tr('admin_wizard_nested_sub_suffix')}'
+        : subs[step];
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(title,
-          style: const TextStyle(
-              color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+          style: TextStyle(
+              color: AdC.textPri, fontSize: 20, fontWeight: FontWeight.bold)),
       const SizedBox(height: 4),
-      Text(sub, style: const TextStyle(color: Colors.white38, fontSize: 13)),
+      Text(sub, style: TextStyle(color: AdC.textMute, fontSize: 13)),
     ]);
   }
 }
@@ -4010,10 +4791,10 @@ class _WizardBottomBar extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: saving ? null : onBack,
             icon: const Icon(Icons.arrow_back_rounded, size: 15),
-            label: const Text('Back'),
+            label: Text(context.tr('admin_wizard_btn_back')),
             style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.white54,
-              side: const BorderSide(color: Colors.white24),
+              foregroundColor: AdC.textMute,
+              side: BorderSide(color: AdC.overlay(0.24)),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(9)),
@@ -4024,10 +4805,11 @@ class _WizardBottomBar extends StatelessWidget {
           TextButton(
             onPressed: saving ? null : onSaveExit,
             style: TextButton.styleFrom(
-              foregroundColor: Colors.white38,
+              foregroundColor: AdC.textMute,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
             ),
-            child: const Text('Save & Exit', style: TextStyle(fontSize: 13)),
+            child: Text(context.tr('admin_wizard_btn_save_exit'),
+                style: const TextStyle(fontSize: 13)),
           ),
         ],
       ],
@@ -4042,15 +4824,15 @@ class _WizardBottomBar extends StatelessWidget {
         // to "Save & Continue". Tooltip clarifies it doesn't save.
         if (onSkip != null) ...[
           Tooltip(
-            message: 'Move to next step without saving',
+            message: context.tr('admin_wizard_next_tooltip'),
             child: OutlinedButton.icon(
               onPressed: saving ? null : onSkip,
               icon: const Icon(Icons.arrow_forward_rounded, size: 15),
-              label: const Text('Next'),
+              label: Text(context.tr('admin_wizard_btn_next')),
               style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white38,
+                foregroundColor: AdC.textMute,
                 side: BorderSide(
-                  color: saving ? Colors.white12 : Colors.white24,
+                  color: saving ? AdC.overlay(0.12) : AdC.overlay(0.24),
                 ),
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
@@ -4075,15 +4857,14 @@ class _WizardBottomBar extends StatelessWidget {
                   size: 15),
           label: Text(
             saving
-                ? 'Saving…'
+                ? context.tr('admin_wizard_saving')
                 : isLast
-                    ? 'Submit & Activate'
-                    : 'Save & Continue',
+                    ? context.tr('admin_wizard_btn_submit_activate')
+                    : context.tr('admin_wizard_btn_save_continue'),
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
           ),
           style: ElevatedButton.styleFrom(
-            backgroundColor:
-                isLast ? Colors.greenAccent.shade700 : const Color(0xFF14FFEC),
+            backgroundColor: isLast ? Colors.greenAccent.shade700 : AdC.teal,
             foregroundColor: Colors.black,
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
             shape:
@@ -4096,9 +4877,8 @@ class _WizardBottomBar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
       decoration: BoxDecoration(
-        color: const Color(0xFF111827),
-        border: Border(
-            top: BorderSide(color: Colors.white.withValues(alpha: 0.07))),
+        color: AdC.surface,
+        border: Border(top: BorderSide(color: AdC.overlay(0.07))),
       ),
       // Use LayoutBuilder so the bar adapts gracefully on narrow screens —
       // if there isn't enough width for a single row, stack the two groups.
@@ -4145,19 +4925,18 @@ class _AdminDropdown<T> extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
         decoration: BoxDecoration(
-          color: const Color(0xFF0D1117),
+          color: AdC.bg,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.white12),
+          border: Border.all(color: AdC.overlay(0.12)),
         ),
         child: DropdownButton<T>(
           value: value,
           isExpanded: true,
-          dropdownColor: const Color(0xFF1F2937),
-          style: const TextStyle(color: Colors.white70, fontSize: 14),
+          dropdownColor: AdC.surface,
+          style: TextStyle(color: AdC.textSec, fontSize: 14),
           underline: const SizedBox.shrink(),
           hint: hint != null
-              ? Text(hint!,
-                  style: const TextStyle(color: Colors.white24, fontSize: 13))
+              ? Text(hint!, style: TextStyle(color: AdC.textMute, fontSize: 13))
               : null,
           onChanged: onChanged,
           items: items,
@@ -4181,8 +4960,8 @@ class _LabeledDropdown extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label,
-              style: const TextStyle(
-                  color: Colors.white70,
+              style: TextStyle(
+                  color: AdC.textSec,
                   fontSize: 13,
                   fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
@@ -4213,30 +4992,163 @@ class _SimpleField extends StatelessWidget {
   Widget build(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label,
-              style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          Text(label, style: TextStyle(color: AdC.textMute, fontSize: 12)),
           const SizedBox(height: 6),
           TextFormField(
             controller: ctrl,
             keyboardType: keyboardType,
-            style: const TextStyle(color: Colors.white, fontSize: 14),
+            style: TextStyle(color: AdC.textPri, fontSize: 14),
             decoration: InputDecoration(
               hintText: hint,
-              hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+              hintStyle: TextStyle(color: AdC.textMute, fontSize: 13),
               filled: true,
-              fillColor: const Color(0xFF0D1117),
+              fillColor: AdC.bg,
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Colors.white12)),
+                  borderSide: BorderSide(color: AdC.overlay(0.12))),
               enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Colors.white12)),
+                  borderSide: BorderSide(color: AdC.overlay(0.12))),
               focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Color(0xFF14FFEC))),
+                  borderSide: const BorderSide(color: AdC.teal)),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
+          ),
+          const SizedBox(height: 12),
+        ],
+      );
+}
+
+class _AdminToggleRow extends StatelessWidget {
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  const _AdminToggleRow(
+      {required this.label, required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(
+          children: [
+            Expanded(
+                child: Text(label,
+                    style: TextStyle(color: AdC.textSec, fontSize: 13))),
+            Switch(
+              value: value,
+              onChanged: onChanged,
+              activeTrackColor: AdC.teal,
+            ),
+          ],
+        ),
+      );
+}
+
+class _BedConfigEditor extends StatelessWidget {
+  final List<BedModel> beds;
+  final ValueChanged<List<BedModel>> onChanged;
+  const _BedConfigEditor({required this.beds, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Beds', style: TextStyle(color: AdC.textMute, fontSize: 12)),
+          const SizedBox(height: 8),
+          ...beds.asMap().entries.map((e) {
+            final bed = e.value;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(children: [
+                Expanded(
+                  flex: 3,
+                  child: _AdminDropdown<BedType>(
+                    value: bed.bedType,
+                    items: BedType.values
+                        .map((t) =>
+                            DropdownMenuItem(value: t, child: Text(t.label)))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      final next = List<BedModel>.from(beds);
+                      next[e.key] =
+                          BedModel(bedType: v, quantity: bed.quantity);
+                      onChanged(next);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AdC.bg,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AdC.overlay(0.12)),
+                    ),
+                    child: Row(children: [
+                      IconButton(
+                        icon: Icon(Icons.remove_rounded,
+                            size: 14, color: AdC.textMute),
+                        padding: EdgeInsets.zero,
+                        constraints:
+                            const BoxConstraints(minWidth: 24, minHeight: 24),
+                        onPressed: bed.quantity > 1
+                            ? () {
+                                final next = List<BedModel>.from(beds);
+                                next[e.key] = BedModel(
+                                    bedType: bed.bedType,
+                                    quantity: bed.quantity - 1);
+                                onChanged(next);
+                              }
+                            : null,
+                      ),
+                      Expanded(
+                          child: Text('${bed.quantity}',
+                              textAlign: TextAlign.center,
+                              style:
+                                  TextStyle(color: AdC.textPri, fontSize: 13))),
+                      IconButton(
+                        icon: Icon(Icons.add_rounded,
+                            size: 14, color: AdC.textMute),
+                        padding: EdgeInsets.zero,
+                        constraints:
+                            const BoxConstraints(minWidth: 24, minHeight: 24),
+                        onPressed: () {
+                          final next = List<BedModel>.from(beds);
+                          next[e.key] = BedModel(
+                              bedType: bed.bedType, quantity: bed.quantity + 1);
+                          onChanged(next);
+                        },
+                      ),
+                    ]),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded,
+                      size: 16, color: Colors.redAccent),
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 28, minHeight: 28),
+                  onPressed: () {
+                    final next = List<BedModel>.from(beds)..removeAt(e.key);
+                    onChanged(next);
+                  },
+                ),
+              ]),
+            );
+          }),
+          TextButton.icon(
+            onPressed: () {
+              onChanged([...beds, const BedModel(bedType: BedType.single)]);
+            },
+            icon: const Icon(Icons.add_rounded, size: 16, color: AdC.teal),
+            label: const Text('Add bed type',
+                style: TextStyle(color: AdC.teal, fontSize: 13)),
           ),
           const SizedBox(height: 12),
         ],
@@ -4248,64 +5160,66 @@ class _NestedItemRow extends StatelessWidget {
   final String subtitle;
   final int imageCount;
   final VoidCallback? onDelete;
+  final VoidCallback? onTap;
   const _NestedItemRow({
     required this.title,
     required this.subtitle,
     this.imageCount = 0,
     required this.onDelete,
+    this.onTap,
   });
 
   @override
-  Widget build(BuildContext context) => Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0D1117),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.white12),
-        ),
-        child: Row(children: [
-          const Icon(Icons.drag_handle_rounded,
-              color: Colors.white24, size: 16),
-          const SizedBox(width: 10),
-          Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                Text(title,
-                    style:
-                        const TextStyle(color: Colors.white70, fontSize: 13)),
-                Text(subtitle,
-                    style:
-                        const TextStyle(color: Colors.white38, fontSize: 11)),
-              ])),
-          if (imageCount > 0) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-              decoration: BoxDecoration(
-                color: const Color(0xFF14FFEC).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.photo_rounded,
-                    size: 11, color: Color(0xFF14FFEC)),
-                const SizedBox(width: 3),
-                Text('$imageCount',
-                    style: const TextStyle(
-                        color: Color(0xFF14FFEC), fontSize: 10)),
-              ]),
-            ),
-            const SizedBox(width: 8),
-          ],
-          IconButton(
-            icon: Icon(Icons.delete_outline_rounded,
-                color: onDelete != null ? Colors.redAccent : Colors.white12,
-                size: 16),
-            onPressed: onDelete,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: AdC.bg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AdC.overlay(0.12)),
           ),
-        ]),
+          child: Row(children: [
+            Icon(Icons.drag_handle_rounded, color: AdC.textMute, size: 16),
+            const SizedBox(width: 10),
+            Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text(title,
+                      style: TextStyle(color: AdC.textSec, fontSize: 13)),
+                  Text(subtitle,
+                      style: TextStyle(color: AdC.textMute, fontSize: 11)),
+                ])),
+            if (imageCount > 0) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AdC.teal.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.photo_rounded, size: 11, color: AdC.teal),
+                  const SizedBox(width: 3),
+                  Text('$imageCount',
+                      style: const TextStyle(color: AdC.teal, fontSize: 10)),
+                ]),
+              ),
+              const SizedBox(width: 8),
+            ],
+            IconButton(
+              icon: Icon(Icons.delete_outline_rounded,
+                  color:
+                      onDelete != null ? Colors.redAccent : AdC.overlay(0.12),
+                  size: 16),
+              onPressed: onDelete,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            ),
+          ]),
+        ),
       );
 }
 
@@ -4319,22 +5233,123 @@ class _EmptyNestedState extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.02),
+          color: AdC.overlay(0.02),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.white12, style: BorderStyle.solid),
+          border:
+              Border.all(color: AdC.overlay(0.12), style: BorderStyle.solid),
         ),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text(label,
-              style: const TextStyle(color: Colors.white38, fontSize: 13)),
+          Text(label, style: TextStyle(color: AdC.textMute, fontSize: 13)),
           if (onAdd != null) ...[
             const SizedBox(height: 8),
             TextButton(
               onPressed: onAdd,
               child: const Text('+ Add one now',
-                  style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+                  style: TextStyle(color: AdC.teal, fontSize: 13)),
             ),
           ],
         ]),
+      );
+}
+
+class _SectionChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  const _SectionChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.only(left: 14, right: 4),
+          decoration: BoxDecoration(
+            color: selected ? AdC.teal.withValues(alpha: 0.18) : AdC.bg,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: selected ? AdC.teal : AdC.overlay(0.15)),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Text(label,
+                style: TextStyle(
+                    color: selected ? AdC.teal : AdC.textSec, fontSize: 13)),
+            PopupMenuButton<String>(
+              icon:
+                  Icon(Icons.more_vert_rounded, size: 16, color: AdC.textMute),
+              padding: EdgeInsets.zero,
+              onSelected: (v) => v == 'edit' ? onEdit() : onDelete(),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'edit', child: Text('Rename')),
+                PopupMenuItem(value: 'delete', child: Text('Delete')),
+              ],
+            ),
+          ]),
+        ),
+      );
+}
+
+class _TagListEditor extends StatelessWidget {
+  final String label;
+  final List<String> tags;
+  final TextEditingController inputCtrl;
+  final String hint;
+  final ValueChanged<List<String>> onChanged;
+  const _TagListEditor({
+    required this.label,
+    required this.tags,
+    required this.inputCtrl,
+    required this.hint,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TextStyle(color: AdC.textMute, fontSize: 12)),
+          const SizedBox(height: 6),
+          if (tags.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: tags
+                    .map((t) => InputChip(
+                          label: Text(t, style: const TextStyle(fontSize: 12)),
+                          backgroundColor: AdC.bg,
+                          onDeleted: () =>
+                              onChanged(tags.where((x) => x != t).toList()),
+                        ))
+                    .toList(),
+              ),
+            ),
+          Row(children: [
+            Expanded(
+                child: _SimpleField(ctrl: inputCtrl, label: '', hint: hint)),
+            const SizedBox(width: 8),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: TextButton(
+                onPressed: () {
+                  final v = inputCtrl.text.trim();
+                  if (v.isEmpty) return;
+                  onChanged([...tags, v]);
+                  inputCtrl.clear();
+                },
+                child: const Text('Add'),
+              ),
+            ),
+          ]),
+        ],
       );
 }
 
@@ -4381,15 +5396,14 @@ class _SummaryPill extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
+          color: AdC.overlay(0.05),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white12),
+          border: Border.all(color: AdC.overlay(0.12)),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 12, color: const Color(0xFF14FFEC)),
+          Icon(icon, size: 12, color: AdC.teal),
           const SizedBox(width: 5),
-          Text(label,
-              style: const TextStyle(color: Colors.white54, fontSize: 11)),
+          Text(label, style: TextStyle(color: AdC.textMute, fontSize: 11)),
         ]),
       );
 }
@@ -4437,12 +5451,11 @@ class _ImageUploadTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1117),
+        color: AdC.bg,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: uploading
-              ? const Color(0xFF14FFEC).withValues(alpha: 0.4)
-              : Colors.white12,
+          color:
+              uploading ? AdC.teal.withValues(alpha: 0.4) : AdC.overlay(0.12),
         ),
       ),
       clipBehavior: Clip.antiAlias,
@@ -4468,15 +5481,14 @@ class _ImageUploadTile extends StatelessWidget {
                     child: LinearProgressIndicator(
                       value: uploadProgress,
                       minHeight: 5,
-                      backgroundColor: Colors.white12,
-                      valueColor:
-                          const AlwaysStoppedAnimation(Color(0xFF14FFEC)),
+                      backgroundColor: AdC.overlay(0.12),
+                      valueColor: const AlwaysStoppedAnimation(AdC.teal),
                     ),
                   ),
                   const SizedBox(height: 5),
                   Text(
                     'Uploading… ${(uploadProgress * 100).toStringAsFixed(0)}%',
-                    style: const TextStyle(color: Colors.white38, fontSize: 11),
+                    style: TextStyle(color: AdC.textMute, fontSize: 11),
                   ),
                 ],
               ),
@@ -4493,25 +5505,21 @@ class _ImageUploadTile extends StatelessWidget {
                       ? Icons.change_circle_rounded
                       : Icons.upload_file_rounded,
                   size: 15,
-                  color: onPickTap != null
-                      ? const Color(0xFF14FFEC)
-                      : Colors.white24,
+                  color: onPickTap != null ? AdC.teal : AdC.textMute,
                 ),
                 label: Text(
                   _hasPreview ? 'Change $label' : 'Upload $label',
                   style: TextStyle(
                     fontSize: 12,
-                    color: onPickTap != null
-                        ? const Color(0xFF14FFEC)
-                        : Colors.white24,
+                    color: onPickTap != null ? AdC.teal : AdC.textMute,
                   ),
                 ),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 9),
                   side: BorderSide(
                     color: onPickTap != null
-                        ? const Color(0xFF14FFEC).withValues(alpha: 0.5)
-                        : Colors.white12,
+                        ? AdC.teal.withValues(alpha: 0.5)
+                        : AdC.overlay(0.12),
                   ),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(7)),
@@ -4548,14 +5556,14 @@ class _ImageUploadTile extends StatelessWidget {
         loadingBuilder: (_, child, progress) => progress == null
             ? child
             : Container(
-                color: Colors.white.withValues(alpha: 0.03),
+                color: AdC.overlay(0.03),
                 child: Center(
                   child: CircularProgressIndicator(
                     value: progress.expectedTotalBytes != null
                         ? progress.cumulativeBytesLoaded /
                             progress.expectedTotalBytes!
                         : null,
-                    color: const Color(0xFF14FFEC),
+                    color: AdC.teal,
                     strokeWidth: 2,
                   ),
                 ),
@@ -4567,10 +5575,10 @@ class _ImageUploadTile extends StatelessWidget {
   }
 
   Widget _placeholder() => Container(
-        color: Colors.white.withValues(alpha: 0.03),
-        child: const Center(
+        color: AdC.overlay(0.03),
+        child: Center(
           child:
-              Icon(Icons.broken_image_rounded, color: Colors.white24, size: 36),
+              Icon(Icons.broken_image_rounded, color: AdC.textMute, size: 36),
         ),
       );
 }

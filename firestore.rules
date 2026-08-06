@@ -170,6 +170,41 @@ service cloud.firestore {
     }
 
 
+    // ── Accommodation / Dining catalog (Firestore-authoritative) ─────────────
+    //
+    // Collections: Rooms, MenuSections, MenuItems
+    // Document id = auto-generated — this id is the catalog item's canonical
+    // id from here on (what BookingModel.serviceId references).
+    // Written by the admin place wizard (RoomService / MenuService); a
+    // best-effort mirror is separately pushed to the backend REST API
+    // (BackendRoomSync / BackendMenuSync) but Firestore is the source of
+    // truth — see room_model.dart / menu_item_model.dart for field shapes.
+    //
+    // PUBLIC read for the same reason as Place_details above — the tourist
+    // app browses the catalog without signing in. Write is MainAdmin (any
+    // place) or a plain Admin scoped to exactly this item's place.
+    match /Rooms/{roomId} {
+      allow read:   if true;
+      allow create: if isMainAdmin() || isPlaceAdminFor(request.resource.data.placeId);
+      allow update, delete:
+        if isMainAdmin() || isPlaceAdminFor(resource.data.placeId);
+    }
+
+    match /MenuSections/{sectionId} {
+      allow read:   if true;
+      allow create: if isMainAdmin() || isPlaceAdminFor(request.resource.data.placeId);
+      allow update, delete:
+        if isMainAdmin() || isPlaceAdminFor(resource.data.placeId);
+    }
+
+    match /MenuItems/{itemId} {
+      allow read:   if true;
+      allow create: if isMainAdmin() || isPlaceAdminFor(request.resource.data.placeId);
+      allow update, delete:
+        if isMainAdmin() || isPlaceAdminFor(resource.data.placeId);
+    }
+
+
     // ── Payment methods catalogue ─────────────────────────────────────────────
     //
     // Collection: PaymentMethods
@@ -199,6 +234,51 @@ service cloud.firestore {
     // PUBLIC read for the same reason as Place_details above. Cities aren't
     // owned by any single place-scoped Admin, so only MainAdmin may write.
     match /City_details/{cityId} {
+      allow read:  if true;
+      allow write: if isMainAdmin();
+    }
+
+
+    // ── System-wide settings ──────────────────────────────────────────────────
+    //
+    // Collection: SystemSettings, single doc "main".
+    // Fields: maintenanceMode, maintenanceMessage, updatedAt, updatedByEmail, …
+    // (see SystemSettingsModel / SystemSettingsService).
+    //
+    // PUBLIC read: landing_page.dart subscribes to this doc unconditionally,
+    // for every visitor including signed-out tourists, to show/hide the
+    // maintenance banner — same public-read rationale as Place_details above.
+    // Write is MainAdmin only.
+    match /SystemSettings/{docId} {
+      allow read:  if true;
+      allow write: if isMainAdmin();
+    }
+
+
+    // ── Category presentation config ──────────────────────────────────────────
+    //
+    // Collection: CategoryDetails
+    // Document key = the category's /api/categories id.
+    // City/tag scoping used to filter which categories a resort city shows —
+    // not part of the /api/categories contract (see category_details_service.dart).
+    //
+    // PUBLIC read: category_screen.dart / resort_city_screen.dart read this
+    // while browsing, signed out. Write is MainAdmin only.
+    match /CategoryDetails/{categoryId} {
+      allow read:  if true;
+      allow write: if isMainAdmin();
+    }
+
+
+    // ── Static content pages ────────────────────────────────────────────────
+    //
+    // Collection: StaticPages
+    // Document key = a managed slug (about, privacy-policy, terms-of-service,
+    // cookie-policy — see StaticPageService.managedSlugs).
+    //
+    // PUBLIC read: about_screen.dart / static_info_screen.dart read these
+    // signed out. Write is MainAdmin only.
+    match /StaticPages/{slug} {
       allow read:  if true;
       allow write: if isMainAdmin();
     }

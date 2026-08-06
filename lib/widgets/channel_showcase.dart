@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:palmnazi/services/app_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 
 class ChannelShowcase extends StatefulWidget {
   final Function(String) onChannelTap;
@@ -109,11 +111,17 @@ class _ChannelShowcaseState extends State<ChannelShowcase> {
       child: Column(
         children: [
           ShaderMask(
-            shaderCallback: (bounds) => const LinearGradient(
-              colors: [Color(0xFF14FFEC), Colors.white],
+            // Gradient goes teal -> AC.textPri (not a hardcoded white) so the
+            // trailing end of the headline stays visible against a light
+            // page background instead of fading to white-on-white.
+            shaderCallback: (bounds) => LinearGradient(
+              colors: [AC.teal, AC.textPri],
             ).createShader(bounds),
             child: Text(
-              'Explore Our Channels',
+              context.tr('widget_channel_showcase_title'),
+              // NOTE: this Colors.white is required by ShaderMask's default
+              // BlendMode.modulate — the shader gradient above supplies the
+              // real, theme-aware colors; changing this would tint them.
               style: Theme.of(context).textTheme.displayMedium?.copyWith(
                     fontSize: 42,
                     fontWeight: FontWeight.bold,
@@ -124,7 +132,7 @@ class _ChannelShowcaseState extends State<ChannelShowcase> {
           ),
           const SizedBox(height: 16),
           Text(
-            'Browse through our carefully curated categories to find exactly what you\'re looking for',
+            context.tr('widget_channel_showcase_subtitle'),
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   fontSize: 16,
                 ),
@@ -183,9 +191,7 @@ class _ChannelShowcaseState extends State<ChannelShowcase> {
           ),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isExpanded
-                ? const Color(0xFF14FFEC)
-                : Colors.white.withValues(alpha: 0.2),
+            color: isExpanded ? AC.teal : Colors.white.withValues(alpha: 0.2),
             width: isExpanded ? 3 : 1,
           ),
           boxShadow: [
@@ -286,7 +292,7 @@ class _ChannelShowcaseState extends State<ChannelShowcase> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: Text(
-                    'Tap to explore',
+                    context.tr('widget_channel_showcase_tap_hint'),
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.white.withValues(alpha: 0.7),
@@ -321,7 +327,7 @@ class _ChannelShowcaseState extends State<ChannelShowcase> {
             Icon(
               Icons.arrow_forward_ios,
               size: 10,
-              color: const Color(0xFF14FFEC),
+              color: AC.teal,
             ),
             const SizedBox(width: 6),
             Text(

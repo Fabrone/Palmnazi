@@ -4,7 +4,9 @@ import 'package:flutter_quill/flutter_quill.dart';
 import 'package:flutter_quill_delta_from_html/flutter_quill_delta_from_html.dart';
 import 'package:vsc_quill_delta_to_html/vsc_quill_delta_to_html.dart';
 import 'package:palmnazi/admin/admin_api_service.dart';
+import 'package:palmnazi/services/admin_colors.dart';
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/services/app_strings.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AdminBlogComposeScreen
@@ -96,7 +98,7 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
   bool _saving = false;
   final Map<String, String> _fieldErrors = {};
 
-  static const _accent = Color(0xFF14FFEC);
+  static const _accent = AdC.teal;
   static const _blogColor = Color(0xFFE91E8C);
 
   bool get _isEdit => widget.existingPost != null;
@@ -189,6 +191,8 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
   // ── Save ───────────────────────────────────────────────────────────────────
 
   Future<void> _save({required String status}) async {
+    final updatedMsg = context.tr('admin_blog_compose_snack_updated');
+    final createdMsg = context.tr('admin_blog_compose_snack_created');
     setState(() {
       _fieldErrors.clear();
       _saving = true;
@@ -199,14 +203,18 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
 
     // ── Client-side validation ─────────────────────────────────────────────
     if (_titleCtrl.text.trim().isEmpty) {
-      _fieldErrors['title'] = 'Title is required';
+      _fieldErrors['title'] =
+          context.tr('admin_blog_compose_error_title_required');
     }
     if (plainText.length < 100) {
       _fieldErrors['content'] =
-          'Content must be at least 100 characters (currently ${plainText.length})';
+          '${context.tr('admin_blog_compose_error_content_min_prefix')} '
+          '${plainText.length}'
+          '${context.tr('admin_blog_compose_error_content_min_suffix')}';
     }
     if (status == 'SCHEDULED' && _scheduledCtrl.text.trim().isEmpty) {
-      _fieldErrors['scheduledFor'] = 'Scheduled date/time is required';
+      _fieldErrors['scheduledFor'] =
+          context.tr('admin_blog_compose_error_scheduled_required');
     }
 
     if (_fieldErrors.isNotEmpty) {
@@ -298,10 +306,8 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
       setState(() => _saving = false);
 
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(_isEdit
-            ? 'Post updated successfully'
-            : 'Post created successfully'),
-        backgroundColor: const Color(0xFF0D7377),
+        content: Text(_isEdit ? updatedMsg : createdMsg),
+        backgroundColor: AdC.tealDark,
         behavior: SnackBarBehavior.floating,
       ));
 
@@ -363,14 +369,14 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
+      backgroundColor: AdC.bg,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF111827),
-        foregroundColor: Colors.white,
+        backgroundColor: AdC.surface,
+        foregroundColor: AdC.textPri,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              size: 18, color: Colors.white54),
+          icon: Icon(Icons.arrow_back_ios_new_rounded,
+              size: 18, color: AdC.textMute),
           onPressed: () => Navigator.of(context).pop(false),
         ),
         title: Row(children: [
@@ -388,20 +394,22 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
           ),
           const SizedBox(width: 12),
           Text(
-            _isEdit ? 'Edit Post' : 'New Blog Post',
+            _isEdit
+                ? context.tr('admin_blog_compose_title_edit')
+                : context.tr('admin_blog_compose_title_new'),
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
         ]),
         bottom: TabBar(
           controller: _tabCtrl,
           labelColor: _accent,
-          unselectedLabelColor: Colors.white38,
+          unselectedLabelColor: AdC.textMute,
           indicatorColor: _accent,
           indicatorSize: TabBarIndicatorSize.label,
-          tabs: const [
-            Tab(text: 'Content'),
-            Tab(text: 'Meta & SEO'),
-            Tab(text: 'Settings'),
+          tabs: [
+            Tab(text: context.tr('admin_blog_compose_tab_content')),
+            Tab(text: context.tr('admin_blog_compose_tab_meta_seo')),
+            Tab(text: context.tr('admin_blog_compose_tab_settings')),
           ],
         ),
         actions: _saving
@@ -419,15 +427,15 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
             : [
                 TextButton(
                   onPressed: () => _save(status: 'DRAFT'),
-                  child: const Text('Save Draft',
-                      style: TextStyle(color: Colors.white54, fontSize: 13)),
+                  child: Text(context.tr('admin_blog_compose_save_draft'),
+                      style: TextStyle(color: AdC.textMute, fontSize: 13)),
                 ),
                 const SizedBox(width: 4),
                 Padding(
                   padding: const EdgeInsets.only(right: 12),
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0D7377),
+                      backgroundColor: AdC.tealDark,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8)),
@@ -435,8 +443,8 @@ class _AdminBlogComposeScreenState extends State<AdminBlogComposeScreen>
                           horizontal: 14, vertical: 8),
                     ),
                     icon: const Icon(Icons.publish_rounded, size: 16),
-                    label:
-                        const Text('Publish', style: TextStyle(fontSize: 13)),
+                    label: Text(context.tr('admin_blog_compose_publish_button'),
+                        style: const TextStyle(fontSize: 13)),
                     onPressed: () => _save(status: 'PUBLISHED'),
                   ),
                 ),
@@ -511,48 +519,45 @@ class _Field extends StatelessWidget {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             Text(label,
-                style: const TextStyle(
-                    color: Colors.white70,
+                style: TextStyle(
+                    color: AdC.textSec,
                     fontSize: 13,
                     fontWeight: FontWeight.w500)),
             if (required)
-              const Text(' *',
-                  style: TextStyle(color: Color(0xFF14FFEC), fontSize: 13)),
+              const Text(' *', style: TextStyle(color: AdC.teal, fontSize: 13)),
           ]),
           const SizedBox(height: 8),
           TextFormField(
             controller: ctrl,
             maxLines: maxLines,
             keyboardType: keyboardType,
-            style: const TextStyle(color: Colors.white, fontSize: 14),
+            style: TextStyle(color: AdC.textPri, fontSize: 14),
             decoration: InputDecoration(
               hintText: hint,
-              hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+              hintStyle: TextStyle(color: AdC.textMute, fontSize: 13),
               helperText: error == null ? helper : null,
-              helperStyle: const TextStyle(color: Colors.white38, fontSize: 11),
+              helperStyle: TextStyle(color: AdC.textMute, fontSize: 11),
               errorText: error,
               prefixIcon: icon != null
-                  ? Icon(icon, size: 16, color: Colors.white38)
+                  ? Icon(icon, size: 16, color: AdC.textMute)
                   : null,
               filled: true,
-              fillColor: const Color(0xFF0D1117),
+              fillColor: AdC.bg,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Colors.white12),
+                borderSide: BorderSide(color: AdC.overlay(0.12)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
                 borderSide: BorderSide(
                     color: error != null
                         ? Colors.redAccent.withValues(alpha: 0.5)
-                        : Colors.white12),
+                        : AdC.overlay(0.12)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
                 borderSide: BorderSide(
-                    color: error != null
-                        ? Colors.redAccent
-                        : const Color(0xFF14FFEC)),
+                    color: error != null ? Colors.redAccent : AdC.teal),
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -596,7 +601,7 @@ class _ContentTab extends StatelessWidget {
     required this.quillScrollCtrl, // FIX BUG 2
   });
 
-  static const _accent = Color(0xFF14FFEC);
+  static const _accent = AdC.teal;
   static const _blogColor = Color(0xFFE91E8C);
 
   @override
@@ -635,9 +640,9 @@ class _ContentTab extends StatelessWidget {
           // ── Quill toolbar ──────────────────────────────────────────────────
           Container(
             decoration: BoxDecoration(
-              color: const Color(0xFF111827),
+              color: AdC.surface,
               border: Border(
-                bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                bottom: BorderSide(color: AdC.overlay(0.08)),
               ),
             ),
             child: QuillSimpleToolbar(
@@ -667,8 +672,8 @@ class _ContentTab extends StatelessWidget {
                 showSearchButton: false,
                 showFontFamily: false,
                 showFontSize: false,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF111827),
+                decoration: BoxDecoration(
+                  color: AdC.surface,
                 ),
               ),
             ),
@@ -683,19 +688,19 @@ class _ContentTab extends StatelessWidget {
                   children: [
                     // Title
                     _Field(
-                      label: 'Post Title',
+                      label: context.tr('admin_blog_compose_field_post_title'),
                       ctrl: titleCtrl,
                       required: true,
-                      hint: 'e.g. 10 Best Hotels in Mombasa',
+                      hint: context.tr('admin_blog_compose_hint_post_title'),
                       icon: Icons.title_rounded,
                       error: fieldErrors['title'],
                     ),
 
                     // Content label
                     Row(children: [
-                      const Text('Content',
+                      Text(context.tr('admin_blog_compose_field_content'),
                           style: TextStyle(
-                              color: Colors.white70,
+                              color: AdC.textSec,
                               fontSize: 13,
                               fontWeight: FontWeight.w500)),
                       const Text(' *',
@@ -710,14 +715,16 @@ class _ContentTab extends StatelessWidget {
                           border: Border.all(
                               color: _blogColor.withValues(alpha: 0.2)),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.auto_awesome_rounded,
+                            const Icon(Icons.auto_awesome_rounded,
                                 size: 10, color: _blogColor),
-                            SizedBox(width: 4),
-                            Text('Rich Text',
-                                style: TextStyle(
+                            const SizedBox(width: 4),
+                            Text(
+                                context
+                                    .tr('admin_blog_compose_rich_text_badge'),
+                                style: const TextStyle(
                                     color: _blogColor,
                                     fontSize: 10,
                                     fontWeight: FontWeight.w600)),
@@ -756,12 +763,12 @@ class _ContentTab extends StatelessWidget {
                       constraints:
                           const BoxConstraints(minHeight: 320, maxHeight: 480),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF0D1117),
+                        color: AdC.bg,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
                           color: fieldErrors['content'] != null
                               ? Colors.redAccent.withValues(alpha: 0.5)
-                              : Colors.white12,
+                              : AdC.overlay(0.12),
                         ),
                       ),
                       clipBehavior: Clip.antiAlias,
@@ -771,17 +778,16 @@ class _ContentTab extends StatelessWidget {
                         // FIX BUG 2: use the lifecycle-managed controller.
                         scrollController: quillScrollCtrl,
                         config: QuillEditorConfig(
-                          placeholder: 'Start writing your article here. Use '
-                              'the toolbar above to format text, add headings, '
-                              'bullet lists, links…',
+                          placeholder: context
+                              .tr('admin_blog_compose_editor_placeholder'),
                           padding: const EdgeInsets.all(14),
                           autoFocus: false,
                           expands: false,
                           scrollable: true,
                           customStyles: DefaultStyles(
                             paragraph: DefaultTextBlockStyle(
-                              const TextStyle(
-                                color: Colors.white70,
+                              TextStyle(
+                                color: AdC.textSec,
                                 fontSize: 14,
                                 height: 1.6,
                               ),
@@ -791,8 +797,8 @@ class _ContentTab extends StatelessWidget {
                               null,
                             ),
                             h1: DefaultTextBlockStyle(
-                              const TextStyle(
-                                color: Colors.white,
+                              TextStyle(
+                                color: AdC.textPri,
                                 fontSize: 24,
                                 fontWeight: FontWeight.w700,
                                 height: 1.3,
@@ -803,8 +809,8 @@ class _ContentTab extends StatelessWidget {
                               null,
                             ),
                             h2: DefaultTextBlockStyle(
-                              const TextStyle(
-                                color: Colors.white,
+                              TextStyle(
+                                color: AdC.textPri,
                                 fontSize: 20,
                                 fontWeight: FontWeight.w600,
                                 height: 1.35,
@@ -815,8 +821,8 @@ class _ContentTab extends StatelessWidget {
                               null,
                             ),
                             h3: DefaultTextBlockStyle(
-                              const TextStyle(
-                                color: Colors.white,
+                              TextStyle(
+                                color: AdC.textPri,
                                 fontSize: 17,
                                 fontWeight: FontWeight.w600,
                                 height: 1.4,
@@ -826,26 +832,25 @@ class _ContentTab extends StatelessWidget {
                               const VerticalSpacing(0, 0),
                               null,
                             ),
-                            bold: const TextStyle(
-                                color: Colors.white,
+                            bold: TextStyle(
+                                color: AdC.textPri,
                                 fontWeight: FontWeight.w700),
-                            italic: const TextStyle(
-                                color: Colors.white70,
+                            italic: TextStyle(
+                                color: AdC.textSec,
                                 fontStyle: FontStyle.italic),
-                            underline: const TextStyle(
-                                color: Colors.white70,
+                            underline: TextStyle(
+                                color: AdC.textSec,
                                 decoration: TextDecoration.underline),
-                            strikeThrough: const TextStyle(
-                                color: Colors.white38,
+                            strikeThrough: TextStyle(
+                                color: AdC.textMute,
                                 decoration: TextDecoration.lineThrough),
                             link: TextStyle(
-                                color: const Color(0xFF14FFEC),
+                                color: AdC.teal,
                                 decoration: TextDecoration.underline,
-                                decorationColor: const Color(0xFF14FFEC)
-                                    .withValues(alpha: 0.5)),
+                                decorationColor:
+                                    AdC.teal.withValues(alpha: 0.5)),
                             placeHolder: DefaultTextBlockStyle(
-                              const TextStyle(
-                                  color: Colors.white24, fontSize: 14),
+                              TextStyle(color: AdC.textMute, fontSize: 14),
                               const HorizontalSpacing(0, 0),
                               const VerticalSpacing(2, 2),
                               const VerticalSpacing(0, 0),
@@ -853,7 +858,7 @@ class _ContentTab extends StatelessWidget {
                             ),
                             code: DefaultTextBlockStyle(
                               const TextStyle(
-                                color: Color(0xFF14FFEC),
+                                color: AdC.teal,
                                 fontSize: 13,
                                 fontFamily: 'monospace',
                               ),
@@ -866,8 +871,8 @@ class _ContentTab extends StatelessWidget {
                               ),
                             ),
                             quote: DefaultTextBlockStyle(
-                              const TextStyle(
-                                  color: Colors.white38,
+                              TextStyle(
+                                  color: AdC.textMute,
                                   fontStyle: FontStyle.italic,
                                   fontSize: 14),
                               const HorizontalSpacing(16, 0),
@@ -876,8 +881,7 @@ class _ContentTab extends StatelessWidget {
                               BoxDecoration(
                                 border: Border(
                                   left: BorderSide(
-                                    color: const Color(0xFF14FFEC)
-                                        .withValues(alpha: 0.4),
+                                    color: AdC.teal.withValues(alpha: 0.4),
                                     width: 3,
                                   ),
                                 ),
@@ -889,36 +893,37 @@ class _ContentTab extends StatelessWidget {
                     ),
 
                     const SizedBox(height: 4),
-                    const Text('Minimum 100 characters of actual content.',
-                        style: TextStyle(color: Colors.white24, fontSize: 11)),
+                    Text(context.tr('admin_blog_compose_min_characters_note'),
+                        style: TextStyle(color: AdC.textMute, fontSize: 11)),
                     const SizedBox(height: 20),
 
                     // Excerpt
                     _Field(
-                      label: 'Excerpt',
+                      label: context.tr('admin_blog_compose_field_excerpt'),
                       ctrl: excerptCtrl,
                       maxLines: 3,
-                      hint: 'Short teaser shown in post listings…',
-                      helper: 'Optional — auto-generated if left empty.',
+                      hint: context.tr('admin_blog_compose_hint_excerpt'),
+                      helper: context.tr('admin_blog_compose_helper_excerpt'),
                       error: fieldErrors['excerpt'],
                     ),
 
                     // Categories
                     _Field(
-                      label: 'Categories',
+                      label: context.tr('admin_blog_compose_field_categories'),
                       ctrl: categoriesCtrl,
-                      hint: 'accommodation, dining, wellness',
-                      helper: 'Comma-separated category slugs.',
+                      hint: context.tr('admin_blog_compose_hint_categories'),
+                      helper:
+                          context.tr('admin_blog_compose_helper_categories'),
                       icon: Icons.label_rounded,
                       error: fieldErrors['categories'],
                     ),
 
                     // Tags
                     _Field(
-                      label: 'Tags',
+                      label: context.tr('admin_blog_compose_field_tags'),
                       ctrl: tagsCtrl,
-                      hint: 'luxury, budget-friendly, family',
-                      helper: 'Comma-separated tags.',
+                      hint: context.tr('admin_blog_compose_hint_tags'),
+                      helper: context.tr('admin_blog_compose_helper_tags'),
                       icon: Icons.tag_rounded,
                       error: fieldErrors['tags'],
                     ),
@@ -957,30 +962,32 @@ class _MetaTab extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             margin: const EdgeInsets.only(bottom: 24),
             decoration: BoxDecoration(
-              color: const Color(0xFF111827),
+              color: AdC.surface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white12),
+              border: Border.all(color: AdC.overlay(0.12)),
             ),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Row(children: [
-                Icon(Icons.search_rounded, color: Color(0xFF14FFEC), size: 15),
-                SizedBox(width: 8),
-                Text('SEO Preview',
+              Row(children: [
+                const Icon(Icons.search_rounded, color: AdC.teal, size: 15),
+                const SizedBox(width: 8),
+                Text(context.tr('admin_blog_compose_seo_preview_heading'),
                     style: TextStyle(
-                        color: Colors.white70,
+                        color: AdC.textSec,
                         fontSize: 13,
                         fontWeight: FontWeight.w600)),
               ]),
               const SizedBox(height: 12),
-              const Text('resortcities.com › blog',
-                  style: TextStyle(color: Colors.greenAccent, fontSize: 11)),
+              Text(context.tr('admin_blog_compose_seo_preview_url'),
+                  style:
+                      const TextStyle(color: Colors.greenAccent, fontSize: 11)),
               const SizedBox(height: 4),
               ValueListenableBuilder(
                 valueListenable: metaTitleCtrl,
                 builder: (_, __, ___) => Text(
                   metaTitleCtrl.text.isEmpty
-                      ? 'Page title…'
+                      ? context.tr(
+                          'admin_blog_compose_seo_preview_title_placeholder')
                       : metaTitleCtrl.text,
                   style: const TextStyle(
                       color: Color(0xFF4A90E2),
@@ -993,37 +1000,38 @@ class _MetaTab extends StatelessWidget {
                 valueListenable: metaDescCtrl,
                 builder: (_, __, ___) => Text(
                   metaDescCtrl.text.isEmpty
-                      ? 'Meta description will appear here…'
+                      ? context
+                          .tr('admin_blog_compose_seo_preview_desc_placeholder')
                       : metaDescCtrl.text,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  style: TextStyle(color: AdC.textMute, fontSize: 12),
                 ),
               ),
             ]),
           ),
 
           _Field(
-            label: 'Meta Title',
+            label: context.tr('admin_blog_compose_field_meta_title'),
             ctrl: metaTitleCtrl,
-            hint: 'e.g. 10 Best Hotels in Mombasa — 2026 Guide',
-            helper: 'Recommended: 50–60 characters.',
+            hint: context.tr('admin_blog_compose_hint_meta_title'),
+            helper: context.tr('admin_blog_compose_helper_meta_title'),
             icon: Icons.text_fields_rounded,
             error: fieldErrors['metaTitle'],
           ),
           _Field(
-            label: 'Meta Description',
+            label: context.tr('admin_blog_compose_field_meta_desc'),
             ctrl: metaDescCtrl,
             maxLines: 3,
-            hint: 'Compelling description for search engines…',
-            helper: 'Recommended: 150–160 characters.',
+            hint: context.tr('admin_blog_compose_hint_meta_desc'),
+            helper: context.tr('admin_blog_compose_helper_meta_desc'),
             error: fieldErrors['metaDescription'],
           ),
           _Field(
-            label: 'Featured Image URL',
+            label: context.tr('admin_blog_compose_field_featured_image'),
             ctrl: featuredImageCtrl,
-            hint: 'https://cdn.resortcities.com/images/…',
-            helper: 'Full URL to the post cover image.',
+            hint: context.tr('admin_blog_compose_hint_featured_image'),
+            helper: context.tr('admin_blog_compose_helper_featured_image'),
             icon: Icons.image_rounded,
             keyboardType: TextInputType.url,
             error: fieldErrors['featuredImage'],
@@ -1048,11 +1056,12 @@ class _MetaTab extends StatelessWidget {
                     height: 56,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF111827),
+                      color: AdC.surface,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Text('Could not load image preview',
-                        style: TextStyle(color: Colors.white38, fontSize: 12)),
+                    child: Text(
+                        context.tr('admin_blog_compose_image_preview_error'),
+                        style: TextStyle(color: AdC.textMute, fontSize: 12)),
                   ),
                 ),
               );
@@ -1094,21 +1103,19 @@ class _SettingsTab extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: selected
-              ? color.withValues(alpha: 0.15)
-              : const Color(0xFF111827),
+          color: selected ? color.withValues(alpha: 0.15) : AdC.surface,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: selected ? color.withValues(alpha: 0.5) : Colors.white12,
+            color: selected ? color.withValues(alpha: 0.5) : AdC.overlay(0.12),
             width: selected ? 1.5 : 1,
           ),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 14, color: selected ? color : Colors.white38),
+          Icon(icon, size: 14, color: selected ? color : AdC.textMute),
           const SizedBox(width: 8),
           Text(value,
               style: TextStyle(
-                color: selected ? color : Colors.white38,
+                color: selected ? color : AdC.textMute,
                 fontSize: 13,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
               )),
@@ -1122,15 +1129,15 @@ class _SettingsTab extends StatelessWidget {
         padding: const EdgeInsets.all(24),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           // ── Status picker ────────────────────────────────────────────
-          const Text('Post Status',
+          Text(context.tr('admin_blog_compose_post_status_label'),
               style: TextStyle(
-                  color: Colors.white70,
+                  color: AdC.textSec,
                   fontSize: 13,
                   fontWeight: FontWeight.w500)),
           const SizedBox(height: 12),
           Wrap(spacing: 10, runSpacing: 10, children: [
             _statusOption(
-                'DRAFT', Icons.drafts_rounded, Colors.white38, onStatusChanged),
+                'DRAFT', Icons.drafts_rounded, AdC.textMute, onStatusChanged),
             _statusOption('PUBLISHED', Icons.public_rounded, Colors.greenAccent,
                 onStatusChanged),
             _statusOption('SCHEDULED', Icons.schedule_rounded,
@@ -1141,10 +1148,10 @@ class _SettingsTab extends StatelessWidget {
           // ── Scheduled fields ─────────────────────────────────────────
           if (status == 'SCHEDULED') ...[
             _Field(
-              label: 'Publish Date & Time (ISO 8601)',
+              label: context.tr('admin_blog_compose_field_scheduled'),
               ctrl: scheduledCtrl,
               hint: '2026-06-01T06:00:00Z',
-              helper: 'Format: YYYY-MM-DDTHH:MM:SSZ',
+              helper: context.tr('admin_blog_compose_helper_scheduled'),
               icon: Icons.calendar_today_rounded,
               error: scheduledError,
             ),
@@ -1169,8 +1176,9 @@ class _SettingsTab extends StatelessWidget {
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: Colors.blueAccent))
                   : const Icon(Icons.schedule_rounded, size: 16),
-              label: const Text('Save as Scheduled',
-                  style: TextStyle(fontSize: 13)),
+              label: Text(
+                  context.tr('admin_blog_compose_save_scheduled_button'),
+                  style: const TextStyle(fontSize: 13)),
               onPressed: saving ? null : onSchedule,
             ),
             const SizedBox(height: 24),
@@ -1178,10 +1186,10 @@ class _SettingsTab extends StatelessWidget {
 
           // ── City association ─────────────────────────────────────────
           _Field(
-            label: 'City ID (optional)',
+            label: context.tr('admin_blog_compose_field_city_id'),
             ctrl: cityIdCtrl,
             hint: 'city_nairobi',
-            helper: 'Associate this post with a specific resort city.',
+            helper: context.tr('admin_blog_compose_helper_city_id'),
             icon: Icons.location_city_rounded,
           ),
           const SizedBox(height: 8),
@@ -1190,33 +1198,29 @@ class _SettingsTab extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFF14FFEC).withValues(alpha: 0.05),
+              color: AdC.teal.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                  color: const Color(0xFF14FFEC).withValues(alpha: 0.15)),
+              border: Border.all(color: AdC.teal.withValues(alpha: 0.15)),
             ),
-            child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Icon(Icons.info_outline_rounded,
-                        color: Color(0xFF14FFEC), size: 14),
-                    SizedBox(width: 8),
-                    Text('Publishing Notes',
-                        style: TextStyle(
-                            color: Color(0xFF14FFEC),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600)),
-                  ]),
-                  SizedBox(height: 10),
-                  Text(
-                    '• DRAFT — only visible in admin.\n'
-                    '• PUBLISHED — live immediately on the user app.\n'
-                    '• SCHEDULED — goes live at the specified date & time.',
-                    style: TextStyle(
-                        color: Colors.white38, fontSize: 12, height: 1.6),
-                  ),
-                ]),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.info_outline_rounded,
+                    color: AdC.teal, size: 14),
+                const SizedBox(width: 8),
+                Text(context.tr('admin_blog_compose_publishing_notes_heading'),
+                    style: const TextStyle(
+                        color: AdC.teal,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+              ]),
+              const SizedBox(height: 10),
+              Text(
+                context.tr('admin_blog_compose_publishing_notes_body'),
+                style:
+                    TextStyle(color: AdC.textMute, fontSize: 12, height: 1.6),
+              ),
+            ]),
           ),
         ]),
       );

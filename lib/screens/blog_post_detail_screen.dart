@@ -10,10 +10,12 @@ import 'package:palmnazi/models/blog_post_detail.dart';
 import 'package:palmnazi/models/blog_post_details_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/city_model.dart';
+import 'package:palmnazi/screens/landing_page.dart' show RC;
 import 'package:palmnazi/screens/place_details_screen.dart';
 import 'package:palmnazi/screens/resort_city_screen.dart';
 import 'package:palmnazi/services/analytics_service.dart';
 import 'package:palmnazi/services/api_client.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/blog_post_details_service.dart';
 import 'package:palmnazi/services/blog_post_service.dart';
 import 'package:palmnazi/services/place_lookup_service.dart';
@@ -29,16 +31,6 @@ import 'package:palmnazi/services/place_lookup_service.dart';
 // featured/paid-advert badges and "related to this story" links to resort
 // cities and places (the internal-linking requirement).
 // ─────────────────────────────────────────────────────────────────────────────
-
-abstract final class _P {
-  static const Color navy = Color(0xFF121F2E);
-  static const Color deepBlue = Color(0xFF1C2E42);
-  static const Color surface = Color(0xFF23374D);
-  static const Color gold = Color(0xFFD4AF37);
-  static const Color teal = Color(0xFF3FA9C4);
-  static const Color textSec = Color(0xFFC7D6E3);
-  static const Color textMute = Color(0xFF7C93A8);
-}
 
 class BlogPostDetailScreen extends StatefulWidget {
   final String slug;
@@ -80,7 +72,7 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
     if (post == null) {
       setState(() {
         _loading = false;
-        _error = 'This story could not be found.';
+        _error = context.tr('blog_detail_not_found');
       });
       return;
     }
@@ -116,8 +108,8 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
         _commentCtrl.clear();
         _loadComments();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Could not post your comment. Please try again.'),
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(context.tr('blog_detail_error_post_comment')),
         ));
       }
     }
@@ -135,7 +127,7 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
     if (post == null) return;
     showModalBottomSheet(
       context: context,
-      backgroundColor: _P.deepBlue,
+      backgroundColor: RC.deepBlue,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => Padding(
@@ -147,13 +139,13 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
             Row(children: [
               CircleAvatar(
                 radius: 24,
-                backgroundColor: _P.gold.withValues(alpha: 0.15),
+                backgroundColor: RC.gold.withValues(alpha: 0.15),
                 child: Text(
                     post.authorName.isNotEmpty
                         ? post.authorName[0].toUpperCase()
                         : '?',
                     style: const TextStyle(
-                        color: _P.gold,
+                        color: RC.gold,
                         fontSize: 20,
                         fontWeight: FontWeight.bold)),
               ),
@@ -163,24 +155,20 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(post.authorName,
-                        style: const TextStyle(
-                            color: Colors.white,
+                        style: TextStyle(
+                            color: RC.textPri,
                             fontSize: 16,
                             fontWeight: FontWeight.bold)),
                     if (post.authorEmail.isNotEmpty)
                       Text(post.authorEmail,
-                          style: const TextStyle(
-                              color: _P.textMute, fontSize: 12)),
+                          style: TextStyle(color: RC.textMute, fontSize: 12)),
                   ],
                 ),
               ),
             ]),
             const SizedBox(height: 16),
-            const Text(
-                'Writes stories for Palmnazi Resort Cities — guides, '
-                'features and updates about resort destinations across '
-                'the platform.',
-                style: TextStyle(color: _P.textSec, fontSize: 13, height: 1.5)),
+            Text(context.tr('blog_detail_author_bio'),
+                style: TextStyle(color: RC.textSec, fontSize: 13, height: 1.5)),
           ],
         ),
       ),
@@ -188,9 +176,9 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
   }
 
   Future<void> _openRelatedLink(BlogRelatedLink link) async {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Loading…'),
-      duration: Duration(milliseconds: 600),
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(context.tr('blog_detail_loading')),
+      duration: const Duration(milliseconds: 600),
     ));
     if (link.type == 'place') {
       final place = await PlaceLookupService.fetchPlace(link.id);
@@ -239,25 +227,25 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _P.navy,
+      backgroundColor: RC.navy,
       appBar: AppBar(
-        backgroundColor: _P.deepBlue,
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: const Text('Story', style: TextStyle(color: Colors.white)),
+        backgroundColor: RC.deepBlue,
+        iconTheme: IconThemeData(color: RC.textPri),
+        title: Text(context.tr('blog_detail_title'),
+            style: TextStyle(color: RC.textPri)),
         actions: [
           if (_post != null)
             IconButton(
-              icon: const Icon(Icons.share_outlined, color: Colors.white70),
+              icon: Icon(Icons.share_outlined, color: RC.textSec),
               onPressed: _share,
             ),
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _P.gold))
+          ? const Center(child: CircularProgressIndicator(color: RC.gold))
           : _error != null
               ? Center(
-                  child:
-                      Text(_error!, style: const TextStyle(color: _P.textSec)))
+                  child: Text(_error!, style: TextStyle(color: RC.textSec)))
               : _buildBody(_post!),
     );
   }
@@ -280,9 +268,9 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
                       child: Image.network(post.featuredImage!,
                           fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) => Container(
-                              color: _P.surface,
-                              child: const Icon(Icons.image_outlined,
-                                  color: _P.textMute, size: 48))),
+                              color: RC.surface,
+                              child: Icon(Icons.image_outlined,
+                                  color: RC.textMute, size: 48))),
                     ),
                   ),
                 const SizedBox(height: 20),
@@ -297,17 +285,17 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: _P.gold.withValues(alpha: 0.15),
+                          color: RC.gold.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(20),
                           border:
-                              Border.all(color: _P.gold.withValues(alpha: 0.4)),
+                              Border.all(color: RC.gold.withValues(alpha: 0.4)),
                         ),
                         child: Text(
                             details.sponsorLabel.isNotEmpty
-                                ? 'Sponsored by ${details.sponsorLabel}'
-                                : 'Sponsored',
+                                ? '${context.tr('blog_detail_sponsored_by_prefix')} ${details.sponsorLabel}'
+                                : context.tr('blog_detail_sponsored'),
                             style: const TextStyle(
-                                color: _P.gold,
+                                color: RC.gold,
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700)),
                       ),
@@ -315,8 +303,8 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
                   },
                 ),
                 Text(post.title,
-                    style: const TextStyle(
-                        color: Colors.white,
+                    style: TextStyle(
+                        color: RC.textPri,
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
                         height: 1.25)),
@@ -326,30 +314,29 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
                   child: Row(children: [
                     CircleAvatar(
                       radius: 14,
-                      backgroundColor: _P.gold.withValues(alpha: 0.15),
+                      backgroundColor: RC.gold.withValues(alpha: 0.15),
                       child: Text(
                           post.authorName.isNotEmpty
                               ? post.authorName[0].toUpperCase()
                               : '?',
-                          style: const TextStyle(color: _P.gold, fontSize: 12)),
+                          style: const TextStyle(color: RC.gold, fontSize: 12)),
                     ),
                     const SizedBox(width: 8),
                     Text(post.authorName,
                         style: const TextStyle(
-                            color: _P.teal,
+                            color: RC.teal,
                             fontSize: 13,
                             fontWeight: FontWeight.w600)),
                     if (post.formattedDate.isNotEmpty) ...[
-                      const Text('  ·  ',
-                          style: TextStyle(color: _P.textMute, fontSize: 13)),
+                      Text('  ·  ',
+                          style: TextStyle(color: RC.textMute, fontSize: 13)),
                       Text(post.formattedDate,
-                          style: const TextStyle(
-                              color: _P.textMute, fontSize: 13)),
+                          style: TextStyle(color: RC.textMute, fontSize: 13)),
                     ],
                   ]),
                 ),
                 const SizedBox(height: 20),
-                const Divider(color: Colors.white12),
+                Divider(color: RC.overlay(0.12)),
                 const SizedBox(height: 20),
                 _QuillContent(html: post.content),
                 const SizedBox(height: 28),
@@ -364,9 +351,9 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Related to This Story',
+                          Text(context.tr('blog_detail_related_heading'),
                               style: TextStyle(
-                                  color: Colors.white,
+                                  color: RC.textPri,
                                   fontSize: 15,
                                   fontWeight: FontWeight.bold)),
                           const SizedBox(height: 10),
@@ -380,13 +367,12 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
                                               ? Icons.location_city_rounded
                                               : Icons.storefront_rounded,
                                           size: 15,
-                                          color: _P.teal),
+                                          color: RC.teal),
                                       label: Text(l.label),
-                                      labelStyle: const TextStyle(
-                                          color: Colors.white, fontSize: 12),
-                                      backgroundColor: _P.surface,
-                                      side: const BorderSide(
-                                          color: Colors.white12),
+                                      labelStyle: TextStyle(
+                                          color: RC.textPri, fontSize: 12),
+                                      backgroundColor: RC.surface,
+                                      side: BorderSide(color: RC.overlay(0.12)),
                                       onPressed: () => _openRelatedLink(l),
                                     ))
                                 .toList(),
@@ -396,7 +382,7 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
                     );
                   },
                 ),
-                const Divider(color: Colors.white12),
+                Divider(color: RC.overlay(0.12)),
                 const SizedBox(height: 20),
                 _buildComments(),
               ],
@@ -411,22 +397,21 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Comments${_comments.isNotEmpty ? ' (${_comments.length})' : ''}',
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.bold)),
+        Text(
+            '${context.tr('blog_detail_comments_heading')}${_comments.isNotEmpty ? ' (${_comments.length})' : ''}',
+            style: TextStyle(
+                color: RC.textPri, fontSize: 15, fontWeight: FontWeight.bold)),
         const SizedBox(height: 14),
         Row(children: [
           Expanded(
             child: TextField(
               controller: _commentCtrl,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
+              style: TextStyle(color: RC.textPri, fontSize: 13),
               decoration: InputDecoration(
-                hintText: 'Share your thoughts…',
-                hintStyle: const TextStyle(color: _P.textMute, fontSize: 13),
+                hintText: context.tr('blog_detail_comment_hint'),
+                hintStyle: TextStyle(color: RC.textMute, fontSize: 13),
                 filled: true,
-                fillColor: _P.surface,
+                fillColor: RC.surface,
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                     borderSide: BorderSide.none),
@@ -443,8 +428,8 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: _P.gold))
-                : const Icon(Icons.send_rounded, color: _P.gold),
+                        strokeWidth: 2, color: RC.gold))
+                : const Icon(Icons.send_rounded, color: RC.gold),
           ),
         ]),
         const SizedBox(height: 16),
@@ -452,18 +437,18 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
           const Center(
               child: Padding(
             padding: EdgeInsets.all(12),
-            child: CircularProgressIndicator(color: _P.gold, strokeWidth: 2),
+            child: CircularProgressIndicator(color: RC.gold, strokeWidth: 2),
           ))
         else if (_comments.isEmpty)
-          const Text('Be the first to comment.',
-              style: TextStyle(color: _P.textMute, fontSize: 12))
+          Text(context.tr('blog_detail_no_comments'),
+              style: TextStyle(color: RC.textMute, fontSize: 12))
         else
           ..._comments.map((c) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: _P.surface,
+                    color: RC.surface,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Column(
@@ -471,13 +456,13 @@ class _BlogPostDetailScreenState extends State<BlogPostDetailScreen> {
                     children: [
                       Text(c.authorName,
                           style: const TextStyle(
-                              color: _P.teal,
+                              color: RC.teal,
                               fontSize: 12,
                               fontWeight: FontWeight.w600)),
                       const SizedBox(height: 4),
                       Text(c.content,
-                          style: const TextStyle(
-                              color: _P.textSec, fontSize: 13, height: 1.4)),
+                          style: TextStyle(
+                              color: RC.textSec, fontSize: 13, height: 1.4)),
                     ],
                   ),
                 ),
@@ -497,8 +482,8 @@ class _QuillContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (html.trim().isEmpty) {
-      return const Text('This story has no content yet.',
-          style: TextStyle(color: _P.textMute, fontSize: 13));
+      return Text(context.tr('blog_detail_no_content'),
+          style: TextStyle(color: RC.textMute, fontSize: 13));
     }
     late final QuillController controller;
     try {
@@ -510,13 +495,13 @@ class _QuillContent extends StatelessWidget {
       );
     } catch (_) {
       return Text(html,
-          style: const TextStyle(color: _P.textSec, fontSize: 15, height: 1.7));
+          style: TextStyle(color: RC.textSec, fontSize: 15, height: 1.7));
     }
     return QuillEditor(
       controller: controller,
       focusNode: FocusNode(canRequestFocus: false),
       scrollController: ScrollController(),
-      config: const QuillEditorConfig(
+      config: QuillEditorConfig(
         padding: EdgeInsets.zero,
         autoFocus: false,
         expands: false,
@@ -524,10 +509,10 @@ class _QuillContent extends StatelessWidget {
         showCursor: false,
         customStyles: DefaultStyles(
           paragraph: DefaultTextBlockStyle(
-            TextStyle(color: _P.textSec, fontSize: 15, height: 1.7),
-            HorizontalSpacing(0, 0),
-            VerticalSpacing(6, 6),
-            VerticalSpacing(0, 0),
+            TextStyle(color: RC.textSec, fontSize: 15, height: 1.7),
+            const HorizontalSpacing(0, 0),
+            const VerticalSpacing(6, 6),
+            const VerticalSpacing(0, 0),
             null,
           ),
         ),

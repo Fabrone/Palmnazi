@@ -18,6 +18,8 @@ import 'package:palmnazi/admin/admin_audit_log_screen.dart';
 import 'package:palmnazi/admin/place_admin/place_admin_panel.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
+import 'package:palmnazi/services/admin_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/dashboard_snapshot_service.dart';
 import 'package:palmnazi/services/notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -95,19 +97,20 @@ class _AdminDashboardState extends State<AdminDashboard>
   bool _managedPlaceLoading = false;
 
   static const _navItems = [
-    _NavItem(Icons.dashboard_rounded, 'Dashboard'),
-    _NavItem(Icons.location_city_rounded, 'Resort Cities'),
-    _NavItem(Icons.category_rounded, 'Categories'),
-    _NavItem(Icons.place_rounded, 'Places'),
-    _NavItem(Icons.article_rounded, 'Blog'),
-    _NavItem(Icons.manage_accounts_rounded, 'Role Requests'),
-    _NavItem(Icons.payments_rounded, 'Payment Methods'),
-    _NavItem(Icons.calendar_month_rounded, 'Bookings'),
-    _NavItem(Icons.bar_chart_rounded, 'Reports'),
-    _NavItem(Icons.mail_outline_rounded, 'Messages'),
-    _NavItem(Icons.settings_rounded, 'Settings'),
-    _NavItem(Icons.description_outlined, 'Static Pages'),
-    _NavItem(Icons.history_rounded, 'Audit Log'),
+    _NavItem(Icons.dashboard_rounded, 'admin_dashboard_nav_dashboard'),
+    _NavItem(Icons.location_city_rounded, 'admin_dashboard_nav_resort_cities'),
+    _NavItem(Icons.category_rounded, 'admin_dashboard_nav_categories'),
+    _NavItem(Icons.place_rounded, 'admin_dashboard_nav_places'),
+    _NavItem(Icons.article_rounded, 'admin_dashboard_nav_blog'),
+    _NavItem(
+        Icons.manage_accounts_rounded, 'admin_dashboard_nav_role_requests'),
+    _NavItem(Icons.payments_rounded, 'admin_dashboard_nav_payment_methods'),
+    _NavItem(Icons.calendar_month_rounded, 'admin_dashboard_nav_bookings'),
+    _NavItem(Icons.bar_chart_rounded, 'admin_dashboard_nav_reports'),
+    _NavItem(Icons.mail_outline_rounded, 'admin_dashboard_nav_messages'),
+    _NavItem(Icons.settings_rounded, 'admin_dashboard_nav_settings'),
+    _NavItem(Icons.description_outlined, 'admin_dashboard_nav_static_pages'),
+    _NavItem(Icons.history_rounded, 'admin_dashboard_nav_audit_log'),
   ];
 
   @override
@@ -300,42 +303,40 @@ class _AdminDashboardState extends State<AdminDashboard>
   // no sidebar/nav at all ────────────────────────────────────────────────
   Widget _buildPlaceScopedBody() {
     if (_managedPlaceLoading) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF0A0E1A),
-        body:
-            Center(child: CircularProgressIndicator(color: Color(0xFF14FFEC))),
+      return Scaffold(
+        backgroundColor: AdC.bg,
+        body: const Center(child: CircularProgressIndicator(color: AdC.teal)),
       );
     }
     if (_managedPlaceId == null || _managedPlaceId!.isEmpty) {
       return Scaffold(
-        backgroundColor: const Color(0xFF0A0E1A),
+        backgroundColor: AdC.bg,
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.business_outlined,
-                    color: Colors.white24, size: 56),
+                Icon(Icons.business_outlined, color: AdC.textMute, size: 56),
                 const SizedBox(height: 16),
-                const Text('No place assigned yet',
+                Text(context.tr('admin_dashboard_no_place_title'),
                     style: TextStyle(
-                        color: Colors.white,
+                        color: AdC.textPri,
                         fontSize: 16,
                         fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
-                const Text(
-                  'A MainAdmin needs to link your account to a place before you can manage anything here.',
+                Text(
+                  context.tr('admin_dashboard_no_place_body'),
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white38, fontSize: 13),
+                  style: TextStyle(color: AdC.textMute, fontSize: 13),
                 ),
                 const SizedBox(height: 24),
                 TextButton.icon(
                   onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.arrow_back_rounded,
-                      color: Colors.white54, size: 16),
-                  label: const Text('Back to App',
-                      style: TextStyle(color: Colors.white54)),
+                  icon: Icon(Icons.arrow_back_rounded,
+                      color: AdC.textMute, size: 16),
+                  label: Text(context.tr('admin_dashboard_back_to_app'),
+                      style: TextStyle(color: AdC.textMute)),
                 ),
               ],
             ),
@@ -368,7 +369,7 @@ class _AdminDashboardState extends State<AdminDashboard>
     final isTablet = w >= 700 && h >= 500;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
+      backgroundColor: AdC.bg,
       body: Row(
         children: [
           if (isTablet)
@@ -421,15 +422,13 @@ class _AdminDashboardState extends State<AdminDashboard>
             ? _BadgedIcon(
                 icon: item.icon,
                 count: _pendingRequestsCount,
-                color: Colors.white54)
-            : Icon(item.icon, color: Colors.white54),
+                color: AdC.textMute)
+            : Icon(item.icon, color: AdC.textMute),
         selectedIcon: hasBadge
             ? _BadgedIcon(
-                icon: item.icon,
-                count: _pendingRequestsCount,
-                color: const Color(0xFF14FFEC))
-            : Icon(item.icon, color: const Color(0xFF14FFEC)),
-        label: item.label,
+                icon: item.icon, count: _pendingRequestsCount, color: AdC.teal)
+            : Icon(item.icon, color: AdC.teal),
+        label: context.tr(item.labelKey),
       ));
     }
 
@@ -451,8 +450,8 @@ class _AdminDashboardState extends State<AdminDashboard>
         : 0;
 
     return NavigationBar(
-      backgroundColor: const Color(0xFF111827),
-      indicatorColor: const Color(0xFF14FFEC).withValues(alpha: 0.15),
+      backgroundColor: AdC.surface,
+      indicatorColor: AdC.teal.withValues(alpha: 0.15),
       selectedIndex: visualIndex,
       onDestinationSelected: (vi) => _onNavTap(logicalIndices[vi]),
       destinations: destinations,
@@ -463,75 +462,78 @@ class _AdminDashboardState extends State<AdminDashboard>
   String get _pageTitle {
     switch (_selectedIndex) {
       case 0:
-        return 'Admin Console';
+        return context.tr('admin_dashboard_title_admin_console');
       case 1:
-        return 'Resort Cities';
+        return context.tr('admin_dashboard_nav_resort_cities');
       case 2:
-        return 'Categories';
+        return context.tr('admin_dashboard_nav_categories');
       case 3:
+        final placesLabel = context.tr('admin_dashboard_nav_places');
         if (_filterCategory != null && _filterCity != null) {
           return '${_filterCategory!.name} — ${_filterCity!.name}';
         }
-        if (_filterCity != null) return 'Places — ${_filterCity!.name}';
-        if (_filterCategory != null) return 'Places — ${_filterCategory!.name}';
-        return 'Places';
+        if (_filterCity != null) return '$placesLabel — ${_filterCity!.name}';
+        if (_filterCategory != null) {
+          return '$placesLabel — ${_filterCategory!.name}';
+        }
+        return placesLabel;
       case 4:
-        return 'Blog';
+        return context.tr('admin_dashboard_nav_blog');
       case 5:
-        return 'Role Requests';
+        return context.tr('admin_dashboard_nav_role_requests');
       case 6:
-        return 'Payment Methods';
+        return context.tr('admin_dashboard_nav_payment_methods');
       case 7:
-        return 'Bookings';
+        return context.tr('admin_dashboard_nav_bookings');
       case 8:
-        return 'Reports';
+        return context.tr('admin_dashboard_nav_reports');
       case 9:
-        return 'Messages';
+        return context.tr('admin_dashboard_nav_messages');
       case 10:
-        return 'Settings';
+        return context.tr('admin_dashboard_nav_settings');
       case 11:
-        return 'Static Pages';
+        return context.tr('admin_dashboard_nav_static_pages');
       case 12:
-        return 'Audit Log';
+        return context.tr('admin_dashboard_nav_audit_log');
       default:
-        return 'Admin';
+        return context.tr('admin_dashboard_logo_label');
     }
   }
 
   String get _pageSubtitle {
     switch (_selectedIndex) {
       case 0:
-        return 'System overview & quick actions';
+        return context.tr('admin_dashboard_subtitle_overview');
       case 1:
-        return 'Add, edit and remove resort destinations';
+        return context.tr('admin_dashboard_subtitle_resort_cities');
       case 2:
-        return 'Manage global categories and subcategories';
+        return context.tr('admin_dashboard_subtitle_categories');
       case 3:
         if (_filterCity != null && _filterCategory == null) {
-          return 'Showing places in ${_filterCity!.name}';
+          return '${context.tr('admin_dashboard_subtitle_places_filtered_prefix')} ${_filterCity!.name}';
         }
-        return 'Manage listings and places';
+        return context.tr('admin_dashboard_subtitle_places');
       case 4:
-        return 'Create, edit and publish blog articles';
+        return context.tr('admin_dashboard_subtitle_blog');
       case 5:
         final c = _pendingRequestsCount;
         return c > 0
-            ? '$c pending request${c == 1 ? '' : 's'} awaiting review'
-            : 'Review and manage admin role requests';
+            ? '$c ${c == 1 ? context.tr('admin_dashboard_role_requests_pending_singular') : context.tr('admin_dashboard_role_requests_pending_plural')}'
+            : context.tr('admin_dashboard_subtitle_role_requests');
       case 6:
-        return 'Configure the payment options places can accept';
+        return context.tr('admin_dashboard_subtitle_payment_methods');
       case 7:
-        return 'Review and manage tourist booking requests';
+        return context.tr('admin_dashboard_subtitle_bookings');
       case 8:
-        return 'System-wide bookings analytics';
+        return context.tr('admin_dashboard_subtitle_reports');
       case 9:
-        return 'Messages submitted through the landing page contact form';
+        return context.tr('admin_dashboard_subtitle_messages');
       case 10:
-        return 'Contact info, footer links, maintenance mode and data export';
+        return context.tr('admin_dashboard_subtitle_settings');
       case 11:
-        return 'Edit About Us, Privacy Policy, Terms of Service, Cookie Policy';
+        return context.tr('admin_dashboard_subtitle_static_pages');
       case 12:
-        return 'Every admin action, in order — who did what, and when';
+        return context.tr('admin_dashboard_subtitle_audit_log');
       default:
         return '';
     }
@@ -602,7 +604,7 @@ class _AdminDashboardState extends State<AdminDashboard>
     final screenHeight = MediaQuery.of(context).size.height;
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF111827),
+      backgroundColor: AdC.surface,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -618,7 +620,7 @@ class _AdminDashboardState extends State<AdminDashboard>
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.white24,
+                  color: AdC.overlay(0.24),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -636,19 +638,16 @@ class _AdminDashboardState extends State<AdminDashboard>
                       ? _BadgedIcon(
                           icon: e.value.icon,
                           count: _pendingRequestsCount,
-                          color: _selectedIndex == e.key
-                              ? const Color(0xFF14FFEC)
-                              : Colors.white54,
+                          color:
+                              _selectedIndex == e.key ? AdC.teal : AdC.textMute,
                         )
                       : Icon(e.value.icon,
                           color: _selectedIndex == e.key
-                              ? const Color(0xFF14FFEC)
-                              : Colors.white54),
-                  title: Text(e.value.label,
+                              ? AdC.teal
+                              : AdC.textMute),
+                  title: Text(context.tr(e.value.labelKey),
                       style: TextStyle(
-                        color: _selectedIndex == e.key
-                            ? const Color(0xFF14FFEC)
-                            : Colors.white70,
+                        color: _selectedIndex == e.key ? AdC.teal : AdC.textSec,
                         fontWeight: _selectedIndex == e.key
                             ? FontWeight.bold
                             : FontWeight.normal,
@@ -660,16 +659,15 @@ class _AdminDashboardState extends State<AdminDashboard>
                 );
               }),
               if (_adminRole == RbacService.roleMainAdmin) ...[
-                const Divider(color: Colors.white12, height: 1),
+                Divider(color: AdC.overlay(0.12), height: 1),
                 ListTile(
-                  leading: const Icon(Icons.storefront_rounded,
-                      color: Color(0xFF14FFEC)),
+                  leading:
+                      const Icon(Icons.storefront_rounded, color: AdC.teal),
                   title: const Text('Place Admin',
                       style: TextStyle(
-                          color: Color(0xFF14FFEC),
-                          fontWeight: FontWeight.w600)),
-                  subtitle: const Text('Manage a specific place',
-                      style: TextStyle(color: Colors.white38, fontSize: 11)),
+                          color: AdC.teal, fontWeight: FontWeight.w600)),
+                  subtitle: Text('Manage a specific place',
+                      style: TextStyle(color: AdC.textMute, fontSize: 11)),
                   onTap: () {
                     Navigator.pop(context);
                     _openPlaceAdminPicker();
@@ -719,7 +717,7 @@ class _AdminSidebar extends StatelessWidget {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
       width: isExpanded ? 220 : 72,
-      color: const Color(0xFF111827),
+      color: AdC.surface,
       child: Column(
         children: [
           SizedBox(height: isShortScreen ? 16 : 48),
@@ -732,19 +730,18 @@ class _AdminSidebar extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF14FFEC).withValues(alpha: 0.15),
+                  color: AdC.teal.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                      color: const Color(0xFF14FFEC).withValues(alpha: 0.3)),
+                  border: Border.all(color: AdC.teal.withValues(alpha: 0.3)),
                 ),
                 child: const Icon(Icons.admin_panel_settings_rounded,
-                    color: Color(0xFF14FFEC), size: 20),
+                    color: AdC.teal, size: 20),
               ),
               if (isExpanded) ...[
                 const SizedBox(width: 12),
-                const Text('Admin',
+                Text(context.tr('admin_dashboard_logo_label'),
                     style: TextStyle(
-                        color: Colors.white,
+                        color: AdC.textPri,
                         fontWeight: FontWeight.bold,
                         fontSize: 16)),
               ],
@@ -769,7 +766,7 @@ class _AdminSidebar extends StatelessWidget {
 
                     return _SidebarItem(
                       icon: e.value.icon,
-                      label: e.value.label,
+                      label: context.tr(e.value.labelKey),
                       isSelected: isSelected,
                       isExpanded: isExpanded,
                       badgeCount: hasBadge ? pendingRequestsCount : 0,
@@ -788,20 +785,20 @@ class _AdminSidebar extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Active filters',
-                      style: TextStyle(color: Colors.white38, fontSize: 11)),
+                  Text(context.tr('admin_dashboard_active_filters'),
+                      style: TextStyle(color: AdC.textMute, fontSize: 11)),
                   const SizedBox(height: 6),
                   if (filterCity != null)
                     _ContextChip(
                         icon: Icons.location_city_rounded,
                         label: filterCity!.name,
-                        color: const Color(0xFF0D7377)),
+                        color: AdC.tealDark),
                   if (filterCategory != null) ...[
                     const SizedBox(height: 4),
                     _ContextChip(
                         icon: Icons.category_rounded,
                         label: filterCategory!.name,
-                        color: const Color(0xFF2196F3)),
+                        color: AdC.blue),
                   ],
                 ],
               ),
@@ -820,10 +817,9 @@ class _AdminSidebar extends StatelessWidget {
                   padding: EdgeInsets.symmetric(
                       horizontal: isExpanded ? 12 : 0, vertical: 12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF14FFEC).withValues(alpha: 0.08),
+                    color: AdC.teal.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                        color: const Color(0xFF14FFEC).withValues(alpha: 0.25)),
+                    border: Border.all(color: AdC.teal.withValues(alpha: 0.25)),
                   ),
                   child: Row(
                     mainAxisAlignment: isExpanded
@@ -831,12 +827,12 @@ class _AdminSidebar extends StatelessWidget {
                         : MainAxisAlignment.center,
                     children: [
                       const Icon(Icons.storefront_rounded,
-                          size: 20, color: Color(0xFF14FFEC)),
+                          size: 20, color: AdC.teal),
                       if (isExpanded) ...[
                         const SizedBox(width: 12),
-                        const Text('Place Admin',
-                            style: TextStyle(
-                                color: Color(0xFF14FFEC), fontSize: 14)),
+                        Text(context.tr('admin_dashboard_place_admin'),
+                            style:
+                                const TextStyle(color: AdC.teal, fontSize: 14)),
                       ],
                     ],
                   ),
@@ -858,23 +854,20 @@ class _AdminSidebar extends StatelessWidget {
                 padding: EdgeInsets.symmetric(
                     horizontal: isExpanded ? 12 : 0, vertical: 12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
+                  color: AdC.overlay(0.05),
                   borderRadius: BorderRadius.circular(10),
-                  border:
-                      Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  border: Border.all(color: AdC.overlay(0.08)),
                 ),
                 child: Row(
                   mainAxisAlignment: isExpanded
                       ? MainAxisAlignment.start
                       : MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.logout_rounded,
-                        size: 20, color: Colors.white38),
+                    Icon(Icons.logout_rounded, size: 20, color: AdC.textMute),
                     if (isExpanded) ...[
                       const SizedBox(width: 12),
-                      const Text('Back to App',
-                          style:
-                              TextStyle(color: Colors.white54, fontSize: 14)),
+                      Text(context.tr('admin_dashboard_back_to_app'),
+                          style: TextStyle(color: AdC.textMute, fontSize: 14)),
                     ],
                   ],
                 ),
@@ -910,68 +903,72 @@ class _SidebarItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-        padding:
-            EdgeInsets.symmetric(horizontal: isExpanded ? 12 : 0, vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFF14FFEC).withValues(alpha: 0.1)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          border: isSelected
-              ? Border.all(
-                  color: const Color(0xFF14FFEC).withValues(alpha: 0.2))
-              : null,
-        ),
-        child: Row(
-          mainAxisAlignment:
-              isExpanded ? MainAxisAlignment.start : MainAxisAlignment.center,
-          children: [
-            badgeCount > 0
-                ? _BadgedIcon(
-                    icon: icon,
-                    count: badgeCount,
-                    color:
-                        isSelected ? const Color(0xFF14FFEC) : Colors.white38,
-                  )
-                : Icon(icon,
-                    size: 20,
-                    color:
-                        isSelected ? const Color(0xFF14FFEC) : Colors.white38),
-            if (isExpanded) ...[
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(label,
-                    style: TextStyle(
-                        color: isSelected
-                            ? const Color(0xFF14FFEC)
-                            : Colors.white54,
-                        fontSize: 14,
-                        fontWeight:
-                            isSelected ? FontWeight.w600 : FontWeight.normal)),
-              ),
-              if (badgeCount > 0)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF9800),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '$badgeCount',
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold),
-                  ),
+    // Collapsed (icon-only) mode hides the label text entirely, so the
+    // only way to know what a rail icon does — on tablet/split-screen
+    // widths where the sidebar never expands — is a hover/long-press
+    // tooltip. Skip the tooltip when expanded since the label is already
+    // visible right next to the icon.
+    return Tooltip(
+      message: isExpanded ? '' : label,
+      waitDuration: const Duration(milliseconds: 400),
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+          padding: EdgeInsets.symmetric(
+              horizontal: isExpanded ? 12 : 0, vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AdC.teal.withValues(alpha: 0.1)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            border: isSelected
+                ? Border.all(color: AdC.teal.withValues(alpha: 0.2))
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment:
+                isExpanded ? MainAxisAlignment.start : MainAxisAlignment.center,
+            children: [
+              badgeCount > 0
+                  ? _BadgedIcon(
+                      icon: icon,
+                      count: badgeCount,
+                      color: isSelected ? AdC.teal : AdC.textMute,
+                    )
+                  : Icon(icon,
+                      size: 20, color: isSelected ? AdC.teal : AdC.textMute),
+              if (isExpanded) ...[
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(label,
+                      style: TextStyle(
+                          color: isSelected ? AdC.teal : AdC.textMute,
+                          fontSize: 14,
+                          fontWeight: isSelected
+                              ? FontWeight.w600
+                              : FontWeight.normal)),
                 ),
+                if (badgeCount > 0)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AdC.orange,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '$badgeCount',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -1004,7 +1001,7 @@ class _BadgedIcon extends StatelessWidget {
               width: 14,
               height: 14,
               decoration: const BoxDecoration(
-                color: Color(0xFFFF9800),
+                color: AdC.orange,
                 shape: BoxShape.circle,
               ),
               child: Center(
@@ -1072,9 +1069,8 @@ class _AdminTopBar extends StatelessWidget {
       constraints: const BoxConstraints(minHeight: 56),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFF111827),
-        border: Border(
-            bottom: BorderSide(color: Colors.white.withValues(alpha: 0.07))),
+        color: AdC.surface,
+        border: Border(bottom: BorderSide(color: AdC.overlay(0.07))),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -1084,8 +1080,7 @@ class _AdminTopBar extends StatelessWidget {
               onPressed: onMenuTap,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-              icon: const Icon(Icons.menu_rounded,
-                  color: Colors.white54, size: 22),
+              icon: Icon(Icons.menu_rounded, color: AdC.textMute, size: 22),
             ),
             const SizedBox(width: 4),
           ],
@@ -1099,7 +1094,7 @@ class _AdminTopBar extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      color: Colors.white,
+                      color: AdC.textPri,
                       fontSize: isNarrow ? 15 : 18,
                       fontWeight: FontWeight.bold),
                 ),
@@ -1109,7 +1104,7 @@ class _AdminTopBar extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        color: Colors.white38, fontSize: isNarrow ? 10 : 11),
+                        color: AdC.textMute, fontSize: isNarrow ? 10 : 11),
                   ),
               ],
             ),
@@ -1121,27 +1116,25 @@ class _AdminTopBar extends StatelessWidget {
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
               icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                  size: 18, color: Color(0xFF14FFEC)),
+                  size: 18, color: AdC.teal),
             )
           else
             TextButton.icon(
               onPressed: () => Navigator.pop(context),
               icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                  size: 14, color: Color(0xFF14FFEC)),
+                  size: 14, color: AdC.teal),
               label: const Text('Back to App',
                   style: TextStyle(
-                      color: Color(0xFF14FFEC),
+                      color: AdC.teal,
                       fontSize: 13,
                       fontWeight: FontWeight.w500)),
               style: TextButton.styleFrom(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                backgroundColor:
-                    const Color(0xFF14FFEC).withValues(alpha: 0.08),
+                backgroundColor: AdC.teal.withValues(alpha: 0.08),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(
-                      color: const Color(0xFF14FFEC).withValues(alpha: 0.25)),
+                  side: BorderSide(color: AdC.teal.withValues(alpha: 0.25)),
                 ),
               ),
             ),
@@ -1203,23 +1196,23 @@ class _DashboardOverview extends StatelessWidget {
                 children: [
                   _StatCard(
                     icon: Icons.location_city_rounded,
-                    label: 'Resort Cities',
+                    label: context.tr('admin_dashboard_nav_resort_cities'),
                     value: isLoading ? '…' : '${stats['cities_total'] ?? 0}',
-                    color: const Color(0xFF0D7377),
+                    color: AdC.tealDark,
                     cardWidth: statCardW,
                     onTap: () => onGoTo(1),
                   ),
                   _StatCard(
                     icon: Icons.people_rounded,
-                    label: 'Registered Users',
+                    label: context.tr('admin_dashboard_stat_registered_users'),
                     value: isLoading ? '…' : '${stats['users_total'] ?? 0}',
-                    color: const Color(0xFF2196F3),
+                    color: AdC.blue,
                     cardWidth: statCardW,
                     onTap: () => onGoTo(0),
                   ),
                   _StatCard(
                     icon: Icons.place_rounded,
-                    label: 'Active Places',
+                    label: context.tr('admin_dashboard_stat_active_places'),
                     value: isLoading ? '…' : '${stats['places_active'] ?? 0}',
                     color: const Color(0xFF9C27B0),
                     cardWidth: statCardW,
@@ -1227,18 +1220,18 @@ class _DashboardOverview extends StatelessWidget {
                   ),
                   _StatCard(
                     icon: Icons.pending_actions_rounded,
-                    label: 'Pending Drafts',
+                    label: context.tr('admin_dashboard_stat_pending_drafts'),
                     value: isLoading ? '…' : '${stats['places_pending'] ?? 0}',
-                    color: const Color(0xFFFF9800),
+                    color: AdC.orange,
                     cardWidth: statCardW,
                     onTap: () => onGoTo(3),
                   ),
                   if (canManageRoleRequests)
                     _StatCard(
                       icon: Icons.manage_accounts_rounded,
-                      label: 'Role Requests',
+                      label: context.tr('admin_dashboard_nav_role_requests'),
                       value: '$pendingRequestsCount',
-                      color: const Color(0xFFFF9800),
+                      color: AdC.orange,
                       cardWidth: statCardW,
                       onTap: () => onGoTo(5),
                       badge: pendingRequestsCount > 0
@@ -1256,9 +1249,9 @@ class _DashboardOverview extends StatelessWidget {
               const SizedBox(height: 32),
 
               // ── Quick Actions ──────────────────────────────────────────
-              const Text('Quick Actions',
+              Text(context.tr('admin_dashboard_quick_actions'),
                   style: TextStyle(
-                      color: Colors.white,
+                      color: AdC.textPri,
                       fontSize: 16,
                       fontWeight: FontWeight.w600)),
               const SizedBox(height: 16),
@@ -1268,32 +1261,36 @@ class _DashboardOverview extends StatelessWidget {
                 children: [
                   _QuickAction(
                     icon: Icons.add_location_alt_rounded,
-                    label: 'Add Resort City',
-                    description: 'Create a new resort destination',
-                    color: const Color(0xFF0D7377),
+                    label: context.tr('admin_dashboard_qa_add_resort_city'),
+                    description:
+                        context.tr('admin_dashboard_qa_add_resort_city_desc'),
+                    color: AdC.tealDark,
                     cardWidth: actionCardW,
                     onTap: () => onGoTo(1),
                   ),
                   _QuickAction(
                     icon: Icons.add_box_rounded,
-                    label: 'Add Category',
-                    description: 'Create a global service category',
-                    color: const Color(0xFF2196F3),
+                    label: context.tr('admin_dashboard_qa_add_category'),
+                    description:
+                        context.tr('admin_dashboard_qa_add_category_desc'),
+                    color: AdC.blue,
                     cardWidth: actionCardW,
                     onTap: () => onGoTo(2),
                   ),
                   _QuickAction(
                     icon: Icons.add_business_rounded,
-                    label: 'Add Place',
-                    description: 'List a new place or business',
+                    label: context.tr('admin_dashboard_qa_add_place'),
+                    description:
+                        context.tr('admin_dashboard_qa_add_place_desc'),
                     color: const Color(0xFF9C27B0),
                     cardWidth: actionCardW,
                     onTap: () => onGoTo(3),
                   ),
                   _QuickAction(
                     icon: Icons.edit_note_rounded,
-                    label: 'Write Blog Post',
-                    description: 'Publish a new article or guide',
+                    label: context.tr('admin_dashboard_qa_write_blog'),
+                    description:
+                        context.tr('admin_dashboard_qa_write_blog_desc'),
                     color: const Color(0xFFE91E8C),
                     cardWidth: actionCardW,
                     onTap: () => onGoTo(4),
@@ -1301,11 +1298,11 @@ class _DashboardOverview extends StatelessWidget {
                   if (canManageRoleRequests)
                     _QuickAction(
                       icon: Icons.manage_accounts_rounded,
-                      label: 'Role Requests',
+                      label: context.tr('admin_dashboard_nav_role_requests'),
                       description: pendingRequestsCount > 0
-                          ? '$pendingRequestsCount pending • tap to review'
-                          : 'Review admin role applications',
-                      color: const Color(0xFFFF9800),
+                          ? '$pendingRequestsCount ${context.tr('admin_dashboard_qa_role_requests_pending_suffix')}'
+                          : context.tr('admin_dashboard_qa_role_requests_desc'),
+                      color: AdC.orange,
                       cardWidth: actionCardW,
                       onTap: () => onGoTo(5),
                       badge: pendingRequestsCount > 0
@@ -1314,17 +1311,18 @@ class _DashboardOverview extends StatelessWidget {
                     ),
                   _QuickAction(
                     icon: Icons.payments_rounded,
-                    label: 'Payment Methods',
-                    description: 'Configure accepted payment options',
-                    color: const Color(0xFF0D7377),
+                    label: context.tr('admin_dashboard_nav_payment_methods'),
+                    description:
+                        context.tr('admin_dashboard_qa_payment_methods_desc'),
+                    color: AdC.tealDark,
                     cardWidth: actionCardW,
                     onTap: () => onGoTo(6),
                   ),
                   _QuickAction(
                     icon: Icons.calendar_month_rounded,
-                    label: 'Bookings',
-                    description: 'Review tourist booking requests',
-                    color: const Color(0xFF2196F3),
+                    label: context.tr('admin_dashboard_nav_bookings'),
+                    description: context.tr('admin_dashboard_qa_bookings_desc'),
+                    color: AdC.blue,
                     cardWidth: actionCardW,
                     onTap: () => onGoTo(7),
                   ),
@@ -1355,23 +1353,21 @@ class _GrowthChartCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF111827),
+        color: AdC.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white12),
+        border: Border.all(color: AdC.overlay(0.12)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Growth — Last 30 Days',
+          Text(context.tr('admin_dashboard_growth_title'),
               style: TextStyle(
-                  color: Colors.white,
+                  color: AdC.textPri,
                   fontSize: 14,
                   fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
-          const Text(
-              'Active places, resort cities and registered users, sampled '
-              'once per day.',
-              style: TextStyle(color: Colors.white38, fontSize: 11.5)),
+          Text(context.tr('admin_dashboard_growth_desc'),
+              style: TextStyle(color: AdC.textMute, fontSize: 11.5)),
           const SizedBox(height: 16),
           SizedBox(
             height: 220,
@@ -1380,12 +1376,11 @@ class _GrowthChartCard extends StatelessWidget {
               builder: (context, snap) {
                 final points = snap.data ?? const <DashboardSnapshot>[];
                 if (points.length < 2) {
-                  return const Center(
+                  return Center(
                     child: Text(
-                      'Not enough history yet — check back after a few '
-                      'days of activity to see a trend.',
+                      context.tr('admin_dashboard_growth_no_history'),
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white38, fontSize: 12),
+                      style: TextStyle(color: AdC.textMute, fontSize: 12),
                     ),
                   );
                 }
@@ -1394,10 +1389,16 @@ class _GrowthChartCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          Wrap(spacing: 16, runSpacing: 6, children: const [
-            _LegendDot(color: Color(0xFF9C27B0), label: 'Active places'),
-            _LegendDot(color: Color(0xFF0D7377), label: 'Resort cities'),
-            _LegendDot(color: Color(0xFF2196F3), label: 'Users'),
+          Wrap(spacing: 16, runSpacing: 6, children: [
+            _LegendDot(
+                color: const Color(0xFF9C27B0),
+                label: context.tr('admin_dashboard_legend_active_places')),
+            _LegendDot(
+                color: AdC.tealDark,
+                label: context.tr('admin_dashboard_legend_resort_cities')),
+            _LegendDot(
+                color: AdC.blue,
+                label: context.tr('admin_dashboard_legend_users')),
           ]),
         ],
       ),
@@ -1427,7 +1428,7 @@ class _GrowthLineChart extends StatelessWidget {
           show: true,
           drawVerticalLine: false,
           getDrawingHorizontalLine: (_) =>
-              FlLine(color: Colors.white10, strokeWidth: 1),
+              FlLine(color: AdC.overlay(0.1), strokeWidth: 1),
         ),
         borderData: FlBorderData(show: false),
         titlesData: FlTitlesData(
@@ -1440,7 +1441,7 @@ class _GrowthLineChart extends StatelessWidget {
               showTitles: true,
               reservedSize: 32,
               getTitlesWidget: (v, meta) => Text('${v.toInt()}',
-                  style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                  style: TextStyle(color: AdC.textMute, fontSize: 10)),
             ),
           ),
           bottomTitles: AxisTitles(
@@ -1455,8 +1456,7 @@ class _GrowthLineChart extends StatelessWidget {
                 return Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Text('${d.day}/${d.month}',
-                      style:
-                          const TextStyle(color: Colors.white38, fontSize: 10)),
+                      style: TextStyle(color: AdC.textMute, fontSize: 10)),
                 );
               },
             ),
@@ -1469,8 +1469,8 @@ class _GrowthLineChart extends StatelessWidget {
         ),
         lineBarsData: [
           _line(_spots((p) => p.placesActive), const Color(0xFF9C27B0)),
-          _line(_spots((p) => p.citiesTotal), const Color(0xFF0D7377)),
-          _line(_spots((p) => p.usersTotal), const Color(0xFF2196F3)),
+          _line(_spots((p) => p.citiesTotal), AdC.tealDark),
+          _line(_spots((p) => p.usersTotal), AdC.blue),
         ],
       ),
     );
@@ -1502,8 +1502,7 @@ class _LegendDot extends StatelessWidget {
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 6),
-          Text(label,
-              style: const TextStyle(color: Colors.white54, fontSize: 11)),
+          Text(label, style: TextStyle(color: AdC.textMute, fontSize: 11)),
         ],
       );
 }
@@ -1538,7 +1537,7 @@ class _StatCard extends StatelessWidget {
           width: cardWidth,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: const Color(0xFF111827),
+            color: AdC.surface,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: color.withValues(alpha: 0.25)),
           ),
@@ -1560,7 +1559,7 @@ class _StatCard extends StatelessWidget {
                     width: 16,
                     height: 16,
                     decoration: const BoxDecoration(
-                        color: Color(0xFFFF9800), shape: BoxShape.circle),
+                        color: AdC.orange, shape: BoxShape.circle),
                     child: Center(
                       child: Text(
                         badge! > 9 ? '9+' : '$badge',
@@ -1590,8 +1589,7 @@ class _StatCard extends StatelessWidget {
                     Text(label,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: Colors.white54, fontSize: 12)),
+                        style: TextStyle(color: AdC.textMute, fontSize: 12)),
                   ]),
             ),
           ]),
@@ -1647,7 +1645,7 @@ class _QuickAction extends StatelessWidget {
                         width: 16,
                         height: 16,
                         decoration: const BoxDecoration(
-                            color: Color(0xFFFF9800), shape: BoxShape.circle),
+                            color: AdC.orange, shape: BoxShape.circle),
                         child: Center(
                           child: Text(
                             badge! > 9 ? '9+' : '$badge',
@@ -1663,13 +1661,13 @@ class _QuickAction extends StatelessWidget {
               ]),
               const SizedBox(height: 12),
               Text(label,
-                  style: const TextStyle(
-                      color: Colors.white,
+                  style: TextStyle(
+                      color: AdC.textPri,
                       fontWeight: FontWeight.w600,
                       fontSize: 14)),
               const SizedBox(height: 4),
               Text(description,
-                  style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                  style: TextStyle(color: AdC.textMute, fontSize: 12)),
             ],
           ),
         ),
@@ -1684,57 +1682,60 @@ class _WorkflowGuide extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: const Color(0xFF111827),
+          color: AdC.surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white12),
+          border: Border.all(color: AdC.overlay(0.12)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Row(children: [
-              Icon(Icons.map_rounded, color: Color(0xFF14FFEC), size: 18),
-              SizedBox(width: 10),
-              Text('Setup Workflow',
+            Row(children: [
+              const Icon(Icons.map_rounded, color: AdC.teal, size: 18),
+              const SizedBox(width: 10),
+              Text(context.tr('admin_dashboard_workflow_title'),
                   style: TextStyle(
-                      color: Colors.white,
+                      color: AdC.textPri,
                       fontWeight: FontWeight.w600,
                       fontSize: 15)),
             ]),
             const SizedBox(height: 20),
             _step(
+                context,
                 '1',
-                'Resort Cities',
-                'Create each destination city (e.g. Mombasa, Nairobi).',
-                const Color(0xFF0D7377)),
+                context.tr('admin_dashboard_nav_resort_cities'),
+                context.tr('admin_dashboard_workflow_step1_body'),
+                AdC.tealDark),
+            _step(context, '2', context.tr('admin_dashboard_nav_categories'),
+                context.tr('admin_dashboard_workflow_step2_body'), AdC.blue),
             _step(
-                '2',
-                'Categories',
-                'Create global categories (Accommodation, Dining, Wellness…).',
-                const Color(0xFF2196F3)),
-            _step('3', 'Places', 'Add each place via the 11-step wizard.',
+                context,
+                '3',
+                context.tr('admin_dashboard_nav_places'),
+                context.tr('admin_dashboard_workflow_step3_body'),
                 const Color(0xFF9C27B0)),
-            _step('4', 'Blog', 'Publish articles, guides, and city highlights.',
+            _step(
+                context,
+                '4',
+                context.tr('admin_dashboard_nav_blog'),
+                context.tr('admin_dashboard_workflow_step4_body'),
                 const Color(0xFFE91E8C)),
+            _step(context, '5', context.tr('admin_dashboard_nav_role_requests'),
+                context.tr('admin_dashboard_workflow_step5_body'), AdC.orange),
             _step(
-                '5',
-                'Role Requests',
-                'Review and approve admin role applications from users.',
-                const Color(0xFFFF9800)),
-            _step(
+                context,
                 '6',
-                'Payment Methods',
-                'Define which payment options places can accept (M-Pesa, Card, Cash…).',
-                const Color(0xFF0D7377)),
-            _step(
-                '7',
-                'Bookings',
-                'Review and confirm booking requests submitted by tourists.',
-                const Color(0xFF2196F3)),
+                context.tr('admin_dashboard_nav_payment_methods'),
+                context.tr('admin_dashboard_workflow_step6_body'),
+                AdC.tealDark),
+            _step(context, '7', context.tr('admin_dashboard_nav_bookings'),
+                context.tr('admin_dashboard_workflow_step7_body'), AdC.blue),
           ],
         ),
       );
 
-  Widget _step(String num, String title, String body, Color color) => Padding(
+  Widget _step(BuildContext context, String num, String title, String body,
+          Color color) =>
+      Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1760,14 +1761,14 @@ class _WorkflowGuide extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title,
-                      style: const TextStyle(
-                          color: Colors.white,
+                      style: TextStyle(
+                          color: AdC.textPri,
                           fontWeight: FontWeight.w600,
                           fontSize: 13)),
                   const SizedBox(height: 2),
                   Text(body,
-                      style: const TextStyle(
-                          color: Colors.white38, fontSize: 12, height: 1.5)),
+                      style: TextStyle(
+                          color: AdC.textMute, fontSize: 12, height: 1.5)),
                 ],
               ),
             ),
@@ -1781,6 +1782,6 @@ class _WorkflowGuide extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 class _NavItem {
   final IconData icon;
-  final String label;
-  const _NavItem(this.icon, this.label);
+  final String labelKey;
+  const _NavItem(this.icon, this.labelKey);
 }

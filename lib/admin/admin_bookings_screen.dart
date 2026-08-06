@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:palmnazi/admin/admin_shared_widgets.dart';
 import 'package:palmnazi/models/booking_model.dart';
+import 'package:palmnazi/services/admin_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/booking_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -36,8 +38,9 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
     BookingStatus.cancelled,
   ];
 
-  String _tabLabel(BookingStatus? s) =>
-      s == null ? 'All' : BookingModel.statusLabel(s);
+  String _tabLabel(BuildContext context, BookingStatus? s) => s == null
+      ? context.tr('category_subcat_all')
+      : BookingModel.statusLabel(s);
 
   @override
   Widget build(BuildContext context) {
@@ -51,14 +54,14 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Bookings',
+          Text(context.tr('admin_bookings_page_title'),
               style: TextStyle(
-                  color: Colors.white,
+                  color: AdC.textPri,
                   fontSize: 22,
                   fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
-          const Text('Requests submitted by tourists from the place pages',
-              style: TextStyle(color: Colors.white38, fontSize: 12)),
+          Text(context.tr('admin_bookings_page_subtitle'),
+              style: TextStyle(color: AdC.textMute, fontSize: 12)),
           const SizedBox(height: 16),
           SizedBox(
             height: 36,
@@ -70,17 +73,16 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
                 final tab = _tabs[i];
                 final selected = _filter == tab;
                 return ChoiceChip(
-                  label: Text(_tabLabel(tab)),
+                  label: Text(_tabLabel(context, tab)),
                   selected: selected,
                   onSelected: (_) => setState(() => _filter = tab),
-                  selectedColor: const Color(0xFF0D7377).withValues(alpha: 0.4),
-                  backgroundColor: const Color(0xFF111827),
+                  selectedColor: AdC.tealDark.withValues(alpha: 0.4),
+                  backgroundColor: AdC.surface,
                   labelStyle: TextStyle(
-                      color: selected ? Colors.white : Colors.white54,
+                      color: selected ? AdC.textPri : AdC.textMute,
                       fontSize: 12),
                   side: BorderSide(
-                      color:
-                          selected ? const Color(0xFF0D7377) : Colors.white12),
+                      color: selected ? AdC.tealDark : AdC.overlay(0.12)),
                 );
               },
             ),
@@ -106,10 +108,12 @@ class _AdminBookingsScreenState extends State<AdminBookingsScreen> {
                 if (bookings.isEmpty) {
                   return AdminEmptyState(
                     icon: Icons.calendar_month_rounded,
-                    title: 'No bookings',
+                    title: context.tr('admin_bookings_empty_title'),
                     body: _filter == null
-                        ? 'Bookings submitted by tourists will show up here.'
-                        : 'No ${_tabLabel(_filter).toLowerCase()} bookings.',
+                        ? context.tr('admin_bookings_empty_body_all')
+                        : '${context.tr('admin_bookings_empty_filtered_prefix')} '
+                            '${_tabLabel(context, _filter).toLowerCase()} '
+                            '${context.tr('admin_bookings_empty_filtered_suffix')}',
                   );
                 }
                 return ListView.separated(
@@ -139,7 +143,7 @@ class _BookingRow extends StatelessWidget {
       case BookingStatus.cancelled:
         return Colors.redAccent;
       case BookingStatus.completed:
-        return Colors.white54;
+        return AdC.textMute;
     }
   }
 
@@ -148,7 +152,7 @@ class _BookingRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF111827),
+        color: AdC.surface,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _statusColor.withValues(alpha: 0.3)),
       ),
@@ -158,8 +162,8 @@ class _BookingRow extends StatelessWidget {
           Row(children: [
             Expanded(
               child: Text(booking.placeName,
-                  style: const TextStyle(
-                      color: Colors.white,
+                  style: TextStyle(
+                      color: AdC.textPri,
                       fontWeight: FontWeight.w600,
                       fontSize: 14)),
             ),
@@ -179,10 +183,15 @@ class _BookingRow extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             '${booking.cityName} · ${booking.userEmail}',
-            style: const TextStyle(color: Colors.white38, fontSize: 11),
+            style: TextStyle(color: AdC.textMute, fontSize: 11),
           ),
           const SizedBox(height: 8),
           Wrap(spacing: 14, runSpacing: 6, children: [
+            _infoChip(
+              Icons.confirmation_number_outlined,
+              '${context.tr('admin_bookings_reference_prefix')} '
+              '${(booking.id.length > 8 ? booking.id.substring(booking.id.length - 8) : booking.id).toUpperCase()}',
+            ),
             if (booking.serviceName != null)
               _infoChip(Icons.room_service_outlined, booking.serviceName!),
             _infoChip(
@@ -190,7 +199,7 @@ class _BookingRow extends StatelessWidget {
                 '${booking.requestedDate.day}/${booking.requestedDate.month}/${booking.requestedDate.year}'
                 '${booking.checkOutDate != null ? ' – ${booking.checkOutDate!.day}/${booking.checkOutDate!.month}/${booking.checkOutDate!.year}' : ''}'),
             _infoChip(Icons.people_outline_rounded,
-                '${booking.numberOfGuests} guest${booking.numberOfGuests == 1 ? '' : 's'}'),
+                '${booking.numberOfGuests} ${booking.numberOfGuests == 1 ? context.tr('admin_bookings_guest_singular') : context.tr('admin_bookings_guest_plural')}'),
             if (booking.paymentMethodName != null)
               _infoChip(Icons.payments_outlined, booking.paymentMethodName!),
             if (booking.totalAmount != null)
@@ -201,13 +210,13 @@ class _BookingRow extends StatelessWidget {
                   'M-Pesa: ${booking.mpesaReceiptNumber}'),
             if (booking.cancellationPolicy != null)
               _infoChip(Icons.policy_outlined,
-                  '${booking.cancellationPolicy} cancellation'),
+                  '${booking.cancellationPolicy} ${context.tr('admin_bookings_cancellation_suffix')}'),
           ]),
           if (booking.notes != null && booking.notes!.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text('"${booking.notes}"',
-                style: const TextStyle(
-                    color: Colors.white54,
+                style: TextStyle(
+                    color: AdC.textMute,
                     fontSize: 12,
                     fontStyle: FontStyle.italic)),
           ],
@@ -217,7 +226,7 @@ class _BookingRow extends StatelessWidget {
             Row(mainAxisAlignment: MainAxisAlignment.end, children: [
               if (booking.status == BookingStatus.pending) ...[
                 AdminOutlineBtn(
-                  label: 'Confirm',
+                  label: context.tr('admin_bookings_btn_confirm'),
                   icon: Icons.check_rounded,
                   color: Colors.greenAccent,
                   onTap: () => BookingService.updateStatus(
@@ -227,16 +236,16 @@ class _BookingRow extends StatelessWidget {
               ],
               if (booking.status == BookingStatus.confirmed) ...[
                 AdminOutlineBtn(
-                  label: 'Mark Completed',
+                  label: context.tr('admin_bookings_btn_mark_completed'),
                   icon: Icons.done_all_rounded,
-                  color: Colors.white54,
+                  color: AdC.textMute,
                   onTap: () => BookingService.updateStatus(
                       booking.id, BookingStatus.completed),
                 ),
                 const SizedBox(width: 8),
               ],
               AdminOutlineBtn(
-                label: 'Cancel',
+                label: context.tr('common_cancel'),
                 icon: Icons.close_rounded,
                 color: Colors.redAccent,
                 onTap: () => BookingService.updateStatus(
@@ -252,10 +261,9 @@ class _BookingRow extends StatelessWidget {
   Widget _infoChip(IconData icon, String text) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: const Color(0xFF14FFEC)),
+          Icon(icon, size: 12, color: AdC.teal),
           const SizedBox(width: 5),
-          Text(text,
-              style: const TextStyle(color: Colors.white54, fontSize: 11)),
+          Text(text, style: TextStyle(color: AdC.textMute, fontSize: 11)),
         ],
       );
 }

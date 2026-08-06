@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:palmnazi/admin/admin_shared_widgets.dart';
 import 'package:palmnazi/models/payment_method_model.dart';
+import 'package:palmnazi/services/admin_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/payment_methods_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,12 +34,12 @@ class AdminPaymentMethodsScreen extends StatelessWidget {
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _titleBlock(),
+                    _titleBlock(context),
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
                       child: AdminAddButton(
-                        label: 'Add Payment Method',
+                        label: context.tr('admin_payment_methods_add_button'),
                         onTap: () => _openForm(context),
                       ),
                     ),
@@ -46,10 +48,10 @@ class AdminPaymentMethodsScreen extends StatelessWidget {
               : Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(child: _titleBlock()),
+                    Expanded(child: _titleBlock(context)),
                     const SizedBox(width: 16),
                     AdminAddButton(
-                      label: 'Add Payment Method',
+                      label: context.tr('admin_payment_methods_add_button'),
                       onTap: () => _openForm(context),
                     ),
                   ],
@@ -72,10 +74,9 @@ class AdminPaymentMethodsScreen extends StatelessWidget {
                 if (methods.isEmpty) {
                   return AdminEmptyState(
                     icon: Icons.payments_rounded,
-                    title: 'No payment methods yet',
-                    body:
-                        'Add the payment options places can accept, e.g. M-Pesa, Card, or Cash on Arrival.',
-                    actionLabel: 'Add Payment Method',
+                    title: context.tr('admin_payment_methods_empty_title'),
+                    body: context.tr('admin_payment_methods_empty_body'),
+                    actionLabel: context.tr('admin_payment_methods_add_button'),
                     onAction: () => _openForm(context),
                   );
                 }
@@ -98,18 +99,18 @@ class AdminPaymentMethodsScreen extends StatelessWidget {
     );
   }
 
-  Widget _titleBlock() => const Column(
+  Widget _titleBlock(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Payment Methods',
+          Text(context.tr('admin_payment_methods_page_title'),
               style: TextStyle(
-                  color: Colors.white,
+                  color: AdC.textPri,
                   fontSize: 22,
                   fontWeight: FontWeight.bold)),
-          SizedBox(height: 4),
+          const SizedBox(height: 4),
           Text(
-            'Configure the payment options places can accept',
-            style: TextStyle(color: Colors.white38, fontSize: 12),
+            context.tr('admin_payment_methods_page_subtitle'),
+            style: TextStyle(color: AdC.textMute, fontSize: 12),
           ),
         ],
       );
@@ -117,9 +118,9 @@ class AdminPaymentMethodsScreen extends StatelessWidget {
   Future<void> _delete(BuildContext context, PaymentMethodModel method) async {
     final confirmed = await adminConfirm(
       context,
-      'Delete "${method.name}"?',
-      'Places that accept this payment method will no longer show it as an option. This cannot be undone.',
-      confirmLabel: 'Delete',
+      '${context.tr('admin_payment_methods_delete_confirm_prefix')} "${method.name}"?',
+      context.tr('admin_payment_methods_delete_confirm_body'),
+      confirmLabel: context.tr('common_delete'),
     );
     if (!confirmed) return;
     await PaymentMethodsService.delete(method.id);
@@ -151,19 +152,17 @@ class _PaymentMethodRow extends StatelessWidget {
     required this.onDelete,
   });
 
-  static const _accentColor = Color(0xFF0D7377);
-
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF111827),
+        color: AdC.surface,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: method.isActive
-              ? _accentColor.withValues(alpha: 0.25)
-              : Colors.white12,
+              ? AdC.tealDark.withValues(alpha: 0.25)
+              : AdC.overlay(0.12),
         ),
       ),
       child: Row(children: [
@@ -171,14 +170,14 @@ class _PaymentMethodRow extends StatelessWidget {
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: _accentColor.withValues(alpha: 0.15),
+            color: AdC.tealDark.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Center(
             child: method.icon != null && method.icon!.isNotEmpty
                 ? Text(method.icon!, style: const TextStyle(fontSize: 18))
                 : const Icon(Icons.payments_rounded,
-                    color: _accentColor, size: 18),
+                    color: AdC.tealDark, size: 18),
           ),
         ),
         const SizedBox(width: 14),
@@ -190,8 +189,8 @@ class _PaymentMethodRow extends StatelessWidget {
                 Flexible(
                   child: Text(method.name,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          color: Colors.white,
+                      style: TextStyle(
+                          color: AdC.textPri,
                           fontWeight: FontWeight.w600,
                           fontSize: 14)),
                 ),
@@ -200,12 +199,12 @@ class _PaymentMethodRow extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.06),
+                    color: AdC.overlay(0.06),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
                     PaymentMethodModel.typeLabel(method.type),
-                    style: const TextStyle(color: Colors.white54, fontSize: 10),
+                    style: TextStyle(color: AdC.textMute, fontSize: 10),
                   ),
                 ),
               ]),
@@ -215,8 +214,7 @@ class _PaymentMethodRow extends StatelessWidget {
                 Text(method.description!,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style:
-                        const TextStyle(color: Colors.white38, fontSize: 12)),
+                    style: TextStyle(color: AdC.textMute, fontSize: 12)),
               ],
             ],
           ),
@@ -227,7 +225,7 @@ class _PaymentMethodRow extends StatelessWidget {
           onChanged: (_) => onToggleActive(),
         ),
         IconButton(
-          icon: const Icon(Icons.edit_rounded, color: Colors.white38, size: 18),
+          icon: Icon(Icons.edit_rounded, color: AdC.textMute, size: 18),
           onPressed: onEdit,
         ),
         IconButton(
@@ -303,7 +301,8 @@ class _PaymentMethodFormDialogState extends State<_PaymentMethodFormDialog> {
 
   Future<void> _save() async {
     if (_nameCtrl.text.trim().isEmpty) {
-      setState(() => _error = 'Name is required');
+      setState(() =>
+          _error = context.tr('admin_payment_methods_error_name_required'));
       return;
     }
     setState(() {
@@ -336,7 +335,8 @@ class _PaymentMethodFormDialogState extends State<_PaymentMethodFormDialog> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = 'Save failed: $e';
+          _error =
+              '${context.tr('admin_payment_methods_error_save_failed_prefix')} $e';
           _saving = false;
         });
       }
@@ -347,13 +347,15 @@ class _PaymentMethodFormDialogState extends State<_PaymentMethodFormDialog> {
   Widget build(BuildContext context) {
     return AdminDialog(
       title: widget.existing == null
-          ? 'Add Payment Method'
-          : 'Edit Payment Method',
+          ? context.tr('admin_payment_methods_add_button')
+          : context.tr('admin_payment_methods_edit_title'),
       icon: Icons.payments_rounded,
-      color: const Color(0xFF0D7377),
+      color: AdC.tealDark,
       saving: _saving,
       onSave: _save,
-      saveLabel: widget.existing == null ? 'Add' : 'Save',
+      saveLabel: widget.existing == null
+          ? context.tr('common_add')
+          : context.tr('common_save'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -372,29 +374,29 @@ class _PaymentMethodFormDialogState extends State<_PaymentMethodFormDialog> {
           ],
           AdminField(
             ctrl: _nameCtrl,
-            label: 'Name',
-            hint: 'e.g. M-Pesa',
+            label: context.tr('admin_payment_methods_field_name'),
+            hint: context.tr('admin_payment_methods_hint_name_example'),
             required: true,
           ),
-          const Text('Type',
+          Text(context.tr('admin_payment_methods_field_type'),
               style: TextStyle(
-                  color: Colors.white70,
+                  color: AdC.textSec,
                   fontSize: 13,
                   fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14),
             decoration: BoxDecoration(
-              color: const Color(0xFF0D1117),
+              color: AdC.bg,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.white12),
+              border: Border.all(color: AdC.overlay(0.12)),
             ),
             child: DropdownButton<PaymentMethodType>(
               value: _type,
               isExpanded: true,
-              dropdownColor: const Color(0xFF1F2937),
+              dropdownColor: AdC.surface,
               underline: const SizedBox.shrink(),
-              style: const TextStyle(color: Colors.white70, fontSize: 14),
+              style: TextStyle(color: AdC.textSec, fontSize: 14),
               items: PaymentMethodType.values
                   .map((t) => DropdownMenuItem(
                         value: t,
@@ -410,31 +412,30 @@ class _PaymentMethodFormDialogState extends State<_PaymentMethodFormDialog> {
           const SizedBox(height: 16),
           AdminField(
             ctrl: _descCtrl,
-            label: 'Description',
-            hint: 'Optional note shown to admins, e.g. "Paybill 123456"',
+            label: context.tr('admin_payment_methods_field_description'),
+            hint: context.tr('admin_payment_methods_hint_description'),
             maxLines: 2,
           ),
           AdminField(
             ctrl: _iconCtrl,
-            label: 'Icon (emoji)',
-            hint: 'e.g. 📱',
+            label: context.tr('admin_payment_methods_field_icon'),
+            hint: context.tr('admin_payment_methods_hint_icon'),
           ),
           AdminField(
             ctrl: _sortOrderCtrl,
-            label: 'Sort Order',
+            label: context.tr('admin_payment_methods_field_sort_order'),
             hint: '0',
             keyboardType: TextInputType.number,
           ),
           if (PaymentMethodModel.configFieldsFor(_type).isNotEmpty) ...[
-            const Text('Gateway Configuration (placeholder)',
+            Text(context.tr('admin_payment_methods_gateway_config_title'),
                 style: TextStyle(
-                    color: Colors.white70,
+                    color: AdC.textSec,
                     fontSize: 13,
                     fontWeight: FontWeight.w500)),
             const SizedBox(height: 4),
-            const Text(
-                'These fields are stored for reference only — no real gateway is wired up yet. Fill them in once this method is ready for actual integration.',
-                style: TextStyle(color: Colors.white38, fontSize: 11)),
+            Text(context.tr('admin_payment_methods_gateway_config_note'),
+                style: TextStyle(color: AdC.textMute, fontSize: 11)),
             const SizedBox(height: 10),
             ...PaymentMethodModel.configFieldsFor(_type)
                 .map((field) => AdminField(
@@ -444,9 +445,9 @@ class _PaymentMethodFormDialogState extends State<_PaymentMethodFormDialog> {
                     )),
           ],
           Row(children: [
-            const Expanded(
-              child: Text('Active',
-                  style: TextStyle(color: Colors.white70, fontSize: 13)),
+            Expanded(
+              child: Text(context.tr('admin_payment_methods_field_active'),
+                  style: TextStyle(color: AdC.textSec, fontSize: 13)),
             ),
             Switch(
               value: _isActive,

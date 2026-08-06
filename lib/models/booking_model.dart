@@ -34,6 +34,11 @@ class BookingModel {
   final String userEmail;
   final String? serviceType; // 'rooms' | 'menuItems' | 'shows' | null (general)
   final String? serviceName;
+  // The backend Place-API id of the specific room/menu item/show picked
+  // (e.g. Room.id) — lets front-desk staff (or a future integration) look
+  // up the exact resource a booking refers to, not just its display name.
+  // Null for a general "book the place" request with no specific service.
+  final String? serviceId;
   final DateTime requestedDate;
   final DateTime? checkOutDate;
   final int numberOfGuests;
@@ -67,6 +72,7 @@ class BookingModel {
     required this.userEmail,
     this.serviceType,
     this.serviceName,
+    this.serviceId,
     required this.requestedDate,
     this.checkOutDate,
     this.numberOfGuests = 1,
@@ -97,6 +103,7 @@ class BookingModel {
       userEmail: d['userEmail'] as String? ?? '',
       serviceType: d['serviceType'] as String?,
       serviceName: d['serviceName'] as String?,
+      serviceId: d['serviceId'] as String?,
       requestedDate:
           (d['requestedDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
       checkOutDate: (d['checkOutDate'] as Timestamp?)?.toDate(),
@@ -125,6 +132,7 @@ class BookingModel {
         'userEmail': userEmail,
         if (serviceType != null) 'serviceType': serviceType,
         if (serviceName != null) 'serviceName': serviceName,
+        if (serviceId != null) 'serviceId': serviceId,
         'requestedDate': Timestamp.fromDate(requestedDate),
         if (checkOutDate != null)
           'checkOutDate': Timestamp.fromDate(checkOutDate!),

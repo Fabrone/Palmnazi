@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
 import 'package:palmnazi/admin/admin_shared_widgets.dart';
 import 'package:palmnazi/models/system_settings_model.dart';
+import 'package:palmnazi/services/admin_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/audit_log_service.dart';
 import 'package:palmnazi/services/system_settings_service.dart';
 
@@ -22,11 +24,6 @@ final Logger _log = Logger(
     printEmojis: true,
   ),
 );
-
-const _kSurface = Color(0xFF111827);
-const _kTeal = Color(0xFF14FFEC);
-const _kOrange = Color(0xFFFF9800);
-const _kRed = Color(0xFFCF6679);
 
 class AdminSettingsScreen extends StatefulWidget {
   const AdminSettingsScreen({super.key});
@@ -70,6 +67,11 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   }
 
   Future<void> _save() async {
+    final systemSettingsTargetLabel =
+        context.tr('admin_settings_audit_target_system_settings');
+    final savedSuccessMsg = context.tr('admin_settings_saved_success');
+    final saveFailedPrefix =
+        context.tr('admin_settings_error_save_failed_prefix');
     setState(() => _saving = true);
     try {
       final settings = SystemSettingsModel(
@@ -85,25 +87,36 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       );
       await SystemSettingsService.save(settings);
       AuditLogService.log(
-          action: 'update', module: 'Settings', targetLabel: 'System Settings');
+          action: 'update',
+          module: 'Settings',
+          targetLabel: systemSettingsTargetLabel);
       _log.i('✅ [AdminSettingsScreen] Settings saved');
-      if (mounted) _snack('Settings saved.', ok: true);
+      if (mounted) _snack(savedSuccessMsg, ok: true);
     } catch (e) {
       _log.e('❌ [AdminSettingsScreen] Save failed', error: e);
-      if (mounted) _snack('Could not save settings: $e', ok: false);
+      if (mounted) _snack('$saveFailedPrefix $e', ok: false);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
   Future<void> _toggleMaintenance(bool next) async {
+    final enabledLabel = context.tr('admin_settings_audit_enabled');
+    final disabledLabel = context.tr('admin_settings_audit_disabled');
+    final maintenanceEnabledMsg =
+        context.tr('admin_settings_maintenance_enabled');
+    final maintenanceDisabledMsg =
+        context.tr('admin_settings_maintenance_disabled');
+    final maintenanceUpdateFailedPrefix =
+        context.tr('admin_settings_error_maintenance_update_failed_prefix');
+    final maintenanceModeTargetLabel =
+        context.tr('admin_settings_audit_target_maintenance_mode');
     if (next) {
       final confirm = await adminConfirm(
         context,
-        'Enable Maintenance Mode?',
-        'Tourists will see a maintenance notice instead of the landing page '
-            'until this is turned off again. Admins are unaffected.',
-        confirmLabel: 'Enable',
+        context.tr('admin_settings_maintenance_confirm_title'),
+        context.tr('admin_settings_maintenance_confirm_body'),
+        confirmLabel: context.tr('admin_settings_btn_enable'),
       );
       if (!confirm) return;
     }
@@ -114,33 +127,34 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       AuditLogService.log(
           action: 'update',
           module: 'Settings',
-          targetLabel: 'Maintenance Mode',
-          details: next ? 'Enabled' : 'Disabled');
+          targetLabel: maintenanceModeTargetLabel,
+          details: next ? enabledLabel : disabledLabel);
       if (mounted) {
-        _snack(
-            next ? 'Maintenance mode enabled.' : 'Maintenance mode disabled.',
+        _snack(next ? maintenanceEnabledMsg : maintenanceDisabledMsg,
             ok: !next);
       }
     } catch (e) {
       setState(() => _maintenanceMode = !next); // revert on failure
-      if (mounted) _snack('Could not update maintenance mode: $e', ok: false);
+      if (mounted) _snack('$maintenanceUpdateFailedPrefix $e', ok: false);
     }
   }
 
   Future<void> _exportData() async {
+    final exportSuccessPrefix =
+        context.tr('admin_settings_export_success_prefix');
+    final exportSuccessSuffix =
+        context.tr('admin_settings_export_success_suffix');
+    final exportFailedPrefix =
+        context.tr('admin_settings_error_export_failed_prefix');
     setState(() => _exporting = true);
     try {
       final count = await SystemSettingsService.exportFirestoreData();
       if (mounted) {
-        _snack(
-            'Exported $count document(s) across every Firestore '
-            'collection. Places/Cities/Categories/Bookings-config live in '
-            'the backend database and are not covered by this export.',
-            ok: true);
+        _snack('$exportSuccessPrefix $count $exportSuccessSuffix', ok: true);
       }
     } catch (e) {
       _log.e('❌ [AdminSettingsScreen] Export failed', error: e);
-      if (mounted) _snack('Export failed: $e', ok: false);
+      if (mounted) _snack('$exportFailedPrefix $e', ok: false);
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -151,7 +165,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       ..clearSnackBars()
       ..showSnackBar(SnackBar(
         content: Text(msg, style: const TextStyle(color: Colors.white)),
-        backgroundColor: ok ? const Color(0xFF0D7377) : _kRed,
+        backgroundColor: ok ? AdC.tealDark : AdC.red,
         behavior: SnackBarBehavior.floating,
         duration: Duration(seconds: ok ? 3 : 6),
       ));
@@ -173,26 +187,28 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _sectionCard(
-                  title: 'Public Contact Info',
+                  title: context.tr('admin_settings_section_contact_title'),
                   subtitle:
-                      'Shown in the landing page footer and contact screens.',
+                      context.tr('admin_settings_section_contact_subtitle'),
                   child: Column(children: [
                     AdminField(
                         ctrl: _emailCtrl,
-                        label: 'Contact Email',
+                        label: context.tr('admin_settings_field_contact_email'),
                         hint: 'info@palmnaziresortcities.com',
                         keyboardType: TextInputType.emailAddress),
                     AdminField(
                         ctrl: _phoneCtrl,
-                        label: 'Contact Phone',
+                        label: context.tr('admin_settings_field_contact_phone'),
                         hint: '+254722123456',
                         keyboardType: TextInputType.phone),
                   ]),
                 ),
                 const SizedBox(height: 16),
                 _sectionCard(
-                  title: 'Footer Links',
-                  subtitle: 'Extra links shown in the landing page footer.',
+                  title:
+                      context.tr('admin_settings_section_footer_links_title'),
+                  subtitle: context
+                      .tr('admin_settings_section_footer_links_subtitle'),
                   child: Column(children: [
                     ..._footerLinks.asMap().entries.map((e) => Padding(
                           padding: const EdgeInsets.only(bottom: 10),
@@ -200,19 +216,22 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                             Expanded(
                               child: AdminField(
                                   ctrl: e.value.labelCtrl,
-                                  label: 'Label',
-                                  hint: 'e.g. Terms of Service'),
+                                  label: context
+                                      .tr('admin_settings_field_link_label'),
+                                  hint: context
+                                      .tr('admin_settings_hint_link_label')),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: AdminField(
                                   ctrl: e.value.urlCtrl,
-                                  label: 'URL',
+                                  label: context
+                                      .tr('admin_settings_field_link_url'),
                                   hint: 'https://…'),
                             ),
                             IconButton(
                               icon: const Icon(Icons.delete_outline_rounded,
-                                  color: _kRed, size: 20),
+                                  color: AdC.red, size: 20),
                               onPressed: () => setState(() {
                                 _footerLinks.removeAt(e.key).dispose();
                               }),
@@ -225,20 +244,18 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                         onPressed: () => setState(
                             () => _footerLinks.add(_FooterLinkEditRow())),
                         icon: const Icon(Icons.add_rounded,
-                            color: _kTeal, size: 18),
-                        label: const Text('Add link',
-                            style: TextStyle(color: _kTeal)),
+                            color: AdC.teal, size: 18),
+                        label: Text(context.tr('admin_settings_add_link'),
+                            style: const TextStyle(color: AdC.teal)),
                       ),
                     ),
                   ]),
                 ),
                 const SizedBox(height: 16),
                 _sectionCard(
-                  title: 'Maintenance Mode',
+                  title: context.tr('admin_settings_section_maintenance_title'),
                   subtitle:
-                      'When on, tourists see a maintenance notice instead of '
-                      'the landing page. Admins can still sign in and manage '
-                      'the platform as normal.',
+                      context.tr('admin_settings_section_maintenance_subtitle'),
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -246,39 +263,34 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                           contentPadding: EdgeInsets.zero,
                           value: _maintenanceMode,
                           onChanged: _toggleMaintenance,
-                          activeThumbColor: _kOrange,
+                          activeThumbColor: AdC.orange,
                           title: Text(
                               _maintenanceMode
-                                  ? 'Maintenance mode is ON'
-                                  : 'Maintenance mode is OFF',
+                                  ? context.tr('admin_settings_maintenance_on')
+                                  : context
+                                      .tr('admin_settings_maintenance_off'),
                               style: TextStyle(
                                   color: _maintenanceMode
-                                      ? _kOrange
-                                      : Colors.white,
+                                      ? AdC.orange
+                                      : AdC.textPri,
                                   fontWeight: FontWeight.w600,
                                   fontSize: 13)),
                         ),
                         const SizedBox(height: 6),
                         AdminField(
                             ctrl: _maintenanceMsgCtrl,
-                            label: 'Maintenance Message',
-                            hint:
-                                "We'll be back shortly — thanks for your patience.",
+                            label: context
+                                .tr('admin_settings_field_maintenance_message'),
+                            hint: context
+                                .tr('admin_settings_hint_maintenance_message'),
                             maxLines: 2),
                       ]),
                 ),
                 const SizedBox(height: 16),
                 _sectionCard(
-                  title: 'Data Export',
+                  title: context.tr('admin_settings_section_export_title'),
                   subtitle:
-                      'Downloads every Firestore-backed collection (Users, '
-                      'Favorites, Bookings, Admin Requests, Payment Methods, '
-                      'Place details, Place Queries, City details, Category '
-                      'details, Settings, Static Pages, Audit Log) as one '
-                      'JSON file. Places, Cities, Categories and Bookings '
-                      'configuration live in the backend database — a real '
-                      'backup of that data needs DB-level tooling on the '
-                      'hosting side, not this button.',
+                      context.tr('admin_settings_section_export_subtitle'),
                   child: SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
@@ -288,13 +300,15 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                               width: 14,
                               height: 14,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: _kTeal))
+                                  strokeWidth: 2, color: AdC.teal))
                           : const Icon(Icons.download_rounded, size: 16),
-                      label: Text(
-                          _exporting ? 'Exporting…' : 'Export Firestore Data'),
+                      label: Text(_exporting
+                          ? context.tr('admin_settings_exporting')
+                          : context.tr('admin_settings_export_button')),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: _kTeal,
-                        side: BorderSide(color: _kTeal.withValues(alpha: 0.5)),
+                        foregroundColor: AdC.teal,
+                        side:
+                            BorderSide(color: AdC.teal.withValues(alpha: 0.5)),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                     ),
@@ -312,9 +326,11 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                             child: CircularProgressIndicator(
                                 strokeWidth: 2, color: Colors.black38))
                         : const Icon(Icons.save_rounded, size: 18),
-                    label: Text(_saving ? 'Saving…' : 'Save Settings'),
+                    label: Text(_saving
+                        ? context.tr('admin_settings_saving')
+                        : context.tr('admin_settings_save_button')),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _kTeal,
+                      backgroundColor: AdC.teal,
                       foregroundColor: Colors.black,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       textStyle: const TextStyle(
@@ -339,22 +355,22 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
         width: double.infinity,
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: _kSurface,
+          color: AdC.surface,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white12),
+          border: Border.all(color: AdC.overlay(0.12)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(title,
-                style: const TextStyle(
-                    color: Colors.white,
+                style: TextStyle(
+                    color: AdC.textPri,
                     fontSize: 15,
                     fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
             Text(subtitle,
-                style: const TextStyle(
-                    color: Colors.white38, fontSize: 12, height: 1.4)),
+                style:
+                    TextStyle(color: AdC.textMute, fontSize: 12, height: 1.4)),
             const SizedBox(height: 16),
             child,
           ],

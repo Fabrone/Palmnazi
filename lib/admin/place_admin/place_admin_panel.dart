@@ -9,6 +9,8 @@ import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/place_model.dart';
 import 'package:palmnazi/models/payment_method_model.dart';
 import 'package:palmnazi/models/place_query_model.dart';
+import 'package:palmnazi/services/admin_colors.dart';
+import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/booking_service.dart';
 import 'package:palmnazi/services/place_details_service.dart';
 import 'package:palmnazi/services/payment_methods_service.dart';
@@ -77,48 +79,46 @@ class _PlaceAdminPanelState extends State<PlaceAdminPanel>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
+      backgroundColor: AdC.bg,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF111827),
+        backgroundColor: AdC.surface,
         elevation: 0,
         leading: widget.isMainAdminView
             ? IconButton(
-                icon:
-                    const Icon(Icons.arrow_back_rounded, color: Colors.white70),
+                icon: Icon(Icons.arrow_back_rounded, color: AdC.textSec),
                 onPressed: () => Navigator.of(context).pop(),
               )
             : IconButton(
-                icon: const Icon(Icons.logout_rounded,
-                    color: Colors.white54, size: 20),
-                tooltip: 'Back to App',
+                icon: Icon(Icons.logout_rounded, color: AdC.textMute, size: 20),
+                tooltip: context.tr('place_admin_panel_back_to_app'),
                 onPressed: () => Navigator.of(context).pop(),
               ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(widget.placeName,
-                style: const TextStyle(
-                    color: Colors.white,
+                style: TextStyle(
+                    color: AdC.textPri,
                     fontSize: 16,
                     fontWeight: FontWeight.bold)),
             Text(widget.cityName,
-                style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                style: TextStyle(color: AdC.textMute, fontSize: 11)),
           ],
         ),
         bottom: TabBar(
           controller: _tabs,
           isScrollable: true,
-          indicatorColor: const Color(0xFF14FFEC),
-          labelColor: const Color(0xFF14FFEC),
-          unselectedLabelColor: Colors.white38,
+          indicatorColor: AdC.teal,
+          labelColor: AdC.teal,
+          unselectedLabelColor: AdC.textMute,
           labelStyle:
               const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-          tabs: const [
-            Tab(text: 'Overview'),
-            Tab(text: 'Bookings'),
-            Tab(text: 'Place Details'),
-            Tab(text: 'Payment Methods'),
-            Tab(text: 'Queries'),
+          tabs: [
+            Tab(text: context.tr('place_admin_panel_tab_overview')),
+            Tab(text: context.tr('place_admin_panel_tab_bookings')),
+            Tab(text: context.tr('place_admin_panel_tab_details')),
+            Tab(text: context.tr('place_admin_panel_tab_payments')),
+            Tab(text: context.tr('place_admin_panel_tab_queries')),
           ],
         ),
       ),
@@ -159,39 +159,39 @@ class _OverviewTab extends StatelessWidget {
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            const Text('Bookings Overview',
+            Text(context.tr('place_admin_panel_bookings_overview'),
                 style: TextStyle(
-                    color: Colors.white,
+                    color: AdC.textPri,
                     fontSize: 18,
                     fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             Wrap(spacing: 12, runSpacing: 12, children: [
               _StatTile(
-                  label: 'Total',
+                  label: context.tr('place_admin_panel_stat_total'),
                   value: '${stats.total}',
-                  color: Colors.white70),
+                  color: AdC.textSec),
               _StatTile(
-                  label: 'Pending',
+                  label: context.tr('place_admin_panel_stat_pending'),
                   value: '${stats.pending}',
-                  color: const Color(0xFFFF9800)),
+                  color: AdC.orange),
               _StatTile(
-                  label: 'Confirmed',
+                  label: context.tr('place_admin_panel_stat_confirmed'),
                   value: '${stats.confirmed}',
-                  color: const Color(0xFF14FFEC)),
+                  color: AdC.teal),
               _StatTile(
-                  label: 'Completed',
+                  label: context.tr('place_admin_panel_stat_completed'),
                   value: '${stats.completed}',
-                  color: const Color(0xFF00C853)),
+                  color: AdC.green),
               _StatTile(
-                  label: 'Cancelled',
+                  label: context.tr('place_admin_panel_stat_cancelled'),
                   value: '${stats.cancelled}',
-                  color: const Color(0xFFCF6679)),
+                  color: AdC.red),
               _StatTile(
-                  label: 'Paid via M-Pesa',
+                  label: context.tr('place_admin_panel_stat_paid_mpesa'),
                   value: '${stats.paidViaMpesa}',
-                  color: const Color(0xFF00C853)),
+                  color: AdC.green),
               _StatTile(
-                  label: 'Estimated Revenue',
+                  label: context.tr('place_admin_panel_stat_revenue'),
                   value: stats.revenue.toStringAsFixed(0),
                   color: const Color(0xFFFFD600)),
             ]),
@@ -214,7 +214,7 @@ class _StatTile extends StatelessWidget {
         width: 150,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFF111827),
+          color: AdC.surface,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: color.withValues(alpha: 0.25)),
         ),
@@ -225,8 +225,7 @@ class _StatTile extends StatelessWidget {
                 style: TextStyle(
                     color: color, fontSize: 26, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            Text(label,
-                style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            Text(label, style: TextStyle(color: AdC.textMute, fontSize: 12)),
           ],
         ),
       );
@@ -252,6 +251,7 @@ class _PlaceDetailsTabState extends State<_PlaceDetailsTab> {
   String? _error;
 
   Future<void> _openWizard() async {
+    final loadErrorPrefix = context.tr('place_admin_panel_edit_load_error');
     setState(() {
       _loading = true;
       _error = null;
@@ -276,7 +276,7 @@ class _PlaceDetailsTabState extends State<_PlaceDetailsTab> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = 'Could not load place details: $e';
+          _error = '$loadErrorPrefix: $e';
         });
       }
     }
@@ -290,25 +290,23 @@ class _PlaceDetailsTabState extends State<_PlaceDetailsTab> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.edit_location_alt_rounded,
-                color: Color(0xFF14FFEC), size: 48),
+            Icon(Icons.edit_location_alt_rounded, color: AdC.teal, size: 48),
             const SizedBox(height: 16),
-            Text('Edit ${widget.placeName}',
-                style: const TextStyle(
-                    color: Colors.white,
+            Text(
+                '${context.tr('place_admin_panel_edit_title')} ${widget.placeName}',
+                style: TextStyle(
+                    color: AdC.textPri,
                     fontSize: 16,
                     fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            const Text(
-              'Update photos, description, pricing, booking settings and everything else about this place.',
+            Text(
+              context.tr('place_admin_panel_edit_body'),
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white38, fontSize: 12),
+              style: TextStyle(color: AdC.textMute, fontSize: 12),
             ),
             const SizedBox(height: 20),
             if (_error != null) ...[
-              Text(_error!,
-                  style:
-                      const TextStyle(color: Color(0xFFCF6679), fontSize: 12)),
+              Text(_error!, style: TextStyle(color: AdC.red, fontSize: 12)),
               const SizedBox(height: 12),
             ],
             ElevatedButton.icon(
@@ -320,9 +318,11 @@ class _PlaceDetailsTabState extends State<_PlaceDetailsTab> {
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: Color(0xFF0A1128)))
                   : const Icon(Icons.edit_rounded, size: 16),
-              label: Text(_loading ? 'Loading…' : 'Edit Place Details'),
+              label: Text(_loading
+                  ? context.tr('place_admin_panel_loading')
+                  : context.tr('place_admin_panel_edit_button')),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF14FFEC),
+                backgroundColor: AdC.teal,
                 foregroundColor: const Color(0xFF0A1128),
                 padding:
                     const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
@@ -378,14 +378,15 @@ class _PaymentMethodsTabState extends State<_PaymentMethodsTab> {
   }
 
   Future<void> _save() async {
+    final updatedMessage = context.tr('place_admin_panel_payments_updated');
     setState(() => _saving = true);
     await PlaceDetailsService.savePaymentMethods(
         widget.placeId, _selectedIds.toList());
     if (mounted) {
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Payment methods updated.'),
-        backgroundColor: Color(0xFF0D7377),
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(updatedMessage),
+        backgroundColor: AdC.tealDark,
       ));
     }
   }
@@ -394,11 +395,10 @@ class _PaymentMethodsTabState extends State<_PaymentMethodsTab> {
   Widget build(BuildContext context) {
     if (_loading) return const AdminLoader();
     if (_allMethods.isEmpty) {
-      return const AdminEmptyState(
+      return AdminEmptyState(
         icon: Icons.payments_outlined,
-        title: 'No payment methods configured',
-        body:
-            'Ask a MainAdmin to add payment methods in the system-wide catalogue first.',
+        title: context.tr('place_admin_panel_payments_empty_title'),
+        body: context.tr('place_admin_panel_payments_empty_body'),
       );
     }
     return Padding(
@@ -406,15 +406,14 @@ class _PaymentMethodsTabState extends State<_PaymentMethodsTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Accepted Payment Methods',
+          Text(context.tr('place_admin_panel_payments_title'),
               style: TextStyle(
-                  color: Colors.white,
+                  color: AdC.textPri,
                   fontSize: 18,
                   fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
-          const Text(
-              'Choose which of the platform\'s configured payment methods this place accepts.',
-              style: TextStyle(color: Colors.white38, fontSize: 12)),
+          Text(context.tr('place_admin_panel_payments_subtitle'),
+              style: TextStyle(color: AdC.textMute, fontSize: 12)),
           const SizedBox(height: 16),
           Expanded(
             child: ListView.separated(
@@ -432,17 +431,15 @@ class _PaymentMethodsTabState extends State<_PaymentMethodsTab> {
                       _selectedIds.remove(m.id);
                     }
                   }),
-                  activeColor: const Color(0xFF14FFEC),
+                  activeColor: AdC.teal,
                   checkColor: const Color(0xFF0A1128),
-                  tileColor: const Color(0xFF111827),
+                  tileColor: AdC.surface,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10)),
                   title: Text(m.name,
-                      style:
-                          const TextStyle(color: Colors.white, fontSize: 13)),
+                      style: TextStyle(color: AdC.textPri, fontSize: 13)),
                   subtitle: Text(PaymentMethodModel.typeLabel(m.type),
-                      style:
-                          const TextStyle(color: Colors.white38, fontSize: 11)),
+                      style: TextStyle(color: AdC.textMute, fontSize: 11)),
                 );
               },
             ),
@@ -453,13 +450,15 @@ class _PaymentMethodsTabState extends State<_PaymentMethodsTab> {
             child: ElevatedButton(
               onPressed: _saving ? null : _save,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF14FFEC),
+                backgroundColor: AdC.teal,
                 foregroundColor: const Color(0xFF0A1128),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
               ),
-              child: Text(_saving ? 'Saving…' : 'Save'),
+              child: Text(_saving
+                  ? context.tr('place_admin_panel_saving')
+                  : context.tr('place_admin_panel_save')),
             ),
           ),
         ],
@@ -483,10 +482,10 @@ class _QueriesTab extends StatelessWidget {
         }
         final queries = snap.data ?? const <PlaceQueryModel>[];
         if (queries.isEmpty) {
-          return const AdminEmptyState(
+          return AdminEmptyState(
             icon: Icons.question_answer_outlined,
-            title: 'No questions yet',
-            body: 'Tourist questions about this place will appear here.',
+            title: context.tr('place_admin_panel_queries_empty_title'),
+            body: context.tr('place_admin_panel_queries_empty_body'),
           );
         }
         return ListView.separated(
@@ -541,13 +540,12 @@ class _QueryTileState extends State<_QueryTile> {
   Widget build(BuildContext context) {
     final q = widget.query;
     final answered = q.status == PlaceQueryStatus.answered;
-    final statusColor =
-        answered ? const Color(0xFF00C853) : const Color(0xFFFF9800);
+    final statusColor = answered ? AdC.green : AdC.orange;
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF111827),
+        color: AdC.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: statusColor.withValues(alpha: 0.3)),
       ),
@@ -557,8 +555,8 @@ class _QueryTileState extends State<_QueryTile> {
           Row(children: [
             Expanded(
               child: Text(q.userEmail,
-                  style: const TextStyle(
-                      color: Colors.white,
+                  style: TextStyle(
+                      color: AdC.textPri,
                       fontSize: 13,
                       fontWeight: FontWeight.w600)),
             ),
@@ -568,7 +566,10 @@ class _QueryTileState extends State<_QueryTile> {
                 color: statusColor.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: Text(answered ? 'ANSWERED' : 'OPEN',
+              child: Text(
+                  answered
+                      ? context.tr('place_admin_panel_status_answered')
+                      : context.tr('place_admin_panel_status_open'),
                   style: TextStyle(
                       color: statusColor,
                       fontSize: 10,
@@ -576,18 +577,18 @@ class _QueryTileState extends State<_QueryTile> {
             ),
           ]),
           const SizedBox(height: 8),
-          Text(q.message,
-              style: const TextStyle(color: Colors.white70, fontSize: 13)),
+          Text(q.message, style: TextStyle(color: AdC.textSec, fontSize: 13)),
           if (answered && q.adminReply != null) ...[
             const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: const Color(0xFF00C853).withValues(alpha: 0.08),
+                color: AdC.green.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text('Your reply: ${q.adminReply}',
-                  style: const TextStyle(color: Colors.white, fontSize: 12)),
+              child: Text(
+                  '${context.tr('place_admin_panel_your_reply_prefix')}: ${q.adminReply}',
+                  style: TextStyle(color: AdC.textPri, fontSize: 12)),
             ),
           ] else if (_replying) ...[
             const SizedBox(height: 10),
@@ -595,12 +596,12 @@ class _QueryTileState extends State<_QueryTile> {
               controller: _replyCtrl,
               maxLines: 3,
               autofocus: true,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
+              style: TextStyle(color: AdC.textPri, fontSize: 13),
               decoration: InputDecoration(
-                hintText: 'Type your reply…',
-                hintStyle: const TextStyle(color: Colors.white38),
+                hintText: context.tr('place_admin_panel_reply_hint'),
+                hintStyle: TextStyle(color: AdC.textMute),
                 filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.06),
+                fillColor: AdC.overlay(0.06),
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: BorderSide.none),
@@ -612,10 +613,12 @@ class _QueryTileState extends State<_QueryTile> {
               child: ElevatedButton(
                 onPressed: _sending ? null : _sendReply,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF14FFEC),
+                  backgroundColor: AdC.teal,
                   foregroundColor: const Color(0xFF0A1128),
                 ),
-                child: Text(_sending ? 'Sending…' : 'Send Reply'),
+                child: Text(_sending
+                    ? context.tr('place_admin_panel_sending')
+                    : context.tr('place_admin_panel_send_reply')),
               ),
             ),
           ] else ...[
@@ -624,10 +627,9 @@ class _QueryTileState extends State<_QueryTile> {
               alignment: Alignment.centerRight,
               child: TextButton.icon(
                 onPressed: () => setState(() => _replying = true),
-                icon: const Icon(Icons.reply_rounded,
-                    size: 16, color: Color(0xFF14FFEC)),
-                label: const Text('Reply',
-                    style: TextStyle(color: Color(0xFF14FFEC))),
+                icon: Icon(Icons.reply_rounded, size: 16, color: AdC.teal),
+                label: Text(context.tr('place_admin_panel_reply_button'),
+                    style: TextStyle(color: AdC.teal)),
               ),
             ),
           ],
