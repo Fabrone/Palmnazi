@@ -3,6 +3,7 @@ import 'package:palmnazi/models/static_page_model.dart';
 import 'package:palmnazi/screens/landing_page.dart' show RC;
 import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/static_page_service.dart';
+import 'package:palmnazi/widgets/main_app_bar.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AboutScreen — reached from the landing page footer's "About Us" link.
@@ -49,11 +50,10 @@ class AboutScreen extends StatelessWidget {
       BuildContext context, String tagline, List<String> paragraphs) {
     return Scaffold(
       backgroundColor: RC.navy,
-      appBar: AppBar(
-        backgroundColor: RC.deepBlue,
-        title: Text(context.tr('about_page_title'),
-            style: TextStyle(color: RC.textPri)),
-        iconTheme: IconThemeData(color: RC.textPri),
+      appBar: PalmnaziNavBar(
+        compact: true,
+        showBack: true,
+        title: context.tr('about_page_title'),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),

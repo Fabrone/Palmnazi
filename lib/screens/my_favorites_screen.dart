@@ -8,6 +8,7 @@ import 'package:palmnazi/services/app_settings_controller.dart';
 import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/favorite_service.dart';
 import 'package:palmnazi/services/place_lookup_service.dart';
+import 'package:palmnazi/widgets/main_app_bar.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MyFavoritesScreen
@@ -25,8 +26,6 @@ abstract final class _P {
       AppSettingsController.instance.resolvedBrightness == Brightness.dark;
 
   static const Color aquaBright = Color(0xFF00E5FF);
-  static Color get deepNavy =>
-      _isDark ? const Color(0xFF01263F) : const Color(0xFFF5F7FA);
   static Color get deepBlue =>
       _isDark ? const Color(0xFF071829) : const Color(0xFFE8EDF2);
 
@@ -50,11 +49,10 @@ class MyFavoritesScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: _P.deepBlue,
-      appBar: AppBar(
-        backgroundColor: _P.deepNavy,
-        title: Text(context.tr('account_my_favorites'),
-            style: TextStyle(color: _P.textPri)),
-        iconTheme: IconThemeData(color: _P.textPri),
+      appBar: PalmnaziNavBar(
+        compact: true,
+        showBack: true,
+        title: context.tr('account_my_favorites'),
       ),
       body: uid == null
           ? Center(

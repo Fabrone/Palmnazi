@@ -68,4 +68,22 @@ class MenuService {
     final snap = await _items.where('placeId', isEqualTo: placeId).get();
     return snap.docs.map((d) => MenuItemModel.fromFirestore(d)).toList();
   }
+
+  // ── Live variants — see RoomService.streamForPlace/streamOne for why ─────
+
+  static Stream<List<MenuSectionModel>> streamSectionsForPlace(
+          String placeId) =>
+      _sections.where('placeId', isEqualTo: placeId).snapshots().map(
+          (snap) => snap.docs.map(MenuSectionModel.fromFirestore).toList());
+
+  static Stream<List<MenuItemModel>> streamItemsForPlace(String placeId) =>
+      _items
+          .where('placeId', isEqualTo: placeId)
+          .snapshots()
+          .map((snap) => snap.docs.map(MenuItemModel.fromFirestore).toList());
+
+  static Stream<MenuItemModel?> streamItem(String itemId) => _items
+      .doc(itemId)
+      .snapshots()
+      .map((doc) => doc.exists ? MenuItemModel.fromFirestore(doc) : null);
 }

@@ -284,6 +284,34 @@ service cloud.firestore {
     }
 
 
+    // ── In-app notifications ──────────────────────────────────────────────────
+    //
+    // Collection: Notifications
+    // Document id = auto-generated. Written server-side only, by the
+    // onBookingCreated / onBookingStatusChanged Cloud Functions (Admin SDK,
+    // which bypasses these rules entirely) — alongside the FCM push those
+    // functions already send, so a signed-in user also gets a persisted
+    // bell/history entry. Fields: recipientUid, type
+    // ('booking_created'|'booking_status_changed'), title, body, bookingId,
+    // read (bool), createdAt.
+    //
+    // READ   — only the recipient.
+    // UPDATE — only the recipient, and only to flip `read` (see BookingNotificationService.markRead).
+    // CREATE/DELETE — never from the client; server-only via Admin SDK.
+    match /Notifications/{notificationId} {
+      allow read:
+        if isAuth() && resource.data.recipientUid == request.auth.uid;
+
+      allow update:
+        if isAuth()
+        && resource.data.recipientUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['read']);
+
+      allow create, delete: if false;
+    }
+
+
     // ── Bookings ───────────────────────────────────────────────────────────────
     //
     // Collection: Bookings

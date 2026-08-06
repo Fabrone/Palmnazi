@@ -46,4 +46,20 @@ class RoomService {
     final snap = await _collection.where('placeId', isEqualTo: placeId).get();
     return snap.docs.map((d) => RoomModel.fromFirestore(d)).toList();
   }
+
+  /// Live variant of [getForPlace] — used by place_details_screen.dart so an
+  /// admin's edit (price, availability, a new room) appears to a tourist
+  /// already viewing the place without a manual refresh.
+  static Stream<List<RoomModel>> streamForPlace(String placeId) => _collection
+      .where('placeId', isEqualTo: placeId)
+      .snapshots()
+      .map((snap) => snap.docs.map((d) => RoomModel.fromFirestore(d)).toList());
+
+  /// Live single-doc stream — used by BookingScreen once a room is selected,
+  /// so a price/availability edit made by the admin mid-booking is reflected
+  /// in the open form instead of silently going stale.
+  static Stream<RoomModel?> streamOne(String roomId) => _collection
+      .doc(roomId)
+      .snapshots()
+      .map((doc) => doc.exists ? RoomModel.fromFirestore(doc) : null);
 }

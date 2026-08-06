@@ -10,6 +10,7 @@ import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/landing_page.dart';
 import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/services/app_settings_controller.dart';
+import 'package:palmnazi/services/auth_state_controller.dart';
 import 'package:palmnazi/services/firebase_email_link_service.dart';
 import 'package:palmnazi/services/firebase_session_service.dart';
 import 'package:palmnazi/services/notification_service.dart';
@@ -112,6 +113,7 @@ class PalmnaziApp extends StatefulWidget {
 
 class _PalmnaziAppState extends State<PalmnaziApp> {
   final AppSettingsController _settings = AppSettingsController.instance;
+  final AuthStateController _authState = AuthStateController.instance;
 
   @override
   void initState() {
@@ -198,35 +200,38 @@ class _PalmnaziAppState extends State<PalmnaziApp> {
 
         return AppSettingsScope(
           controller: _settings,
-          child: MaterialApp(
-            title: 'Palmnazi Resort Cities',
-            debugShowCheckedModeBanner: false,
+          child: AuthStateScope(
+            controller: _authState,
+            child: MaterialApp(
+              title: 'Palmnazi Resort Cities',
+              debugShowCheckedModeBanner: false,
 
-            navigatorKey: navigatorKey,
+              navigatorKey: navigatorKey,
 
-            localizationsDelegates: const [
-              FlutterQuillLocalizations.delegate,
-              GlobalMaterialLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-            ],
+              localizationsDelegates: const [
+                FlutterQuillLocalizations.delegate,
+                GlobalMaterialLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+                GlobalCupertinoLocalizations.delegate,
+              ],
 
-            supportedLocales: const [
-              Locale('en', 'US'),
-              Locale('sw', 'TZ'),
-            ],
-            locale: _settings.locale,
+              supportedLocales: const [
+                Locale('en', 'US'),
+                Locale('sw', 'TZ'),
+              ],
+              locale: _settings.locale,
 
-            // ── Theme ──────────────────────────────────────────────────────
-            theme: lightBase.copyWith(
-              textTheme: _settings.fontChoice.textTheme(lightBase.textTheme),
+              // ── Theme ──────────────────────────────────────────────────────
+              theme: lightBase.copyWith(
+                textTheme: _settings.fontChoice.textTheme(lightBase.textTheme),
+              ),
+              darkTheme: darkBase.copyWith(
+                textTheme: _settings.fontChoice.textTheme(darkBase.textTheme),
+              ),
+              themeMode: _settings.themeMode,
+
+              home: const LandingPage(),
             ),
-            darkTheme: darkBase.copyWith(
-              textTheme: _settings.fontChoice.textTheme(darkBase.textTheme),
-            ),
-            themeMode: _settings.themeMode,
-
-            home: const LandingPage(),
           ),
         );
       },

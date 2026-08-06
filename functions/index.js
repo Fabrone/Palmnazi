@@ -198,17 +198,54 @@ async function sendPushForPlace(placeId, notification, data) {
   }
 }
 
+// ── In-app notification persistence ──────────────────────────────────────────
+//
+// Writes a Notifications/{id} doc (see firestore.rules — read/update
+// restricted to the recipient, create/delete server-only) alongside the FCM
+// push these same triggers already send, so a signed-in user gets a real
+// bell/history entry in-app, not just a transient OS push.
+async function writeNotification(recipientUid, { type, title, body, bookingId }) {
+  if (!recipientUid) return;
+  await db.collection('Notifications').add({
+    recipientUid,
+    type,
+    title,
+    body,
+    bookingId: bookingId || null,
+    read: false,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
+async function writeNotificationsForAdmins({ type, title, body, bookingId }) {
+  const snap = await db.collection('Users').where('role', 'in', ['Admin', 'MainAdmin']).get();
+  if (snap.docs.length === 0) return;
+  const batch = db.batch();
+  snap.docs.forEach((d) => {
+    batch.set(db.collection('Notifications').doc(), {
+      recipientUid: d.id,
+      type,
+      title,
+      body,
+      bookingId: bookingId || null,
+      read: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+  await batch.commit();
+}
+
 // New booking → notify every Admin/MainAdmin with an fcmToken on file.
 exports.onBookingCreated = onDocumentCreated('Bookings/{bookingId}', async (event) => {
   const booking = event.data.data();
   const serviceNote = booking.serviceName ? ` — ${booking.serviceName}` : '';
-  await sendPushToAdmins(
-    {
-      title: '📅 New Booking Request',
-      body: `${booking.userEmail || 'A tourist'} requested "${booking.placeName}"${serviceNote}.`,
-    },
-    { type: 'booking_created', bookingId: event.params.bookingId },
-  );
+  const title = '📅 New Booking Request';
+  const body = `${booking.userEmail || 'A tourist'} requested "${booking.placeName}"${serviceNote}.`;
+  const bookingId = event.params.bookingId;
+  await Promise.all([
+    sendPushToAdmins({ title, body }, { type: 'booking_created', bookingId }),
+    writeNotificationsForAdmins({ type: 'booking_created', title, body, bookingId }),
+  ]);
 });
 
 // Booking status change → notify the tourist who made it.
@@ -218,14 +255,13 @@ exports.onBookingStatusChanged = onDocumentUpdated('Bookings/{bookingId}', async
   if (before.status === after.status) return;
 
   const label = STATUS_LABELS[after.status] || after.status;
-  await sendPushToUid(
-    after.firebaseUid,
-    {
-      title: `Booking ${label}`,
-      body: `Your booking for "${after.placeName}" is now ${label.toLowerCase()}.`,
-    },
-    { type: 'booking_status_changed', bookingId: event.params.bookingId, status: after.status },
-  );
+  const title = `Booking ${label}`;
+  const body = `Your booking for "${after.placeName}" is now ${label.toLowerCase()}.`;
+  const bookingId = event.params.bookingId;
+  await Promise.all([
+    sendPushToUid(after.firebaseUid, { title, body }, { type: 'booking_status_changed', bookingId, status: after.status }),
+    writeNotification(after.firebaseUid, { type: 'booking_status_changed', title, body, bookingId }),
+  ]);
 });
 
 // New footer "Contact Us" submission → notify every MainAdmin with an

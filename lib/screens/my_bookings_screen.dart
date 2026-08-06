@@ -4,6 +4,7 @@ import 'package:palmnazi/models/booking_model.dart';
 import 'package:palmnazi/services/app_settings_controller.dart';
 import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/booking_service.dart';
+import 'package:palmnazi/widgets/main_app_bar.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MyBookingsScreen
@@ -45,11 +46,10 @@ class MyBookingsScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: _P.deepBlue,
-      appBar: AppBar(
-        backgroundColor: _P.deepNavy,
-        title: Text(context.tr('account_my_bookings'),
-            style: TextStyle(color: _P.textPri)),
-        iconTheme: IconThemeData(color: _P.textPri),
+      appBar: PalmnaziNavBar(
+        compact: true,
+        showBack: true,
+        title: context.tr('account_my_bookings'),
       ),
       body: uid == null
           ? Center(

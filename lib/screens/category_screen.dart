@@ -8,6 +8,7 @@ import 'package:palmnazi/models/place_model.dart';
 import 'package:palmnazi/screens/place_details_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/services/app_strings.dart';
+import 'package:palmnazi/widgets/main_app_bar.dart';
 import 'package:palmnazi/widgets/place_card.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -300,7 +301,10 @@ class _CategoryScreenState extends State<CategoryScreen>
           ),
 
           // ── Floating top nav bar ─────────────────────────────────────────
-          _buildTopNav(),
+          PalmnaziNavBar(
+            showBack: true,
+            heroOpacity: (_scrollOffset / 80).clamp(0.0, 1.0),
+          ),
         ],
       ),
     );
@@ -334,89 +338,6 @@ class _CategoryScreenState extends State<CategoryScreen>
           ),
         ),
       );
-
-  // ── Top nav ───────────────────────────────────────────────────────────────
-  Widget _buildTopNav() {
-    final navOpacity = (_scrollOffset / 80).clamp(0.0, 1.0);
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.black.withValues(alpha: 0.30 + 0.45 * navOpacity),
-              Colors.transparent,
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.15),
-                      border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.30)),
-                    ),
-                    child: const Icon(Icons.arrow_back,
-                        color: Colors.white, size: 18),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [_P.aquaBright, _P.aqua],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _P.aqua.withValues(alpha: 0.55),
-                        blurRadius: 10,
-                        spreadRadius: 1,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.landscape,
-                      color: Colors.white, size: 18),
-                ),
-                const SizedBox(width: 10),
-                ShaderMask(
-                  shaderCallback: (bounds) => const LinearGradient(
-                    colors: [_P.aquaBright, Colors.white],
-                  ).createShader(bounds),
-                  child: const Text(
-                    'PALMNAZI',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
   // ── Breadcrumb  City › Category ───────────────────────────────────────────
   Widget _buildBreadcrumb() {

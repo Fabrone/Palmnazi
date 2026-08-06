@@ -16,6 +16,7 @@ import 'package:palmnazi/models/menu_item_model.dart';
 import 'package:palmnazi/models/room_model.dart';
 import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/booking_screen.dart';
+import 'package:palmnazi/screens/service_detail_screen.dart';
 import 'package:palmnazi/services/analytics_service.dart';
 import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/services/favorite_service.dart';
@@ -25,8 +26,10 @@ import 'package:palmnazi/services/menu_service.dart';
 import 'package:palmnazi/services/place_lookup_service.dart';
 import 'package:palmnazi/services/place_query_service.dart';
 import 'package:palmnazi/services/room_service.dart';
+import 'package:palmnazi/services/service_type_style.dart';
 import 'package:palmnazi/services/app_settings_controller.dart';
 import 'package:palmnazi/services/app_strings.dart';
+import 'package:palmnazi/widgets/main_app_bar.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // place_details_screen.dart
@@ -201,6 +204,14 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
   bool _loadingNestedItems = false;
   String _nestedItemsSearchQuery = '';
 
+  // Selector for the "All Listings" / "Browse by Service" tabs in
+  // _buildNestedItemsSection. A plain TabController (driving a manually
+  // switched body rather than a swipeable TabBarView) is used deliberately —
+  // TabBarView requires a bounded height, which doesn't fit this section's
+  // placement inside an outer CustomScrollView/Column of variable-height
+  // content.
+  late final TabController _nestedItemsTabController;
+
   // Cultural places only: artifacts shown as a read-only display-case
   // section (they're informational, not something a tourist books, unlike
   // exhibitions above which can have visiting slots).
@@ -248,6 +259,34 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       t.contains('heritage') ||
       t.contains('art'));
 
+  /// The nested-item type for this place, computed synchronously from
+  /// taxonomy — mirrors the same branching `_fetchPlaceDetailsExtras` uses,
+  /// but available immediately (not gated on that async fetch completing),
+  /// since rooms/menuItems now render from live Firestore streams that don't
+  /// depend on it.
+  String get _currentServiceType {
+    if (_isAccommodationType) return 'rooms';
+    if (_isDiningType) return 'menuItems';
+    if (_isEntertainmentType) return 'shows';
+    if (_isCulturalType) return 'exhibitions';
+    return '';
+  }
+
+  String get _currentServiceLabel {
+    switch (_currentServiceType) {
+      case 'rooms':
+        return 'Rooms';
+      case 'menuItems':
+        return 'Menu';
+      case 'shows':
+        return 'Shows';
+      case 'exhibitions':
+        return 'Exhibitions';
+      default:
+        return '';
+    }
+  }
+
   /// Human-readable price range built from PlacePricing, e.g. "KES 2,000–5,000/night".
   String? get _priceRangeLabel {
     final p = _place.pricing;
@@ -294,6 +333,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
   void initState() {
     super.initState();
     _place = widget.place;
+    _nestedItemsTabController = TabController(length: 2, vsync: this);
     _scrollController = ScrollController()..addListener(_onScroll);
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 800),
@@ -319,6 +359,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
   void dispose() {
     _scrollController.dispose();
     _fadeController.dispose();
+    _nestedItemsTabController.dispose();
     _favoriteSub?.cancel();
     super.dispose();
   }
@@ -597,6 +638,22 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     );
   }
 
+  void _openServiceDetail(Map<String, dynamic> item, String itemType) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ServiceDetailScreen(
+          item: item,
+          itemType: itemType,
+          place: _place,
+          city: widget.city,
+          paymentMethods: _acceptedPaymentMethods,
+          serviceOptions: itemType == _nestedItemsType ? _nestedItems : [item],
+          serviceLabel: _nestedItemsLabel,
+        ),
+      ),
+    );
+  }
+
   // ── Ask a question ────────────────────────────────────────────────────────
   Future<void> _askQuestion() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -720,11 +777,9 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildBreadcrumb(),
-                      _buildPlaceInfoCard(),
+                      _buildCompactHeader(),
                       if (_detailLoading) _buildDetailLoadingBanner(),
                       if (_detailError) _buildDetailErrorBanner(),
-                      _buildQuickActions(),
                       _buildDescriptionSection(),
                       _buildImageGallery(),
                       if (_featureTags.isNotEmpty) _buildFeaturesSection(),
@@ -744,7 +799,11 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           ),
 
           // ── Top nav bar ────────────────────────────────────────────────────
-          _buildTopNav(),
+          PalmnaziNavBar(
+            showBack: true,
+            heroOpacity: (_scrollOffset / 80).clamp(0.0, 1.0),
+            trailing: _placeNamePill(),
+          ),
         ],
       ),
     );
@@ -789,229 +848,151 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         ),
       );
 
-  // ── Top nav bar ─────────────────────────────────────────────────────────
-  Widget _buildTopNav() {
-    final navOpacity = (_scrollOffset / 80).clamp(0.0, 1.0);
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: Container(
+  // ── Place-name pill (passed as PalmnaziNavBar's trailing slot) ───────────
+  Widget _placeNamePill() => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.black.withValues(alpha: 0.30 + 0.45 * navOpacity),
-              Colors.transparent,
-            ],
-          ),
+          color: _P.aqua.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(16),
         ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                // Back
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.15),
-                      border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.30)),
-                    ),
-                    child: const Icon(Icons.arrow_back,
-                        color: Colors.white, size: 18),
-                  ),
-                ),
-                const SizedBox(width: 10),
-
-                // Logo orb
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [_P.aquaBright, _P.aqua],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                          color: _P.aqua.withValues(alpha: 0.50),
-                          blurRadius: 10),
-                    ],
-                  ),
-                  child: const Icon(Icons.landscape,
-                      color: Colors.white, size: 18),
-                ),
-                const SizedBox(width: 10),
-
-                // Brand
-                ShaderMask(
-                  shaderCallback: (b) => const LinearGradient(
-                    colors: [_P.aquaBright, Colors.white],
-                  ).createShader(b),
-                  child: const Text(
-                    'PALMNAZI',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-
-                // Place name pill
-                Flexible(
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: _P.aqua.withValues(alpha: 0.85),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      _place.name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+        child: Text(
+          _place.name,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
           ),
+          overflow: TextOverflow.ellipsis,
         ),
-      ),
-    );
-  }
+      );
 
-  // ── Breadcrumb  City › Category › Place ──────────────────────────────────
-  Widget _buildBreadcrumb() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.popUntil(
-                context, (r) => r.isFirst || r.settings.name == '/city'),
-            child: Text(
-              widget.city.name,
-              style: const TextStyle(
-                color: _P.aquaBright,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Icon(Icons.chevron_right,
-              size: 16, color: Colors.white.withValues(alpha: 0.50)),
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Text(
-              widget.category.name,
-              style: const TextStyle(
-                color: _P.aquaBright,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Icon(Icons.chevron_right,
-              size: 16, color: Colors.white.withValues(alpha: 0.50)),
-          Text(
-            _place.name,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // ── Compact header ─────────────────────────────────────────────────────────
+  // Replaces the old three-block stack (breadcrumb / gradient info card /
+  // quick-action tiles) with one compact card: breadcrumb, name + category +
+  // city on a tightly wrapped row, then a second row with the price pill and
+  // the quick-action icons inline. The address (still shown in full in
+  // _buildContactSection below) and the short description (now covered by
+  // _buildDescriptionSection as plain flowing copy) are dropped from here to
+  // keep the header's footprint small.
+  Widget _buildCompactHeader() {
+    final phone = _place.contact?.phone ?? '';
+    final website = _place.contact?.website ?? '';
+    final hasMap = _place.hasLocation;
 
-  // ── Place info card ───────────────────────────────────────────────────────
-  Widget _buildPlaceInfoCard() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            _P.aqua.withValues(alpha: 0.30),
-            _P.aqua.withValues(alpha: 0.10),
+            _P.aqua.withValues(alpha: 0.26),
+            _P.aqua.withValues(alpha: 0.08),
           ],
         ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _P.aqua.withValues(alpha: 0.50)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _P.aqua.withValues(alpha: 0.45)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Name + city
+          // Breadcrumb: City › Category › Place
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              GestureDetector(
+                onTap: () => Navigator.popUntil(
+                    context, (r) => r.isFirst || r.settings.name == '/city'),
+                child: Text(
+                  widget.city.name,
+                  style: const TextStyle(
+                      color: _P.aquaBright,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600),
+                ),
+              ),
+              Icon(Icons.chevron_right,
+                  size: 12, color: Colors.white.withValues(alpha: 0.45)),
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Text(
+                  widget.category.name,
+                  style: const TextStyle(
+                      color: _P.aquaBright,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600),
+                ),
+              ),
+              Icon(Icons.chevron_right,
+                  size: 12, color: Colors.white.withValues(alpha: 0.45)),
+              Text(
+                _place.name,
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Name + category + city, tightly wrapped on one row (wraps to a
+          // second line only on very narrow screens), with the bookable
+          // badge trailing.
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 10,
+                  runSpacing: 4,
                   children: [
                     Text(
                       _place.name,
                       style: const TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                          fontSize: 21,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _P.aqua.withValues(alpha: 0.20),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _primaryCategoryName,
+                        style: const TextStyle(
+                            fontSize: 12,
+                            color: _P.aquaBright,
+                            fontWeight: FontWeight.w600),
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _primaryCategoryName,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        color: _P.aquaBright,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (_place.cityName.isNotEmpty) ...[
-                      const SizedBox(height: 4),
+                    if (_place.cityName.isNotEmpty)
                       Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.location_city,
-                              size: 14,
+                              size: 13,
                               color: Colors.white.withValues(alpha: 0.55)),
                           const SizedBox(width: 4),
                           Text(
                             _place.cityName,
                             style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.white.withValues(alpha: 0.70),
-                            ),
+                                fontSize: 12,
+                                color: Colors.white.withValues(alpha: 0.70)),
                           ),
                         ],
                       ),
-                    ],
                   ],
                 ),
               ),
-
-              // Bookable badge
               if (_place.isBookable)
                 Container(
+                  margin: const EdgeInsets.only(left: 8),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
@@ -1029,70 +1010,79 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             ],
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
 
-          // Price range + address row
+          // Price pill + quick-action icons, inline on one row.
           Row(
             children: [
-              if (_priceRangeLabel != null) ...[
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: _P.deepNavy,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                        color: _P.aquaBright.withValues(alpha: 0.40)),
-                  ),
-                  child: Text(
-                    _priceRangeLabel!,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: _P.aquaBright,
-                      fontWeight: FontWeight.bold,
+              if (_priceRangeLabel != null)
+                Flexible(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _P.deepNavy,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: _P.aquaBright.withValues(alpha: 0.40)),
+                    ),
+                    child: Text(
+                      _priceRangeLabel!,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 12,
+                          color: _P.aquaBright,
+                          fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
-              ],
-              if ((_place.address ?? '').isNotEmpty)
-                Expanded(
-                  child: Row(
-                    children: [
-                      Icon(Icons.place_outlined,
-                          size: 14,
-                          color: Colors.white.withValues(alpha: 0.55)),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          _place.address!,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.white.withValues(alpha: 0.70),
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              const Spacer(),
+              if (phone.isNotEmpty)
+                _compactActionIcon(
+                    Icons.phone,
+                    _P.aqua,
+                    () => _launchCall(phone),
+                    context.tr('place_details_quick_action_call')),
+              if (hasMap)
+                _compactActionIcon(
+                    Icons.directions,
+                    const Color(0xFF2979FF),
+                    _launchDirections,
+                    context.tr('place_details_quick_action_directions')),
+              if (website.isNotEmpty)
+                _compactActionIcon(
+                    Icons.language,
+                    const Color(0xFFAA00FF),
+                    () => _launchWebsite(website),
+                    context.tr('place_details_quick_action_website')),
+              _compactActionIcon(Icons.share, const Color(0xFF00BFA5),
+                  _sharePlace, context.tr('place_details_quick_action_share')),
             ],
           ),
-
-          // Short description
-          if ((_place.shortDescription ?? '').isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              _place.shortDescription!,
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.white.withValues(alpha: 0.75),
-                fontStyle: FontStyle.italic,
-                height: 1.4,
-              ),
-            ),
-          ],
         ],
+      ),
+    );
+  }
+
+  Widget _compactActionIcon(
+      IconData icon, Color color, VoidCallback onTap, String tooltip) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Tooltip(
+        message: tooltip,
+        child: Material(
+          color: Colors.white.withValues(alpha: 0.10),
+          shape: CircleBorder(
+              side: BorderSide(color: color.withValues(alpha: 0.55))),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Icon(icon, size: 16, color: color),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1148,58 +1138,6 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  // ── Quick actions ─────────────────────────────────────────────────────────
-  Widget _buildQuickActions() {
-    final phone = _place.contact?.phone ?? '';
-    final website = _place.contact?.website ?? '';
-    final hasMap = _place.hasLocation;
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      child: Row(
-        children: [
-          if (phone.isNotEmpty) ...[
-            Expanded(
-              child: _buildQuickActionButton(
-                  Icons.phone,
-                  context.tr('place_details_quick_action_call'),
-                  _P.aqua,
-                  () => _launchCall(phone)),
-            ),
-            const SizedBox(width: 12),
-          ],
-          if (hasMap) ...[
-            Expanded(
-              child: _buildQuickActionButton(
-                  Icons.directions,
-                  context.tr('place_details_quick_action_directions'),
-                  const Color(0xFF2979FF),
-                  _launchDirections),
-            ),
-            const SizedBox(width: 12),
-          ],
-          if (website.isNotEmpty) ...[
-            Expanded(
-              child: _buildQuickActionButton(
-                  Icons.language,
-                  context.tr('place_details_quick_action_website'),
-                  const Color(0xFFAA00FF),
-                  () => _launchWebsite(website)),
-            ),
-            const SizedBox(width: 12),
-          ],
-          Expanded(
-            child: _buildQuickActionButton(
-                Icons.share,
-                context.tr('place_details_quick_action_share'),
-                const Color(0xFF00BFA5),
-                _sharePlace),
-          ),
-        ],
       ),
     );
   }
@@ -1287,35 +1225,6 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
       if (!mounted) return;
       _showActionFailure(context.tr('place_details_error_share'));
     }
-  }
-
-  Widget _buildQuickActionButton(
-      IconData icon, String label, Color color, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.50)),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 11,
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   // ── Description ───────────────────────────────────────────────────────────
@@ -1496,43 +1405,143 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
   }
 
   // ── Nested services (rooms / menu / shows) ───────────────────────────────
+  //
+  // Rooms and menu items are wired to the live Firestore streams
+  // (RoomService.streamForPlace / MenuService.streamSectionsForPlace +
+  // streamItemsForPlace) so an admin's mid-session edit (price, availability,
+  // a new item) appears here without a page refresh. Shows/exhibitions
+  // remain on the existing one-shot REST fetch (_nestedItems /
+  // _loadingNestedItems), untouched — those aren't part of this migration.
   Widget _buildNestedItemsSection() {
-    if (_loadingNestedItems) {
-      return const Padding(
+    final type = _currentServiceType;
+    if (type.isEmpty) return const SizedBox.shrink();
+    final label = _currentServiceLabel;
+
+    if (type == 'rooms') {
+      return StreamBuilder<List<RoomModel>>(
+        stream: RoomService.streamForPlace(_place.id),
+        builder: (context, snap) {
+          if (!snap.hasData) return _nestedItemsLoadingIndicator();
+          final rooms = snap.data!;
+          final items = rooms
+              .map((r) => <String, dynamic>{
+                    'id': r.id,
+                    'placeId': r.placeId,
+                    ...r.toCreateMap(),
+                  })
+              .toList();
+          return _buildTabbedListingsSection(
+            items: items,
+            itemType: type,
+            label: label,
+            groupField: 'roomType',
+          );
+        },
+      );
+    }
+
+    if (type == 'menuItems') {
+      return StreamBuilder<List<MenuSectionModel>>(
+        stream: MenuService.streamSectionsForPlace(_place.id),
+        builder: (context, sectionsSnap) {
+          final sections = sectionsSnap.data ?? const <MenuSectionModel>[];
+          final sectionNameById = {
+            for (final s in sections)
+              if (s.id != null) s.id!: s.name,
+          };
+          return StreamBuilder<List<MenuItemModel>>(
+            stream: MenuService.streamItemsForPlace(_place.id),
+            builder: (context, itemsSnap) {
+              if (!itemsSnap.hasData) return _nestedItemsLoadingIndicator();
+              final menuItems = itemsSnap.data!;
+              final items = menuItems
+                  .map((it) => <String, dynamic>{
+                        'id': it.id,
+                        'placeId': it.placeId,
+                        'sectionId': it.sectionId,
+                        if (it.sectionId != null)
+                          'sectionName': sectionNameById[it.sectionId],
+                        ...it.toCreateMap(),
+                      })
+                  .toList();
+              return _buildTabbedListingsSection(
+                items: items,
+                itemType: type,
+                label: label,
+                groupField: 'sectionName',
+              );
+            },
+          );
+        },
+      );
+    }
+
+    // Shows / exhibitions — existing REST-based one-shot fetch, unchanged.
+    if (_loadingNestedItems) return _nestedItemsLoadingIndicator();
+    if (_nestedItems.isEmpty) return const SizedBox.shrink();
+    return _buildTabbedListingsSection(
+      items: _nestedItems,
+      itemType: type,
+      label: label,
+      groupField: null,
+    );
+  }
+
+  Widget _nestedItemsLoadingIndicator() => const Padding(
         padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Center(
             child: CircularProgressIndicator(
                 color: _P.aquaBright, strokeWidth: 2)),
       );
-    }
-    if (_nestedItems.isEmpty) return const SizedBox.shrink();
 
+  /// Shared header (title, search) + two-tab ("All Listings" / "Browse by
+  /// Service") shell for whichever nested-item list is currently active.
+  /// A [TabController] drives the selected index; the body underneath is
+  /// swapped manually (via [AnimatedBuilder]) rather than through a
+  /// `TabBarView`, since a swipeable view needs a bounded height and this
+  /// section lives inside an outer `CustomScrollView`/`Column` of
+  /// variable-height content.
+  Widget _buildTabbedListingsSection({
+    required List<Map<String, dynamic>> items,
+    required String itemType,
+    required String label,
+    required String? groupField,
+  }) {
+    final style = ServiceTypeStyle.forItemType(itemType);
     final query = _nestedItemsSearchQuery.trim().toLowerCase();
-    final visibleEntries = _nestedItems.asMap().entries.where((e) =>
-        query.isEmpty ||
-        ((e.value['name'] as String?)?.toLowerCase().contains(query) ?? false));
+    final visibleEntries = items
+        .asMap()
+        .entries
+        .where((e) =>
+            query.isEmpty ||
+            ((e.value['name'] as String?)?.toLowerCase().contains(query) ??
+                false))
+        .toList();
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(_nestedItemsLabel,
-              style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white)),
+          Row(
+            children: [
+              Icon(style.icon, color: style.accent, size: 20),
+              const SizedBox(width: 8),
+              Text(label,
+                  style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white)),
+            ],
+          ),
           const SizedBox(height: 12),
-          if (_nestedItems.length > 3) ...[
+          if (items.length > 3) ...[
             TextField(
               onChanged: (v) => setState(() => _nestedItemsSearchQuery = v),
               style: const TextStyle(color: Colors.white, fontSize: 13),
               decoration: InputDecoration(
                 hintText:
-                    // Dynamic label mixed into the hint — the label itself
-                    // comes from live category data (e.g. "Rooms"/"Menu"),
-                    // so only the surrounding chrome ("Search …") is static.
-                    '${context.tr('place_details_search_prefix')} ${_nestedItemsLabel.toLowerCase()}…',
+                    '${context.tr('place_details_search_prefix')} ${label.toLowerCase()}…',
                 hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
                 prefixIcon: const Icon(Icons.search_rounded,
                     color: Colors.white38, size: 16),
@@ -1548,40 +1557,110 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
             ),
             const SizedBox(height: 12),
           ],
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.all(4),
+            child: TabBar(
+              controller: _nestedItemsTabController,
+              indicator: BoxDecoration(
+                color: style.accent.withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              labelColor: Colors.white,
+              unselectedLabelColor: Colors.white60,
+              labelStyle:
+                  const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+              tabs: const [
+                Tab(text: 'All Listings'),
+                Tab(text: 'Browse by Service'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
           if (visibleEntries.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
-                  'No ${_nestedItemsLabel.toLowerCase()} match "$query".',
+                  query.isEmpty
+                      ? 'No ${label.toLowerCase()} available yet.'
+                      : 'No ${label.toLowerCase()} match "$query".',
                   style: const TextStyle(color: Colors.white38, fontSize: 13)),
             )
-          else if (_nestedItemsType == 'menuItems')
-            _buildGroupedMenuItems(visibleEntries)
           else
-            ...visibleEntries.map((e) {
-              final images = e.key < _nestedItemImages.length
-                  ? _nestedItemImages[e.key]
-                  : const <String>[];
-              return _NestedServiceCard(
-                item: e.value,
-                images: images,
-                itemType: _nestedItemsType,
-              );
-            }),
+            AnimatedBuilder(
+              animation: _nestedItemsTabController,
+              builder: (context, _) {
+                final browseByService = _nestedItemsTabController.index == 1;
+                if (browseByService && groupField != null) {
+                  return _buildGroupedByField(
+                      visibleEntries, itemType, groupField);
+                }
+                return _buildResponsiveGrid(visibleEntries, itemType);
+              },
+            ),
         ],
       ),
     );
   }
 
-  /// Groups menu items by their section name (e.g. "Starters", "Mains") —
-  /// items predating this feature carry no `sectionName` and fall into an
-  /// unheaded group at the top, same list they'd have shown in before.
-  Widget _buildGroupedMenuItems(
-      Iterable<MapEntry<int, Map<String, dynamic>>> entries) {
+  /// Responsive grid: 1 column below 600px, 2 columns 600-1000px, 3 columns
+  /// above 1000px, with a fixed card aspect ratio so cards don't stretch
+  /// awkwardly on wide screens.
+  Widget _buildResponsiveGrid(
+      List<MapEntry<int, Map<String, dynamic>>> entries, String itemType) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final crossAxisCount = width >= 1000 ? 3 : (width >= 600 ? 2 : 1);
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: entries.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            mainAxisSpacing: 14,
+            crossAxisSpacing: 14,
+            childAspectRatio: crossAxisCount == 1 ? 2.4 : 0.85,
+          ),
+          itemBuilder: (context, i) {
+            final e = entries[i];
+            final images = e.key < _nestedItemImages.length
+                ? _nestedItemImages[e.key]
+                : const <String>[];
+            return _NestedServiceCard(
+              item: e.value,
+              images: images,
+              itemType: itemType,
+              onCardTap: () => _openServiceDetail(e.value, itemType),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// "Browse by Service" grouped view — groups entries by [groupField]
+  /// (`sectionName` for dining, `roomType` for accommodation) into labeled
+  /// sub-sections, each rendered as its own responsive grid. Entries with no
+  /// value for the field fall into an unheaded group at the top, same as the
+  /// menu grouping did before this change.
+  Widget _buildGroupedByField(List<MapEntry<int, Map<String, dynamic>>> entries,
+      String itemType, String groupField) {
     final groups = <String, List<MapEntry<int, Map<String, dynamic>>>>{};
     for (final e in entries) {
-      final section = (e.value['sectionName'] as String?)?.trim();
-      groups.putIfAbsent(section ?? '', () => []).add(e);
+      final String key;
+      if (groupField == 'roomType') {
+        final wire = e.value['roomType'] as String?;
+        key = wire == null || wire.isEmpty ? '' : RoomType.fromWire(wire).label;
+      } else {
+        key = (e.value[groupField] as String?)?.trim() ?? '';
+      }
+      groups.putIfAbsent(key, () => []).add(e);
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1589,7 +1668,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         final header = g.key.isEmpty
             ? const SizedBox.shrink()
             : Padding(
-                padding: const EdgeInsets.only(top: 12, bottom: 6),
+                padding: const EdgeInsets.only(top: 4, bottom: 10),
                 child: Text(g.key,
                     style: const TextStyle(
                         color: Colors.white70,
@@ -1598,16 +1677,10 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               );
         return [
           header,
-          ...g.value.map((e) {
-            final images = e.key < _nestedItemImages.length
-                ? _nestedItemImages[e.key]
-                : const <String>[];
-            return _NestedServiceCard(
-              item: e.value,
-              images: images,
-              itemType: _nestedItemsType,
-            );
-          }),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _buildResponsiveGrid(g.value, itemType),
+          ),
         ];
       }).toList(),
     );
@@ -1636,6 +1709,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
               item: e.value,
               images: images,
               itemType: 'artifacts',
+              onCardTap: () => _openServiceDetail(e.value, 'artifacts'),
             );
           }),
         ],
@@ -2029,11 +2103,13 @@ class _NestedServiceCard extends StatelessWidget {
   final Map<String, dynamic> item;
   final List<String> images;
   final String itemType;
+  final VoidCallback? onCardTap;
 
   const _NestedServiceCard({
     required this.item,
     required this.images,
     required this.itemType,
+    this.onCardTap,
   });
 
   String _title(BuildContext context) =>
@@ -2164,75 +2240,110 @@ class _NestedServiceCard extends StatelessWidget {
         ]),
       );
 
+  void _onTap(BuildContext context) => onCardTap?.call();
+
   @override
   Widget build(BuildContext context) {
+    final style = ServiceTypeStyle.forItemType(itemType);
     final roomChips = _roomDetailChips(context);
     final menuChips = _menuItemDetailChips(context);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _P.aqua.withValues(alpha: 0.20)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(_title(context),
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600)),
-          if (_subtitle != null) ...[
-            const SizedBox(height: 4),
-            Text(_subtitle!,
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.65), fontSize: 12)),
-          ],
-          if (roomChips.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(spacing: 6, runSpacing: 6, children: roomChips),
-          ],
-          if (menuChips.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(spacing: 6, runSpacing: 6, children: menuChips),
-          ],
-          if (images.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            SizedBox(
-              height: 72,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: images.length,
-                itemBuilder: (context, i) {
-                  final safeUrl = _safeImageUrl(images[i]);
-                  return Container(
-                    width: 96,
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
-                      border:
-                          Border.all(color: _P.aqua.withValues(alpha: 0.25)),
-                    ),
-                    clipBehavior: Clip.hardEdge,
-                    child: safeUrl != null
-                        ? Image.network(safeUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
-                                color: _P.deepBlue,
-                                child: const Icon(Icons.broken_image_outlined,
-                                    color: Colors.white24, size: 20)))
-                        : Container(
-                            color: _P.deepBlue,
-                            child: const Icon(Icons.broken_image_outlined,
-                                color: Colors.white24, size: 20)),
-                  );
-                },
-              ),
+    final chips = [...roomChips, ...menuChips];
+    final coverImage = images.isNotEmpty ? _safeImageUrl(images.first) : null;
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _onTap(context),
+        splashColor: style.accent.withValues(alpha: 0.24),
+        highlightColor: style.accent.withValues(alpha: 0.10),
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                style.accent.withValues(alpha: 0.22),
+                style.accent.withValues(alpha: 0.06),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-          ],
-        ],
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: style.accent.withValues(alpha: 0.45)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: style.accent.withValues(alpha: 0.25),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(style.icon, color: style.accent, size: 18),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(_title(context),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700)),
+                          if (_subtitle != null)
+                            Text(_subtitle!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.65),
+                                    fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded,
+                        color: Colors.white.withValues(alpha: 0.35), size: 18),
+                  ],
+                ),
+                if (coverImage != null) ...[
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: Image.network(
+                        coverImage,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: _P.deepBlue,
+                          child: const Icon(Icons.broken_image_outlined,
+                              color: Colors.white24, size: 20),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+                if (chips.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Wrap(spacing: 6, runSpacing: 6, children: chips),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

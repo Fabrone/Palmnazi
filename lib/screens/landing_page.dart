@@ -26,17 +26,20 @@ import 'package:palmnazi/screens/account_screen.dart';
 import 'package:palmnazi/screens/careers_screen.dart';
 import 'package:palmnazi/screens/contact_screen.dart';
 import 'package:palmnazi/screens/blog_post_detail_screen.dart';
+import 'package:palmnazi/screens/my_bookings_screen.dart';
 import 'package:palmnazi/screens/place_details_screen.dart';
 import 'package:palmnazi/screens/resort_city_screen.dart';
 import 'package:palmnazi/screens/static_info_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/services/app_settings_controller.dart';
 import 'package:palmnazi/services/app_strings.dart';
+import 'package:palmnazi/services/auth_state_controller.dart';
 import 'package:palmnazi/services/city_details_service.dart';
 import 'package:palmnazi/services/firebase_service.dart';
 import 'package:palmnazi/services/rbac_service.dart';
 import 'package:palmnazi/admin/admin_dashboard.dart';
 import 'package:palmnazi/constants/tourism_labels.dart';
+import 'package:palmnazi/widgets/notification_bell.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Logger
@@ -1041,10 +1044,19 @@ class _LandingPageState extends State<LandingPage>
                         onTap: _openCategoriesOverlay),
                     _navLink(context.tr('nav_blog'),
                         onTap: () => _scrollToKey(_blogKey)),
+                    _navLink('My Bookings', onTap: _goToBookings),
                     const SizedBox(width: 8),
+                    if (AuthStateScope.of(context).isSignedIn) ...[
+                      const NotificationBell(),
+                      const SizedBox(width: 6),
+                    ],
                     _signInButton(),
                   ],
                   if (isMobile) ...[
+                    if (AuthStateScope.of(context).isSignedIn) ...[
+                      const NotificationBell(),
+                      const SizedBox(width: 4),
+                    ],
                     _signInButtonMobile(),
                     const SizedBox(width: 4),
                     _menuIconButton(),
@@ -1122,6 +1134,17 @@ class _LandingPageState extends State<LandingPage>
       ),
     );
     if (mounted) _loadAuthState();
+  }
+
+  Future<void> _goToBookings() async {
+    if (!_isLoggedIn) {
+      await _goToSignIn();
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const MyBookingsScreen()),
+    );
   }
 
   void _goToAccount() async {
@@ -1361,6 +1384,10 @@ class _LandingPageState extends State<LandingPage>
                   () {
                 Navigator.pop(context);
                 _focusHeroSearch();
+              }),
+              _mobileMenuItem(Icons.calendar_month_rounded, 'My Bookings', () {
+                Navigator.pop(context);
+                _goToBookings();
               }),
               const Divider(color: Color(0xFF1A3550), height: 24),
               if (_isLoggedIn)

@@ -5,12 +5,12 @@ import 'package:palmnazi/constants/tourism_labels.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/place_model.dart';
-import 'package:palmnazi/screens/auth_screen.dart';
 import 'package:palmnazi/screens/category_screen.dart';
 import 'package:palmnazi/screens/place_details_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
 import 'package:palmnazi/services/app_settings_controller.dart';
 import 'package:palmnazi/services/app_strings.dart';
+import 'package:palmnazi/widgets/main_app_bar.dart';
 import 'package:palmnazi/widgets/place_card.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -440,7 +440,10 @@ class _ResortCityScreenState extends State<ResortCityScreen>
           ),
 
           // ── Floating top nav bar ─────────────────────────────────────────
-          _buildTopNav(),
+          PalmnaziNavBar(
+            showBack: true,
+            heroOpacity: (_scrollOffset / 80).clamp(0.0, 1.0),
+          ),
         ],
       ),
     );
@@ -475,141 +478,6 @@ class _ResortCityScreenState extends State<ResortCityScreen>
           ),
         ),
       );
-
-  // ── Floating top nav ──────────────────────────────────────────────────────
-  Widget _buildTopNav() {
-    final navOpacity = (_scrollOffset / 80).clamp(0.0, 1.0);
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.black.withValues(alpha: 0.30 + 0.45 * navOpacity),
-              Colors.transparent,
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // ── Back + PALMNAZI brand ──────────────────────────────
-                Row(children: [
-                  // Back button
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withValues(alpha: 0.15),
-                        border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.30)),
-                      ),
-                      child: const Icon(Icons.arrow_back,
-                          color: Colors.white, size: 18),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-
-                  // Logo orb
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [_P.aquaBright, _P.aqua],
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _P.aqua.withValues(alpha: 0.55),
-                          blurRadius: 10,
-                          spreadRadius: 1,
-                        ),
-                      ],
-                    ),
-                    child: const Icon(Icons.landscape,
-                        color: Colors.white, size: 18),
-                  ),
-                  const SizedBox(width: 10),
-
-                  // Brand name
-                  ShaderMask(
-                    shaderCallback: (bounds) => const LinearGradient(
-                      colors: [_P.aquaBright, Colors.white],
-                    ).createShader(bounds),
-                    child: const Text(
-                      'PALMNAZI',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 2,
-                      ),
-                    ),
-                  ),
-                ]),
-
-                // ── Right: Sign In | Blog | Get Started ───────────────
-                Row(children: [
-                  TextButton(
-                    onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const AuthScreen(isLogin: true))),
-                    child: Text(context.tr('nav_sign_in'),
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500)),
-                  ),
-                  TextButton(
-                    onPressed: () {},
-                    child: Text(context.tr('nav_blog'),
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500)),
-                  ),
-                  const SizedBox(width: 4),
-                  ElevatedButton(
-                    onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const AuthScreen(isLogin: false))),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _P.aquaBright,
-                      foregroundColor: _P.deepNavy,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(18)),
-                      elevation: 4,
-                      shadowColor: _P.aqua.withValues(alpha: 0.50),
-                    ),
-                    child: Text(context.tr('nav_get_started'),
-                        style: const TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w700)),
-                  ),
-                ]),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
   // ── City info card ────────────────────────────────────────────────────────
   Widget _buildCityInfo() {

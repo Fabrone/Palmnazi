@@ -219,10 +219,24 @@ class BookingModel {
 }
 
 /// A computed booking estimate — see [estimateBookingTotal].
+///
+/// [unitPrice]/[multiplier]/[unitLabel] are carried alongside the already-
+/// multiplied [amount] so the booking form can show a real itemized
+/// breakdown ("KES 4,500 × 3 nights = KES 13,500") instead of only the
+/// final total.
 class EstimatedPrice {
   final double amount;
   final String currency;
-  const EstimatedPrice(this.amount, this.currency);
+  final double unitPrice;
+  final int multiplier;
+  final String unitLabel;
+  const EstimatedPrice(
+    this.amount,
+    this.currency, {
+    required this.unitPrice,
+    required this.multiplier,
+    required this.unitLabel,
+  });
 }
 
 /// Estimates a booking's total cost from whatever pricing data is available.
@@ -273,12 +287,21 @@ EstimatedPrice? estimateBookingTotal({
   if (unitPrice == null) return null;
 
   int multiplier = 1;
+  String unitLabel = 'unit';
   if (serviceType == 'rooms' && checkIn != null && checkOut != null) {
     final nights = checkOut.difference(checkIn).inDays;
     multiplier = nights > 0 ? nights : 1;
+    unitLabel = multiplier == 1 ? 'night' : 'nights';
   } else if (serviceType == 'menuItems' || serviceType == 'shows') {
     multiplier = guests > 0 ? guests : 1;
+    unitLabel = multiplier == 1 ? 'guest' : 'guests';
   }
 
-  return EstimatedPrice(unitPrice * multiplier, currency);
+  return EstimatedPrice(
+    unitPrice * multiplier,
+    currency,
+    unitPrice: unitPrice,
+    multiplier: multiplier,
+    unitLabel: unitLabel,
+  );
 }
