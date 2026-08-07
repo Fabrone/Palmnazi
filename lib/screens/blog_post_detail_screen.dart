@@ -10,7 +10,7 @@ import 'package:palmnazi/models/blog_post_detail.dart';
 import 'package:palmnazi/models/blog_post_details_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/city_model.dart';
-import 'package:palmnazi/screens/landing_page.dart' show RC;
+import 'package:palmnazi/theme/rc_palette.dart';
 import 'package:palmnazi/screens/place_details_screen.dart';
 import 'package:palmnazi/screens/resort_city_screen.dart';
 import 'package:palmnazi/services/analytics_service.dart';

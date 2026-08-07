@@ -5,10 +5,8 @@ import 'package:palmnazi/constants/tourism_labels.dart';
 import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/place_model.dart';
-import 'package:palmnazi/screens/category_screen.dart';
 import 'package:palmnazi/screens/place_details_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
-import 'package:palmnazi/services/app_settings_controller.dart';
 import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/widgets/main_app_bar.dart';
 import 'package:palmnazi/widgets/place_card.dart';
@@ -17,7 +15,8 @@ import 'package:palmnazi/widgets/place_card.dart';
 // resort_city_screen.dart
 //
 // Public detail screen shown when a user taps a city card on LandingPage.
-// Reads live categories from the backend and navigates to CategoryScreen.
+// Reads live categories from the backend and uses them to build a filter
+// chip row above a single responsive place grid.
 //
 // DATA SOURCES  (public reads — no auth required)
 //   GET /api/categories?isActive=true&includeChildren=true
@@ -30,10 +29,11 @@ import 'package:palmnazi/widgets/place_card.dart';
 //   city.highlights    → stats chips built from city.totalPlaces,
 //                        city.totalEvents and city.categoryCounts
 //   ChannelItem        → CategoryModel
-//   ChannelScreen      → CategoryScreen
 //
 // NAVIGATION
-//   Category card → CategoryScreen(city: CityModel, category: CategoryModel)
+//   Single listings view — a "Browse by Service" filter-chip row (built from
+//   _categories) filters the same _listings array client-side by category
+//   instead of navigating to a separate CategoryScreen.
 //
 // RESPONSIVE BREAKPOINTS  (inherited from LandingPage convention)
 //   mobile  < 600 dp → grid maxCrossAxisExtent 340, 1-wide
@@ -43,20 +43,8 @@ import 'package:palmnazi/widgets/place_card.dart';
 
 // ── Shared palette ────────────────────────────────────────────────────────────
 abstract final class _P {
-  static bool get _isDark =>
-      AppSettingsController.instance.resolvedBrightness == Brightness.dark;
-
   static const Color aqua = Color(0xFF00B8D4);
   static const Color aquaBright = Color(0xFF00E5FF);
-  static Color get deepNavy =>
-      _isDark ? const Color(0xFF01263F) : const Color(0xFFF5F7FA);
-  static Color get deepBlue =>
-      _isDark ? const Color(0xFF071829) : const Color(0xFFE8EDF2);
-
-  // Text on deepNavy/deepBlue surfaces (e.g. the pinned tab bar).
-  static Color get textPri => _isDark ? Colors.white : const Color(0xFF121F2E);
-  static Color get textSec =>
-      _isDark ? Colors.white54 : const Color(0xFF3D4F60);
 }
 
 // ── Vivid category accent palette — cycles when there are more categories ─────
@@ -259,14 +247,12 @@ class _ResortCityScreenState extends State<ResortCityScreen>
   bool _listingsLoading = true;
   String? _listingsError;
 
-  // ── "Browse by Service" vs "All Listings" ─────────────────────────────────
-  late final TabController _tabController;
+  // ── "Browse by Service" filter chips — null = "All" (no filter) ──────────
+  String? _selectedCategoryId;
 
   @override
   void initState() {
     super.initState();
-
-    _tabController = TabController(length: 2, vsync: this);
 
     _scrollController = ScrollController()..addListener(_onScroll);
 
@@ -339,20 +325,28 @@ class _ResortCityScreenState extends State<ResortCityScreen>
 
   void _onScroll() => setState(() => _scrollOffset = _scrollController.offset);
 
-  void _navigateToCategory(CategoryModel category) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CategoryScreen(
-          city: widget.city,
-          category: category,
-        ),
-      ),
+  /// Filters `_listings` by the selected "Browse by Service" chip, matching
+  /// on `primaryCategoryId` (computed from `categoryLinks.first`) with a
+  /// name-based fallback — same pattern as `category_screen.dart`'s
+  /// `_filteredPlaces` getter. `null` selection ("All") applies no filter.
+  List<PlaceModel> get _filteredListings {
+    if (_selectedCategoryId == null) return _listings;
+
+    final selected = _categories.firstWhere(
+      (c) => c.id == _selectedCategoryId,
+      orElse: () => _placeholderCategory(''),
     );
+    final selectedName = selected.name.toLowerCase();
+
+    return _listings.where((p) {
+      final pid = p.primaryCategoryId;
+      if (pid != null) return pid == _selectedCategoryId;
+      return (p.primaryCategoryName ?? '').toLowerCase() == selectedName;
+    }).toList();
   }
 
-  /// Navigates straight to PlaceDetailsScreen from the "All Listings" tab,
-  /// where there is no single category context. Derives a category from the
+  /// Navigates straight to PlaceDetailsScreen from the listings grid, where
+  /// there is no single category context. Derives a category from the
   /// place's own first category link when available, mirroring the
   /// `_placeholderCategory` pattern already used for icon lookups —
   /// PlaceDetailsScreen only reads `.name` as a breadcrumb/fallback label,
@@ -384,7 +378,6 @@ class _ResortCityScreenState extends State<ResortCityScreen>
   void dispose() {
     _scrollController.dispose();
     _fadeController.dispose();
-    _tabController.dispose();
     super.dispose();
   }
 
@@ -417,25 +410,25 @@ class _ResortCityScreenState extends State<ResortCityScreen>
                 ),
               ),
 
-              // Pinned "Browse by Service" / "All Listings" tab bar
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _TabBarDelegate(_buildTabBar()),
-              ),
-
-              // Each tab owns its own scrollable content (including its own
-              // footer) so it can scroll independently within the remaining
-              // viewport below the pinned tab bar.
-              SliverFillRemaining(
-                hasScrollBody: true,
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _buildServicesTab(),
-                    _buildListingsTab(),
-                  ],
+              // Listings heading
+              SliverToBoxAdapter(
+                child: FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: _buildListingsHeading(),
                 ),
               ),
+
+              // "Browse by Service" filter chip row — filters _listings
+              // client-side instead of navigating to CategoryScreen.
+              SliverToBoxAdapter(child: _buildFilterChipRow()),
+
+              // Responsive place grid
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                sliver: _buildListingsSliver(),
+              ),
+
+              SliverToBoxAdapter(child: _buildFooter()),
             ],
           ),
 
@@ -595,202 +588,59 @@ class _ResortCityScreenState extends State<ResortCityScreen>
         ),
       );
 
-  // ── "Explore Categories" heading ──────────────────────────────────────────
-  Widget _buildCategoriesHeading() {
+  // ── "Browse by Service" filter chip row ───────────────────────────────────
+  //
+  // Replaces the old separate "Browse by Service" tab: an "All" chip plus one
+  // chip per root category, filtering `_listings` client-side (via
+  // `_filteredListings`) instead of navigating to CategoryScreen.
+  Widget _buildFilterChipRow() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      child: Column(
-        children: [
-          ShaderMask(
-            shaderCallback: (bounds) => const LinearGradient(
-              colors: [_P.aquaBright, Colors.white],
-            ).createShader(bounds),
-            child: Text(
-              'Explore ${TourismLabels.categoryPlural}',
-              style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                    fontSize: 34,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Choose a ${TourismLabels.categorySingular.toLowerCase()} to discover amazing ${TourismLabels.placePlural.toLowerCase()} and experiences in ${widget.city.name}',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.white.withValues(alpha: 0.80),
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Categories grid sliver ────────────────────────────────────────────────
-  Widget _buildCategoriesSliver() {
-    if (_catsLoading) return _buildLoadingSliver();
-    if (_catsError != null) return _buildErrorSliver();
-    if (_categories.isEmpty) return _buildEmptySliver();
-
-    return SliverGrid(
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 400,
-        childAspectRatio: 1.0,
-        crossAxisSpacing: 20,
-        mainAxisSpacing: 20,
-      ),
-      delegate: SliverChildBuilderDelegate(
-        (context, index) {
-          final cat = _categories[index];
-          return FadeTransition(
-            opacity: _fadeAnimation,
-            child: _buildCategoryCard(cat, index),
-          );
-        },
-        childCount: _categories.length,
-      ),
-    );
-  }
-
-  SliverToBoxAdapter _buildLoadingSliver() => SliverToBoxAdapter(
-        child: SizedBox(
-          height: 220,
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(
-                    color: _P.aquaBright, strokeWidth: 2),
-                const SizedBox(height: 14),
-                Text('Loading ${TourismLabels.categoryPlural.toLowerCase()}…',
-                    style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.55),
-                        fontSize: 13)),
-              ],
-            ),
-          ),
-        ),
-      );
-
-  SliverToBoxAdapter _buildErrorSliver() => SliverToBoxAdapter(
-        child: GestureDetector(
-          onTap: _loadCategories,
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 24),
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.redAccent.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(16),
-              border:
-                  Border.all(color: Colors.redAccent.withValues(alpha: 0.30)),
-            ),
-            child: Column(
-              children: [
-                const Icon(Icons.error_outline_rounded,
-                    color: Colors.redAccent, size: 36),
-                const SizedBox(height: 10),
-                Text(
-                  _catsError!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
-                ),
-                const SizedBox(height: 8),
-                Text(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+      child: SizedBox(
+        height: 40,
+        child: _catsError != null
+            ? GestureDetector(
+                onTap: _loadCategories,
+                child: Text(
                   context.tr('common_tap_to_retry'),
                   style: const TextStyle(
                       color: _P.aquaBright,
                       fontSize: 12,
                       fontWeight: FontWeight.w600),
                 ),
-              ],
-            ),
-          ),
-        ),
-      );
-
-  SliverToBoxAdapter _buildEmptySliver() => SliverToBoxAdapter(
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 24),
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            children: [
-              Icon(Icons.category_outlined,
-                  size: 48, color: Colors.white.withValues(alpha: 0.30)),
-              const SizedBox(height: 12),
-              Text(
-                'No ${TourismLabels.categoryPlural.toLowerCase()} available yet for ${widget.city.name}.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.55), fontSize: 13),
+              )
+            : ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  _CityFilterChip(
+                    label: 'All',
+                    selected: _selectedCategoryId == null,
+                    onTap: () => setState(() => _selectedCategoryId = null),
+                  ),
+                  if (_catsLoading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 12),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: _P.aquaBright),
+                      ),
+                    )
+                  else
+                    for (int i = 0; i < _categories.length; i++) ...[
+                      const SizedBox(width: 10),
+                      _CityFilterChip(
+                        label: _categories[i].name,
+                        selected: _selectedCategoryId == _categories[i].id,
+                        accent: _accentFor(i),
+                        onTap: () => setState(
+                            () => _selectedCategoryId = _categories[i].id),
+                      ),
+                    ],
+                ],
               ),
-            ],
-          ),
-        ),
-      );
-
-  // ── Browse-by-Service / All-Listings tab bar ──────────────────────────────
-  Widget _buildTabBar() {
-    return Container(
-      color: _P.deepNavy.withValues(alpha: 0.94),
-      child: TabBar(
-        controller: _tabController,
-        indicatorColor: _P.aquaBright,
-        indicatorWeight: 3,
-        labelColor: _P.textPri,
-        unselectedLabelColor: _P.textSec,
-        labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-        tabs: [
-          Tab(
-            icon: const Icon(Icons.category_outlined, size: 18),
-            text: 'Browse by ${TourismLabels.categorySingular}',
-          ),
-          Tab(
-            icon: const Icon(Icons.place_outlined, size: 18),
-            text: 'All ${TourismLabels.placePlural}',
-          ),
-        ],
       ),
-    );
-  }
-
-  // ── "Browse by Service" tab — unchanged category grid + footer ───────────
-  Widget _buildServicesTab() {
-    return CustomScrollView(
-      slivers: [
-        SliverToBoxAdapter(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: _buildCategoriesHeading(),
-          ),
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          sliver: _buildCategoriesSliver(),
-        ),
-        SliverToBoxAdapter(child: _buildFooter()),
-      ],
-    );
-  }
-
-  // ── "All Listings" tab — every place in the city, no category filter ─────
-  Widget _buildListingsTab() {
-    return CustomScrollView(
-      slivers: [
-        SliverToBoxAdapter(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: _buildListingsHeading(),
-          ),
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          sliver: _buildListingsSliver(),
-        ),
-        SliverToBoxAdapter(child: _buildFooter()),
-      ],
     );
   }
 
@@ -827,22 +677,41 @@ class _ResortCityScreenState extends State<ResortCityScreen>
     );
   }
 
+  /// Responsive grid, per the file's documented breakpoints: mobile (<600dp)
+  /// gets a 340dp max cross-axis extent (1-wide), tablet/desktop (>=600dp)
+  /// gets 400dp (2-wide/3-wide depending on available width) — the delegate
+  /// reflows column count automatically from `maxCrossAxisExtent`, so no
+  /// manual breakpoint→column-count mapping is needed. `mainAxisExtent` (not
+  /// `childAspectRatio`) is used so each card gets a fixed, generously tall
+  /// height regardless of column width, since `PlaceCard`'s content
+  /// (image + name/rating + category + description + feature chips + button)
+  /// is not itself flexible and would overflow a too-short tight box.
   Widget _buildListingsSliver() {
     if (_listingsLoading) return _buildListingsLoadingSliver();
     if (_listingsError != null) return _buildListingsErrorSliver();
-    if (_listings.isEmpty) return _buildListingsEmptySliver();
 
-    return SliverList(
+    final filtered = _filteredListings;
+    if (filtered.isEmpty) return _buildListingsEmptySliver();
+
+    final maxExtent = MediaQuery.sizeOf(context).width < 600 ? 340.0 : 400.0;
+
+    return SliverGrid(
+      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: maxExtent,
+        mainAxisExtent: 600,
+        crossAxisSpacing: 20,
+        mainAxisSpacing: 20,
+      ),
       delegate: SliverChildBuilderDelegate(
         (context, index) => FadeTransition(
           opacity: _fadeAnimation,
           child: PlaceCard(
-            place: _listings[index],
+            place: filtered[index],
             fallbackCategoryName: TourismLabels.categorySingular,
-            onTap: () => _navigateToPlaceDetails(_listings[index]),
+            onTap: () => _navigateToPlaceDetails(filtered[index]),
           ),
         ),
-        childCount: _listings.length,
+        childCount: filtered.length,
       ),
     );
   }
@@ -913,7 +782,9 @@ class _ResortCityScreenState extends State<ResortCityScreen>
                   size: 48, color: Colors.white.withValues(alpha: 0.30)),
               const SizedBox(height: 12),
               Text(
-                'No ${TourismLabels.placePlural.toLowerCase()} available yet for ${widget.city.name}.',
+                _selectedCategoryId != null
+                    ? 'No ${TourismLabels.placePlural.toLowerCase()} found for that ${TourismLabels.categorySingular.toLowerCase()} in ${widget.city.name}.'
+                    : 'No ${TourismLabels.placePlural.toLowerCase()} available yet for ${widget.city.name}.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.55), fontSize: 13),
@@ -922,187 +793,6 @@ class _ResortCityScreenState extends State<ResortCityScreen>
           ),
         ),
       );
-
-  // ── Category card ─────────────────────────────────────────────────────────
-  Widget _buildCategoryCard(CategoryModel category, int index) {
-    final accent = _accentFor(index);
-    final icon = _iconFor(category);
-
-    // Collect subcategory names from children (if the API returned them)
-    final subcats =
-        category.children.where((c) => c.isActive).map((c) => c.name).toList();
-
-    return GestureDetector(
-      onTap: () => _navigateToCategory(category),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: accent.withValues(alpha: 0.45),
-              blurRadius: 18,
-              spreadRadius: 2,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Stack(
-            children: [
-              // Solid background when there is no image
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        accent.withValues(alpha: 0.30),
-                        _P.deepBlue,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
-              // Gradient overlay — lighter at top, darker at bottom
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.05),
-                        Colors.black.withValues(alpha: 0.72),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
-              // Card content
-              Positioned.fill(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Icon orb
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: accent.withValues(alpha: 0.25),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                              color: accent.withValues(alpha: 0.80), width: 2),
-                          boxShadow: [
-                            BoxShadow(
-                              color: accent.withValues(alpha: 0.35),
-                              blurRadius: 12,
-                              spreadRadius: 1,
-                            ),
-                          ],
-                        ),
-                        child: Icon(icon, size: 30, color: Colors.white),
-                      ),
-                      const SizedBox(height: 14),
-
-                      // Title
-                      Text(
-                        category.name,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-
-                      // Description — falls back gracefully when null/empty
-                      if ((category.description ?? '').isNotEmpty)
-                        Text(
-                          category.description!,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.white.withValues(alpha: 0.82),
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-
-                      // Subcategory chips — from live children[]
-                      if (subcats.isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 5,
-                          runSpacing: 4,
-                          children: subcats
-                              .take(4)
-                              .map((s) => Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 7, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: accent.withValues(alpha: 0.18),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(
-                                          color:
-                                              accent.withValues(alpha: 0.40)),
-                                    ),
-                                    child: Text(s,
-                                        style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w500)),
-                                  ))
-                              .toList(),
-                        ),
-                      ],
-
-                      const SizedBox(height: 12),
-
-                      // "Explore" pill
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: accent,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: accent.withValues(alpha: 0.55),
-                              blurRadius: 10,
-                              spreadRadius: 1,
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(context.tr('resort_city_explore_pill'),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                )),
-                            const SizedBox(width: 6),
-                            const Icon(Icons.arrow_forward,
-                                size: 14, color: Colors.white),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   // ── Footer ────────────────────────────────────────────────────────────────
   Widget _buildFooter() {
@@ -1174,26 +864,55 @@ class _ResortCityScreenState extends State<ResortCityScreen>
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Pins the "Browse by Service" / "All Listings" TabBar in place while the
-/// tab's own content scrolls beneath it.
-class _TabBarDelegate extends SliverPersistentHeaderDelegate {
-  final Widget child;
-  const _TabBarDelegate(this.child);
+/// "Browse by Service" filter chip — visually modelled on `landing_page.dart`'s
+/// private `_FilterChip` (gold-on-navy) but restyled with this screen's own
+/// aqua accent palette since that class is file-private and not reusable.
+/// `accent` optionally tints the selected state per-category (from
+/// `_accentFor`); falls back to `_P.aquaBright` for the "All" chip.
+class _CityFilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final Color? accent;
+
+  const _CityFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.accent,
+  });
 
   @override
-  double get minExtent => 48;
-
-  @override
-  double get maxExtent => 48;
-
-  @override
-  Widget build(
-          BuildContext context, double shrinkOffset, bool overlapsContent) =>
-      child;
-
-  @override
-  bool shouldRebuild(covariant _TabBarDelegate oldDelegate) =>
-      oldDelegate.child != child;
+  Widget build(BuildContext context) {
+    final Color tint = accent ?? _P.aquaBright;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? tint.withValues(alpha: 0.22)
+              : Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected
+                ? tint.withValues(alpha: 0.80)
+                : Colors.white.withValues(alpha: 0.15),
+            width: 1.2,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            color: selected ? tint : Colors.white.withValues(alpha: 0.75),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _StatChipData {

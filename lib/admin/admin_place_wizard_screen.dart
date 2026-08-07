@@ -13,6 +13,7 @@ import 'package:palmnazi/models/city_model.dart';
 import 'package:palmnazi/models/category_model.dart';
 import 'package:palmnazi/models/place_model.dart';
 import 'package:palmnazi/models/payment_method_model.dart';
+import 'package:palmnazi/models/place_payment_instruction_model.dart';
 import 'package:palmnazi/models/menu_item_model.dart';
 import 'package:palmnazi/models/room_model.dart';
 import 'package:palmnazi/services/admin_colors.dart';
@@ -23,6 +24,7 @@ import 'package:palmnazi/services/backend_room_sync.dart';
 import 'package:palmnazi/services/menu_service.dart';
 import 'package:palmnazi/services/payment_methods_service.dart';
 import 'package:palmnazi/services/place_details_service.dart';
+import 'package:palmnazi/services/place_payment_service.dart';
 import 'package:palmnazi/services/room_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3959,6 +3961,8 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
           ],
           Divider(color: AdC.overlay(0.12), height: 24),
           _buildPaymentMethodsSection(),
+          Divider(color: AdC.overlay(0.12), height: 24),
+          _buildPlacePaymentInstructionsSection(),
         ],
       );
 
@@ -4025,6 +4029,231 @@ class _AdminPlaceWizardScreenState extends State<AdminPlaceWizardScreen> {
             }).toList(),
           ),
       ],
+    );
+  }
+
+  // ── Place-specific payment instructions ──────────────────────────────────
+  //
+  // The global PaymentMethods catalogue (above) only defines *what kinds* of
+  // payment exist app-wide. This section lets the place admin record THIS
+  // place's own account/till/paybill details for the kinds it accepts, via
+  // the PlacePaymentInstructions collection (see PlacePaymentService).
+  Widget _buildPlacePaymentInstructionsSection() {
+    final placeId = _place?.id;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Payment Instructions',
+                    style: TextStyle(
+                        color: AdC.textMute, fontSize: 12, letterSpacing: 1)),
+                const SizedBox(height: 4),
+                Text(
+                    "This place's own account/till/paybill details for each "
+                    'payment method it accepts.',
+                    style: TextStyle(color: AdC.textMute, fontSize: 11)),
+              ],
+            ),
+          ),
+          if (placeId != null)
+            TextButton.icon(
+              onPressed: () =>
+                  _showAddOrEditPaymentInstructionDialog(placeId: placeId),
+              icon: const Icon(Icons.add_rounded, size: 16, color: AdC.teal),
+              label: const Text('Add',
+                  style: TextStyle(color: AdC.teal, fontSize: 13)),
+            ),
+        ]),
+        const SizedBox(height: 10),
+        if (placeId == null)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AdC.overlay(0.03),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AdC.overlay(0.12)),
+            ),
+            child: Text(
+                'Save this place (Step 1) before adding payment instructions.',
+                style: TextStyle(color: AdC.textMute, fontSize: 12)),
+          )
+        else
+          StreamBuilder<List<PlacePaymentInstructionModel>>(
+            stream: PlacePaymentService.streamForPlace(placeId),
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Center(
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AdC.teal)),
+                );
+              }
+              final instructions = snap.data ?? const [];
+              if (instructions.isEmpty) {
+                return _EmptyNestedState(
+                  label: 'No payment instructions added yet',
+                  onAdd: () =>
+                      _showAddOrEditPaymentInstructionDialog(placeId: placeId),
+                );
+              }
+              return Column(
+                children: instructions.map((instr) {
+                  PaymentMethodModel? method;
+                  for (final m in _paymentMethods) {
+                    if (m.id == instr.paymentMethodId) {
+                      method = m;
+                      break;
+                    }
+                  }
+                  final methodLabel = method?.name ?? 'Unknown method';
+                  final title = method?.icon != null && method!.icon!.isNotEmpty
+                      ? '${method.icon} $methodLabel'
+                      : methodLabel;
+                  return _NestedItemRow(
+                    title: title,
+                    subtitle: instr.instructions,
+                    onTap: () => _showAddOrEditPaymentInstructionDialog(
+                        placeId: placeId, existing: instr),
+                    onDelete: () => _deletePlacePaymentInstruction(instr),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  Future<void> _deletePlacePaymentInstruction(
+      PlacePaymentInstructionModel instr) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AdC.surface,
+        title: Text('Delete payment instructions?',
+            style: TextStyle(color: AdC.textPri)),
+        content: Text(
+            'This will remove these payment instructions from the place.',
+            style: TextStyle(color: AdC.textSec)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child:
+                const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await PlacePaymentService.delete(instr.id);
+    } catch (e) {
+      debugPrint('⚠️ [Wizard/DeletePlacePaymentInstruction] Failed: $e');
+    }
+  }
+
+  void _showAddOrEditPaymentInstructionDialog({
+    required String placeId,
+    PlacePaymentInstructionModel? existing,
+  }) {
+    // Prefer the methods this place has already been marked as accepting;
+    // fall back to every active global method if none are selected yet.
+    // When editing, always fall back to the full catalogue so the dropdown
+    // can still show the instruction's existing method even if it's since
+    // been unselected from "accepted" methods above.
+    final preferredMethods = _selectedPaymentMethodIds.isNotEmpty
+        ? _paymentMethods
+            .where((m) => _selectedPaymentMethodIds.contains(m.id))
+            .toList()
+        : _paymentMethods;
+    final candidateMethods = existing != null &&
+            !preferredMethods.any((m) => m.id == existing.paymentMethodId)
+        ? _paymentMethods
+        : preferredMethods;
+
+    String? selectedMethodId = existing?.paymentMethodId ??
+        (candidateMethods.isNotEmpty ? candidateMethods.first.id : null);
+    final instructionsCtrl =
+        TextEditingController(text: existing?.instructions ?? '');
+    bool saving = false;
+
+    showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(builder: (ctx, setSt) {
+        return AlertDialog(
+          backgroundColor: AdC.surface,
+          title: Text(
+              existing == null
+                  ? 'Add Payment Instructions'
+                  : 'Edit Payment Instructions',
+              style: TextStyle(color: AdC.textPri)),
+          content: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+            if (candidateMethods.isEmpty)
+              Text(
+                  'No payment methods available. Configure the global '
+                  'catalogue or select accepted methods above first.',
+                  style: TextStyle(color: AdC.textMute, fontSize: 12))
+            else
+              _LabeledDropdown(
+                label: 'Payment Method',
+                value: selectedMethodId ?? candidateMethods.first.id,
+                items: candidateMethods.map((m) => m.id).toList(),
+                onChanged: (v) => setSt(() => selectedMethodId = v),
+              ),
+            _SimpleTextArea(
+                ctrl: instructionsCtrl,
+                label: 'Instructions',
+                hint:
+                    'e.g. Till Number: 123456, Account Name: Villa Rosa Kempinski'),
+          ])),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AdC.blue),
+              onPressed: saving || candidateMethods.isEmpty
+                  ? null
+                  : () async {
+                      final methodId = selectedMethodId;
+                      final text = instructionsCtrl.text.trim();
+                      if (methodId == null || text.isEmpty) return;
+                      setSt(() => saving = true);
+                      try {
+                        final model = PlacePaymentInstructionModel(
+                          id: existing?.id ?? '',
+                          placeId: placeId,
+                          paymentMethodId: methodId,
+                          instructions: text,
+                          isActive: existing?.isActive ?? true,
+                        );
+                        if (existing == null) {
+                          await PlacePaymentService.create(placeId, model);
+                        } else {
+                          await PlacePaymentService.update(
+                              existing.id, placeId, model);
+                        }
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      } catch (e) {
+                        debugPrint(
+                            '⚠️ [Wizard/SavePlacePaymentInstruction] Failed: $e');
+                        setSt(() => saving = false);
+                      }
+                    },
+              child: Text(saving ? 'Saving...' : 'Save'),
+            ),
+          ],
+        );
+      }),
     );
   }
 
@@ -4997,6 +5226,47 @@ class _SimpleField extends StatelessWidget {
           TextFormField(
             controller: ctrl,
             keyboardType: keyboardType,
+            style: TextStyle(color: AdC.textPri, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: TextStyle(color: AdC.textMute, fontSize: 13),
+              filled: true,
+              fillColor: AdC.bg,
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: AdC.overlay(0.12))),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: AdC.overlay(0.12))),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AdC.teal)),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+      );
+}
+
+class _SimpleTextArea extends StatelessWidget {
+  final TextEditingController ctrl;
+  final String label;
+  final String hint;
+  const _SimpleTextArea(
+      {required this.ctrl, required this.label, required this.hint});
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TextStyle(color: AdC.textMute, fontSize: 12)),
+          const SizedBox(height: 6),
+          TextFormField(
+            controller: ctrl,
+            maxLines: 4,
+            minLines: 3,
             style: TextStyle(color: AdC.textPri, fontSize: 14),
             decoration: InputDecoration(
               hintText: hint,

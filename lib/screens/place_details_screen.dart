@@ -204,6 +204,17 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
   bool _loadingNestedItems = false;
   String _nestedItemsSearchQuery = '';
 
+  // Phase 5C: every applicable service type this place offers, fetched
+  // independently (a place can genuinely offer rooms AND dining AND more —
+  // not just whichever one taxonomy match came first). Keyed by
+  // 'rooms'/'menuItems'/'shows'/'exhibitions'. `_nestedItems`/
+  // `_nestedItemsType`/`_nestedItemsLabel` above are kept in sync with the
+  // first populated type (same priority order the old single-type
+  // taxonomy branching used) purely for backward compat with the existing
+  // tab/grid rendering; this map is the source of truth for the
+  // multi-service booking cart (BookingScreen.servicesByType).
+  Map<String, List<Map<String, dynamic>>> _servicesByType = {};
+
   // Selector for the "All Listings" / "Browse by Service" tabs in
   // _buildNestedItemsSection. A plain TabController (driving a manually
   // switched body rather than a swipeable TabBarView) is used deliberately —
@@ -439,50 +450,42 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
   /// are "nice to have"; any failure here is swallowed so the core place
   /// detail view above still renders fine.
   Future<void> _fetchPlaceDetailsExtras() async {
-    final String type;
-    final String path;
-    final String label;
-    if (_isAccommodationType) {
-      type = 'rooms';
-      path = 'rooms';
-      label = 'Rooms';
-    } else if (_isDiningType) {
-      type = 'menuItems';
-      path = 'menu-items';
-      label = 'Menu';
-    } else if (_isEntertainmentType) {
-      type = 'shows';
-      path = 'shows';
-      label = 'Shows';
-    } else if (_isCulturalType) {
-      type = 'exhibitions';
-      path = 'exhibitions';
-      label = 'Exhibitions';
-    } else {
-      type = '';
-      path = '';
-      label = '';
-    }
+    final bool anyType = _isAccommodationType ||
+        _isDiningType ||
+        _isEntertainmentType ||
+        _isCulturalType;
 
-    if (type.isNotEmpty) setState(() => _loadingNestedItems = true);
+    if (anyType) setState(() => _loadingNestedItems = true);
     try {
-      // Kick requests off in parallel, then await — they're independent.
+      // Kick every applicable type's fetch off in parallel, then await —
+      // they're independent. A place can genuinely offer more than one type
+      // at once (e.g. rooms AND dining), so every taxonomy match is fetched
+      // rather than stopping at the first one.
       final detailsFuture = PlaceDetailsService.getPlaceDetails(_place.id);
       // Phase 3: Rooms/MenuItems now read from Firestore (authoritative —
       // the backend REST list endpoints for both have proven unreliable).
       // Shows/Exhibitions/Artifacts are unaffected, still REST-only.
-      final itemsFuture = type == 'rooms'
+      final roomsFuture = _isAccommodationType
           ? _fetchRoomsFromFirestore()
-          : type == 'menuItems'
-              ? _fetchMenuItemsFromFirestore()
-              : type.isNotEmpty
-                  ? _PlaceDetailApi.fetchNestedItems(_place.id, path)
-                  : Future.value(const <Map<String, dynamic>>[]);
+          : Future.value(const <Map<String, dynamic>>[]);
+      final menuItemsFuture = _isDiningType
+          ? _fetchMenuItemsFromFirestore()
+          : Future.value(const <Map<String, dynamic>>[]);
+      final showsFuture = _isEntertainmentType
+          ? _PlaceDetailApi.fetchNestedItems(_place.id, 'shows')
+          : Future.value(const <Map<String, dynamic>>[]);
+      final exhibitionsFuture = _isCulturalType
+          ? _PlaceDetailApi.fetchNestedItems(_place.id, 'exhibitions')
+          : Future.value(const <Map<String, dynamic>>[]);
       final artifactsFuture = _isCulturalType
           ? _PlaceDetailApi.fetchNestedItems(_place.id, 'artifacts')
           : Future.value(const <Map<String, dynamic>>[]);
+
       final details = await detailsFuture;
-      final items = await itemsFuture;
+      final rooms = await roomsFuture;
+      final menuItems = await menuItemsFuture;
+      final shows = await showsFuture;
+      final exhibitions = await exhibitionsFuture;
       final artifacts = await artifactsFuture;
 
       List<String> imagesAt(List<dynamic> saved, int index) {
@@ -495,17 +498,50 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
         return const [];
       }
 
-      if (type.isNotEmpty) {
-        final saved = (details?[type] as List<dynamic>?) ?? const [];
-        if (mounted) {
-          setState(() {
+      final servicesByType = <String, List<Map<String, dynamic>>>{
+        if (rooms.isNotEmpty) 'rooms': rooms,
+        if (menuItems.isNotEmpty) 'menuItems': menuItems,
+        if (shows.isNotEmpty) 'shows': shows,
+        if (exhibitions.isNotEmpty) 'exhibitions': exhibitions,
+      };
+
+      // Backward-compat single-type fields, kept in sync with the FIRST
+      // populated type — same priority order the old taxonomy-based
+      // branching used (rooms > menuItems > shows > exhibitions) — so the
+      // existing tab/grid rendering still shows something sensible.
+      String type = '';
+      String label = '';
+      List<Map<String, dynamic>> items = const [];
+      if (rooms.isNotEmpty) {
+        type = 'rooms';
+        label = 'Rooms';
+        items = rooms;
+      } else if (menuItems.isNotEmpty) {
+        type = 'menuItems';
+        label = 'Menu';
+        items = menuItems;
+      } else if (shows.isNotEmpty) {
+        type = 'shows';
+        label = 'Shows';
+        items = shows;
+      } else if (exhibitions.isNotEmpty) {
+        type = 'exhibitions';
+        label = 'Exhibitions';
+        items = exhibitions;
+      }
+
+      if (mounted) {
+        setState(() {
+          _servicesByType = servicesByType;
+          if (type.isNotEmpty) {
+            final saved = (details?[type] as List<dynamic>?) ?? const [];
             _nestedItemsType = type;
             _nestedItemsLabel = label;
             _nestedItems = items;
             _nestedItemImages =
                 List.generate(items.length, (i) => imagesAt(saved, i));
-          });
-        }
+          }
+        });
       }
 
       if (_isCulturalType) {
@@ -530,7 +566,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
     } catch (_) {
       // Nice-to-have sections — fail silently, just don't render them.
     } finally {
-      if (type.isNotEmpty && mounted) {
+      if (anyType && mounted) {
         setState(() => _loadingNestedItems = false);
       }
     }
@@ -633,6 +669,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           serviceLabel: _nestedItemsLabel,
           serviceType: _nestedItemsType,
           paymentMethods: _acceptedPaymentMethods,
+          servicesByType: _servicesByType,
         ),
       ),
     );
@@ -649,6 +686,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
           paymentMethods: _acceptedPaymentMethods,
           serviceOptions: itemType == _nestedItemsType ? _nestedItems : [item],
           serviceLabel: _nestedItemsLabel,
+          servicesByType: _servicesByType,
         ),
       ),
     );
@@ -763,7 +801,7 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen>
 
           // ── Dark scrim ────────────────────────────────────────────────────
           Positioned.fill(
-            child: Container(color: Colors.black.withValues(alpha: 0.52)),
+            child: Container(color: Colors.black.withValues(alpha: 0.62)),
           ),
 
           // ── Scrollable content ────────────────────────────────────────────

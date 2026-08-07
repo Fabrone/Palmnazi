@@ -26,6 +26,70 @@ class BookingService {
     return ref.id;
   }
 
+  /// Creates one Bookings doc per entry in [bookings], all tagged with a
+  /// freshly-generated shared `bookingGroupId` — used when a tourist checks
+  /// out with more than one service from the same place in one go (e.g. a
+  /// room + a dining item). Each doc keeps working with every existing
+  /// per-service mechanism (conflict-checking, cancellation-per-item, admin
+  /// per-item confirm/cancel) unchanged; the group id is purely a display/
+  /// grouping hint for my_bookings_screen.dart / admin_bookings_screen.dart.
+  /// Returns the new doc ids in the same order as [bookings].
+  static Future<List<String>> createGroup(List<BookingModel> bookings) async {
+    assert(bookings.isNotEmpty);
+    final groupId = _collection.doc().id;
+    final batch = FirebaseFirestore.instance.batch();
+    final refs = <DocumentReference<Map<String, dynamic>>>[];
+    for (final booking in bookings) {
+      final ref = _collection.doc();
+      refs.add(ref);
+      batch.set(ref, {
+        ...booking.toCreateMap(),
+        'bookingGroupId': groupId,
+      });
+    }
+    await batch.commit();
+    for (var i = 0; i < bookings.length; i++) {
+      unawaited(BackendBookingSync.pushSilently(bookings[i]));
+    }
+    return refs.map((r) => r.id).toList();
+  }
+
+  /// Tourist submits a payment reference/proof against the place's own
+  /// PlacePaymentInstructions — moves the booking to `paymentSubmitted` for
+  /// the place admin to review (see PlacePaymentService).
+  static Future<void> submitPaymentProof(
+    String bookingId, {
+    String? text,
+    String? imageUrl,
+  }) {
+    return _collection.doc(bookingId).update({
+      'status': BookingStatus.paymentSubmitted.name,
+      if (text != null) 'paymentProofText': text,
+      if (imageUrl != null) 'paymentProofImageUrl': imageUrl,
+      'paymentRejectionReason': FieldValue.delete(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Place admin approves a submitted payment proof — booking becomes real.
+  static Future<void> approvePayment(String bookingId) {
+    return _collection.doc(bookingId).update({
+      'status': BookingStatus.confirmed.name,
+      'paymentRejectionReason': FieldValue.delete(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Place admin rejects a submitted payment proof — back to awaiting
+  /// payment so the tourist can submit a corrected reference.
+  static Future<void> rejectPayment(String bookingId, String reason) {
+    return _collection.doc(bookingId).update({
+      'status': BookingStatus.awaitingPayment.name,
+      'paymentRejectionReason': reason,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   /// Live stream of the signed-in user's own bookings, most recent first.
   static Stream<List<BookingModel>> streamForUser(String firebaseUid) {
     return _collection
@@ -88,7 +152,12 @@ class BookingService {
     final snap = await _collection
         .where('placeId', isEqualTo: placeId)
         .where('serviceName', isEqualTo: serviceName)
-        .where('status', whereIn: ['pending', 'confirmed']).get();
+        .where('status', whereIn: [
+      'pending',
+      'awaitingPayment',
+      'paymentSubmitted',
+      'confirmed',
+    ]).get();
 
     final newStart = _dateOnly(requestedDate);
     final newEnd = _dateOnly(checkOutDate ?? requestedDate);

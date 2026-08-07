@@ -324,7 +324,15 @@ service cloud.firestore {
     //   requestedDate, checkOutDate            — Timestamps
     //   numberOfGuests, notes
     //   paymentMethodId, paymentMethodName      — snapshot of chosen PaymentMethods doc
-    //   status                                 — 'pending' | 'confirmed' | 'cancelled' | 'completed'
+    //   status                                 — 'pending' | 'awaitingPayment' |
+    //                                             'paymentSubmitted' | 'confirmed' |
+    //                                             'cancelled' | 'completed'
+    //   bookingGroupId                          — links several docs from one
+    //                                             multi-service checkout (optional)
+    //   paymentProofText/paymentProofImageUrl/
+    //   paymentRejectionReason                  — proof-based confirmation for
+    //                                             non-M-Pesa methods (see
+    //                                             PlacePaymentInstructions)
     //   createdAt, updatedAt
     //
     // Access matrix:
@@ -333,8 +341,10 @@ service cloud.firestore {
     //   CREATE — authenticated user; firebaseUid must equal caller uid;
     //            status must start as 'pending'.
     //   UPDATE — MainAdmin or the scoped place Admin (confirm/cancel/
-    //            complete), OR the requester cancelling their own
-    //            still-pending booking.
+    //            complete/approve-or-reject payment proof), unconditionally;
+    //            OR the requester (a) submitting a payment proof while
+    //            'awaitingPayment' (→ 'paymentSubmitted'), or (b) cancelling
+    //            their own booking before it's confirmed.
     //   DELETE — never from the client.
     match /Bookings/{bookingId} {
 
@@ -356,7 +366,11 @@ service cloud.firestore {
         || isPlaceAdminFor(resource.data.placeId)
         || (isAuth()
             && resource.data.firebaseUid == request.auth.uid
-            && resource.data.status == 'pending'
+            && resource.data.status == 'awaitingPayment'
+            && request.resource.data.status == 'paymentSubmitted')
+        || (isAuth()
+            && resource.data.firebaseUid == request.auth.uid
+            && resource.data.status in ['pending', 'awaitingPayment', 'paymentSubmitted']
             && request.resource.data.status == 'cancelled'
             && request.time < resource.data.requestedDate - (
                  resource.data.cancellationPolicy == 'strict'   ? duration.value(7, 'd') :
@@ -365,6 +379,42 @@ service cloud.firestore {
                ));
 
       allow delete: if false;
+
+      // ── Two-way booking messages ──────────────────────────────────────
+      //
+      // Subcollection: Bookings/{bookingId}/messages/{messageId}
+      // Fields: senderUid, senderRole ('tourist'|'admin'), text, createdAt.
+      //
+      // READ/CREATE — the booking's own tourist, or an admin scoped to its
+      // place (or MainAdmin). Never updated/deleted — an append-only thread.
+      match /messages/{messageId} {
+        allow read, create:
+          if isAuth()
+          && (get(/databases/$(database)/documents/Bookings/$(bookingId)).data.firebaseUid == request.auth.uid
+              || isMainAdmin()
+              || isPlaceAdminFor(get(/databases/$(database)/documents/Bookings/$(bookingId)).data.placeId));
+
+        allow update, delete: if false;
+      }
+    }
+
+
+    // ── Place-specific payment instructions ───────────────────────────────────
+    //
+    // Collection: PlacePaymentInstructions
+    // Document id = auto-generated.
+    // A place's own account/till/paybill details for a payment method it
+    // accepts — see place_payment_instruction_model.dart for why this is
+    // separate from the global PaymentMethods catalogue.
+    //
+    // PUBLIC read: a tourist needs to see these during checkout, signed out
+    // or in. Write is MainAdmin (any place) or a plain Admin scoped to
+    // exactly this instruction's place.
+    match /PlacePaymentInstructions/{instructionId} {
+      allow read: if true;
+      allow create: if isMainAdmin() || isPlaceAdminFor(request.resource.data.placeId);
+      allow update, delete:
+        if isMainAdmin() || isPlaceAdminFor(resource.data.placeId);
     }
 
 

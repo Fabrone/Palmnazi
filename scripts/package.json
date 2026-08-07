@@ -1,0 +1,12 @@
+{
+  "name": "palmnazi-seed-scripts",
+  "private": true,
+  "description": "One-off data-seeding scripts for the palmnazi app. Not part of the Flutter build or the Cloud Functions deploy.",
+  "type": "commonjs",
+  "scripts": {
+    "seed:nairobi": "node seed-nairobi-hotels.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.6.0"
+  }
+}

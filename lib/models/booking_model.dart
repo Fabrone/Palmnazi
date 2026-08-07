@@ -14,7 +14,21 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 // reads sensibly even if the underlying place is later edited or removed.
 // ─────────────────────────────────────────────────────────────────────────────
 
-enum BookingStatus { pending, confirmed, cancelled, completed }
+// `awaitingPayment` — the tourist picked a non-M-Pesa payment method and
+// hasn't yet submitted a payment reference/proof against the place's own
+// instructions (see PlacePaymentInstructions/BookingModel.paymentProofText).
+// `paymentSubmitted` — proof was submitted; the place admin must approve
+// (→ confirmed) or reject (→ back to awaitingPayment) before the booking is
+// considered real. M-Pesa bookings skip both and go straight to `confirmed`
+// once the real sandbox gateway round-trip succeeds (see booking_screen.dart).
+enum BookingStatus {
+  pending,
+  awaitingPayment,
+  paymentSubmitted,
+  confirmed,
+  cancelled,
+  completed,
+}
 
 /// Result of checking whether a booking may still be cancelled under its
 /// snapshotted cancellation policy. See BookingModel.checkCancellationEligibility.
@@ -59,6 +73,17 @@ class BookingModel {
   // the place's policy can't retroactively affect an existing booking.
   final String? cancellationPolicy;
   final BookingStatus status;
+  // Links several Bookings docs created from one checkout (a room + a menu
+  // item from the same place, submitted together) — see
+  // BookingService.createGroup. Null for a single-service booking.
+  final String? bookingGroupId;
+  // Proof-based confirmation for non-M-Pesa payment methods — see
+  // PlacePaymentInstructions. Set by the tourist when submitting a
+  // reference/receipt against the place's own payment instructions; cleared
+  // (implicitly, by re-submission) if the admin rejects it.
+  final String? paymentProofText;
+  final String? paymentProofImageUrl;
+  final String? paymentRejectionReason;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -86,6 +111,10 @@ class BookingModel {
     this.currency,
     this.cancellationPolicy,
     this.status = BookingStatus.pending,
+    this.bookingGroupId,
+    this.paymentProofText,
+    this.paymentProofImageUrl,
+    this.paymentRejectionReason,
     this.createdAt,
     this.updatedAt,
   });
@@ -118,6 +147,10 @@ class BookingModel {
       currency: d['currency'] as String?,
       cancellationPolicy: d['cancellationPolicy'] as String?,
       status: _statusFromString(d['status'] as String? ?? 'pending'),
+      bookingGroupId: d['bookingGroupId'] as String?,
+      paymentProofText: d['paymentProofText'] as String?,
+      paymentProofImageUrl: d['paymentProofImageUrl'] as String?,
+      paymentRejectionReason: d['paymentRejectionReason'] as String?,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate(),
       updatedAt: (d['updatedAt'] as Timestamp?)?.toDate(),
     );
@@ -150,6 +183,12 @@ class BookingModel {
         if (cancellationPolicy != null)
           'cancellationPolicy': cancellationPolicy,
         'status': status.name,
+        if (bookingGroupId != null) 'bookingGroupId': bookingGroupId,
+        if (paymentProofText != null) 'paymentProofText': paymentProofText,
+        if (paymentProofImageUrl != null)
+          'paymentProofImageUrl': paymentProofImageUrl,
+        if (paymentRejectionReason != null)
+          'paymentRejectionReason': paymentRejectionReason,
         'createdAt': FieldValue.serverTimestamp(),
       };
 
@@ -160,9 +199,14 @@ class BookingModel {
   ///   strict   — up to 7 days before the requested date.
   ///   (missing/unrecognised policy defaults to flexible.)
   CancellationEligibility checkCancellationEligibility({DateTime? now}) {
-    if (status != BookingStatus.pending) {
+    const cancellableStates = {
+      BookingStatus.pending,
+      BookingStatus.awaitingPayment,
+      BookingStatus.paymentSubmitted,
+    };
+    if (!cancellableStates.contains(status)) {
       return CancellationEligibility(
-          false, 'Only pending bookings can be cancelled here.');
+          false, 'Only bookings not yet confirmed can be cancelled here.');
     }
     final n = now ?? DateTime.now();
     final Duration cutoff;
@@ -204,6 +248,10 @@ class BookingModel {
     switch (status) {
       case BookingStatus.pending:
         return 'Pending';
+      case BookingStatus.awaitingPayment:
+        return 'Awaiting Payment';
+      case BookingStatus.paymentSubmitted:
+        return 'Payment Submitted';
       case BookingStatus.confirmed:
         return 'Confirmed';
       case BookingStatus.cancelled:

@@ -137,10 +137,12 @@ function sendError(res, httpsError) {
 // STATUS_LABELS mirrors BookingModel.statusLabel on the Dart side — keep
 // them in sync if that ever changes.
 const STATUS_LABELS = {
-  pending:   'Pending',
-  confirmed: 'Confirmed',
-  cancelled: 'Cancelled',
-  completed: 'Completed',
+  pending:          'Pending',
+  awaitingPayment:  'Awaiting Payment',
+  paymentSubmitted: 'Payment Submitted',
+  confirmed:        'Confirmed',
+  cancelled:        'Cancelled',
+  completed:        'Completed',
 };
 
 async function sendPushToUid(uid, notification, data) {
@@ -235,6 +237,30 @@ async function writeNotificationsForAdmins({ type, title, body, bookingId }) {
   await batch.commit();
 }
 
+// Same recipient set as sendPushForPlace — the one Admin scoped to placeId,
+// plus every MainAdmin.
+async function writeNotificationsForPlace(placeId, { type, title, body, bookingId }) {
+  const [placeAdminSnap, mainAdminSnap] = await Promise.all([
+    db.collection('Users').where('role', '==', 'Admin').where('managedPlaceId', '==', placeId).get(),
+    db.collection('Users').where('role', '==', 'MainAdmin').get(),
+  ]);
+  const docs = [...placeAdminSnap.docs, ...mainAdminSnap.docs];
+  if (docs.length === 0) return;
+  const batch = db.batch();
+  docs.forEach((d) => {
+    batch.set(db.collection('Notifications').doc(), {
+      recipientUid: d.id,
+      type,
+      title,
+      body,
+      bookingId: bookingId || null,
+      read: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+  await batch.commit();
+}
+
 // New booking → notify every Admin/MainAdmin with an fcmToken on file.
 exports.onBookingCreated = onDocumentCreated('Bookings/{bookingId}', async (event) => {
   const booking = event.data.data();
@@ -248,21 +274,67 @@ exports.onBookingCreated = onDocumentCreated('Bookings/{bookingId}', async (even
   ]);
 });
 
-// Booking status change → notify the tourist who made it.
+// Booking status change → notify whichever party needs to act next.
+//
+// Every transition notifies the tourist EXCEPT the one into
+// 'paymentSubmitted' — that one means the tourist just acted (submitted a
+// payment reference) and it's the place admin who needs to review it, so
+// that specific transition notifies the place's admins instead.
 exports.onBookingStatusChanged = onDocumentUpdated('Bookings/{bookingId}', async (event) => {
   const before = event.data.before.data();
   const after  = event.data.after.data();
   if (before.status === after.status) return;
 
   const label = STATUS_LABELS[after.status] || after.status;
-  const title = `Booking ${label}`;
-  const body = `Your booking for "${after.placeName}" is now ${label.toLowerCase()}.`;
   const bookingId = event.params.bookingId;
+
+  if (after.status === 'paymentSubmitted') {
+    const title = '💳 Payment Proof Submitted';
+    const body = `${after.userEmail || 'A tourist'} submitted payment proof for "${after.placeName}" — please review.`;
+    await Promise.all([
+      sendPushForPlace(after.placeId, { title, body }, { type: 'booking_payment_submitted', bookingId }),
+      writeNotificationsForPlace(after.placeId, { type: 'booking_payment_submitted', title, body, bookingId }),
+    ]);
+    return;
+  }
+
+  const title = `Booking ${label}`;
+  const body = after.status === 'awaitingPayment' && after.paymentRejectionReason
+    ? `Your payment for "${after.placeName}" needs another look: ${after.paymentRejectionReason}`
+    : `Your booking for "${after.placeName}" is now ${label.toLowerCase()}.`;
   await Promise.all([
     sendPushToUid(after.firebaseUid, { title, body }, { type: 'booking_status_changed', bookingId, status: after.status }),
     writeNotification(after.firebaseUid, { type: 'booking_status_changed', title, body, bookingId }),
   ]);
 });
+
+// New two-way booking message → notify whichever party didn't send it.
+exports.onBookingMessageCreated = onDocumentCreated(
+  'Bookings/{bookingId}/messages/{messageId}',
+  async (event) => {
+    const message = event.data.data();
+    const bookingId = event.params.bookingId;
+    const bookingSnap = await db.collection('Bookings').doc(bookingId).get();
+    if (!bookingSnap.exists) return;
+    const booking = bookingSnap.data();
+
+    const preview = (message.text || '').slice(0, 120);
+
+    if (message.senderRole === 'admin') {
+      const title = `New message about "${booking.placeName}"`;
+      await Promise.all([
+        sendPushToUid(booking.firebaseUid, { title, body: preview }, { type: 'booking_message', bookingId }),
+        writeNotification(booking.firebaseUid, { type: 'booking_message', title, body: preview, bookingId }),
+      ]);
+    } else {
+      const title = `New message — ${booking.placeName}`;
+      await Promise.all([
+        sendPushForPlace(booking.placeId, { title, body: preview }, { type: 'booking_message', bookingId }),
+        writeNotificationsForPlace(booking.placeId, { type: 'booking_message', title, body: preview, bookingId }),
+      ]);
+    }
+  },
+);
 
 // New footer "Contact Us" submission → notify every MainAdmin with an
 // fcmToken on file (ContactMessages are MainAdmin-only, see firestore.rules).

@@ -4,6 +4,7 @@ import 'package:palmnazi/models/booking_model.dart';
 import 'package:palmnazi/services/app_settings_controller.dart';
 import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/booking_service.dart';
+import 'package:palmnazi/widgets/booking_message_thread.dart';
 import 'package:palmnazi/widgets/main_app_bar.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -11,7 +12,13 @@ import 'package:palmnazi/widgets/main_app_bar.dart';
 //
 // Lists the signed-in tourist's own bookings (Firestore Bookings collection,
 // filtered by firebaseUid via Firestore security rules). Reachable from
-// AccountScreen. Lets the tourist cancel a still-pending booking.
+// AccountScreen. Lets the tourist cancel a still-pending booking, resubmit
+// payment proof after a rejection, and message the place admin per booking.
+//
+// Bookings created together from one multi-service checkout share a
+// `bookingGroupId` (see BookingService.createGroup) — those are rendered as
+// one grouped section with a shared reference header; every other booking
+// renders exactly as a standalone card, unchanged from before.
 // ─────────────────────────────────────────────────────────────────────────────
 
 abstract final class _P {
@@ -35,6 +42,36 @@ abstract final class _P {
   /// behind it turns light.
   static Color overlay(double alpha) =>
       (_isDark ? Colors.white : Colors.black).withValues(alpha: alpha);
+}
+
+/// Short, uppercased tail of a Firestore doc id — same truncation pattern
+/// used by booking_screen.dart's post-booking success dialog — good enough
+/// to read aloud/write down while staying visually short in a header.
+String _shortRef(String id) =>
+    (id.length > 8 ? id.substring(id.length - 8) : id).toUpperCase();
+
+/// Groups [bookings] by `bookingGroupId`, preserving first-seen order.
+/// Bookings with a null groupId are each returned as their own single-item
+/// group (rendered with zero extra chrome — the common case).
+List<List<BookingModel>> _groupBookings(List<BookingModel> bookings) {
+  final grouped = <String, List<BookingModel>>{};
+  final result = <List<BookingModel>>[];
+  for (final b in bookings) {
+    final groupId = b.bookingGroupId;
+    if (groupId == null) {
+      result.add([b]);
+      continue;
+    }
+    final existing = grouped[groupId];
+    if (existing == null) {
+      final list = <BookingModel>[b];
+      grouped[groupId] = list;
+      result.add(list);
+    } else {
+      existing.add(b);
+    }
+  }
+  return result;
 }
 
 class MyBookingsScreen extends StatelessWidget {
@@ -82,11 +119,12 @@ class MyBookingsScreen extends StatelessWidget {
                     ),
                   );
                 }
+                final groups = _groupBookings(bookings);
                 return ListView.separated(
                   padding: const EdgeInsets.all(16),
-                  itemCount: bookings.length,
+                  itemCount: groups.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (_, i) => _BookingCard(booking: bookings[i]),
+                  itemBuilder: (_, i) => _BookingGroupSection(group: groups[i]),
                 );
               },
             ),
@@ -94,14 +132,69 @@ class MyBookingsScreen extends StatelessWidget {
   }
 }
 
-class _BookingCard extends StatelessWidget {
+class _BookingGroupSection extends StatelessWidget {
+  final List<BookingModel> group;
+  const _BookingGroupSection({required this.group});
+
+  @override
+  Widget build(BuildContext context) {
+    if (group.length <= 1) {
+      return _BookingCard(booking: group.first);
+    }
+    final groupId = group.first.bookingGroupId ?? group.first.id;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Row(children: [
+            Icon(Icons.layers_rounded, size: 16, color: _P.aquaBright),
+            const SizedBox(width: 6),
+            Text(
+              'Booking #${_shortRef(groupId)} — ${group.length} services',
+              style: TextStyle(
+                  color: _P.textPri, fontSize: 13, fontWeight: FontWeight.w700),
+            ),
+          ]),
+        ),
+        for (var i = 0; i < group.length; i++) ...[
+          _BookingCard(booking: group[i]),
+          if (i != group.length - 1) const SizedBox(height: 10),
+        ],
+      ],
+    );
+  }
+}
+
+class _BookingCard extends StatefulWidget {
   final BookingModel booking;
   const _BookingCard({required this.booking});
+
+  @override
+  State<_BookingCard> createState() => _BookingCardState();
+}
+
+class _BookingCardState extends State<_BookingCard> {
+  bool _showMessages = false;
+  bool _resubmitting = false;
+  final _resubmitCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _resubmitCtrl.dispose();
+    super.dispose();
+  }
+
+  BookingModel get booking => widget.booking;
 
   Color get _statusColor {
     switch (booking.status) {
       case BookingStatus.pending:
         return Colors.orangeAccent;
+      case BookingStatus.awaitingPayment:
+        return Colors.amberAccent;
+      case BookingStatus.paymentSubmitted:
+        return Colors.lightBlueAccent;
       case BookingStatus.confirmed:
         return Colors.greenAccent;
       case BookingStatus.cancelled:
@@ -160,6 +253,24 @@ class _BookingCard extends StatelessWidget {
     }
   }
 
+  Future<void> _resubmit(BuildContext context) async {
+    final text = _resubmitCtrl.text.trim();
+    if (text.isEmpty || _resubmitting) return;
+    setState(() => _resubmitting = true);
+    try {
+      await BookingService.submitPaymentProof(booking.id, text: text);
+      _resubmitCtrl.clear();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not resubmit: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _resubmitting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -202,7 +313,7 @@ class _BookingCard extends StatelessWidget {
           _infoRow(
             Icons.confirmation_number_outlined,
             '${context.tr('my_bookings_reference_prefix')} '
-            '${(booking.id.length > 8 ? booking.id.substring(booking.id.length - 8) : booking.id).toUpperCase()}',
+            '${_shortRef(booking.id)}',
           ),
           const SizedBox(height: 10),
           if (booking.serviceName != null) ...[
@@ -230,7 +341,39 @@ class _BookingCard extends StatelessWidget {
             _infoRow(Icons.check_circle_outline_rounded,
                 '${context.tr('my_bookings_mpesa_receipt_prefix')} ${booking.mpesaReceiptNumber}'),
           ],
-          if (booking.status == BookingStatus.pending) ...[
+          if (booking.status == BookingStatus.awaitingPayment) ...[
+            const SizedBox(height: 12),
+            if (booking.paymentRejectionReason != null)
+              _resubmitForm(context)
+            else
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.amberAccent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.hourglass_top_rounded,
+                      size: 14, color: Colors.amberAccent),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Awaiting payment confirmation — the place admin will '
+                      'review your submitted proof shortly.',
+                      style: TextStyle(color: _P.textSec, fontSize: 12),
+                    ),
+                  ),
+                ]),
+              ),
+          ],
+          const SizedBox(height: 10),
+          _messagesToggle(context),
+          if (const {
+            BookingStatus.pending,
+            BookingStatus.awaitingPayment,
+            BookingStatus.paymentSubmitted,
+          }.contains(booking.status)) ...[
             const SizedBox(height: 12),
             Align(
               alignment: Alignment.centerRight,
@@ -246,6 +389,99 @@ class _BookingCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _resubmitForm(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.redAccent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.error_outline_rounded,
+                size: 14, color: Colors.redAccent),
+            const SizedBox(width: 6),
+            Text('Payment rejected',
+                style: TextStyle(
+                    color: Colors.redAccent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600)),
+          ]),
+          const SizedBox(height: 4),
+          Text(booking.paymentRejectionReason!,
+              style: TextStyle(color: _P.textSec, fontSize: 12)),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _resubmitCtrl,
+            style: TextStyle(color: _P.textPri, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'New payment reference / proof',
+              hintStyle: TextStyle(color: _P.textMute),
+              isDense: true,
+              filled: true,
+              fillColor: _P.overlay(0.06),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: _resubmitting ? null : () => _resubmit(context),
+              icon: _resubmitting
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.send_rounded, size: 14),
+              label: const Text('Resubmit', style: TextStyle(fontSize: 12)),
+              style: FilledButton.styleFrom(backgroundColor: _P.aquaBright),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _messagesToggle(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _showMessages = !_showMessages),
+          child: Row(children: [
+            Icon(
+                _showMessages
+                    ? Icons.expand_less_rounded
+                    : Icons.chat_bubble_outline_rounded,
+                size: 16,
+                color: _P.aquaBright),
+            const SizedBox(width: 6),
+            Text('Messages',
+                style: TextStyle(
+                    color: _P.aquaBright,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600)),
+          ]),
+        ),
+        if (_showMessages) ...[
+          const SizedBox(height: 8),
+          BookingMessageThread(bookingId: booking.id, isAdmin: false),
+        ],
+      ],
     );
   }
 

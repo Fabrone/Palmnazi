@@ -45,6 +45,11 @@ class ServiceDetailScreen extends StatelessWidget {
   final List<Map<String, dynamic>> serviceOptions;
   final String serviceLabel;
 
+  /// Every service this place offers, across every type — forwarded to
+  /// BookingScreen so "Book This" can still add other services from the
+  /// same place to the cart, not just the one item viewed here.
+  final Map<String, List<Map<String, dynamic>>>? servicesByType;
+
   const ServiceDetailScreen({
     super.key,
     required this.item,
@@ -54,6 +59,7 @@ class ServiceDetailScreen extends StatelessWidget {
     this.paymentMethods = const [],
     this.serviceOptions = const [],
     this.serviceLabel = '',
+    this.servicesByType,
   });
 
   String get _name => item['name'] as String? ?? 'Untitled';
@@ -248,6 +254,7 @@ class ServiceDetailScreen extends StatelessWidget {
           serviceType: itemType,
           paymentMethods: paymentMethods,
           initialServiceIndex: preselectedIndex >= 0 ? preselectedIndex : 0,
+          servicesByType: servicesByType,
         ),
       ),
     );

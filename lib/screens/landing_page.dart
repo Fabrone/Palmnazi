@@ -5,7 +5,6 @@ import 'dart:math' as math;
 // ignore: deprecated_member_use, avoid_web_libraries_in_flutter
 import 'dart:html' as html
     show window; // web-only: used for last-section storage
-import 'dart:ui' show ImageFilter;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -26,20 +25,18 @@ import 'package:palmnazi/screens/account_screen.dart';
 import 'package:palmnazi/screens/careers_screen.dart';
 import 'package:palmnazi/screens/contact_screen.dart';
 import 'package:palmnazi/screens/blog_post_detail_screen.dart';
-import 'package:palmnazi/screens/my_bookings_screen.dart';
 import 'package:palmnazi/screens/place_details_screen.dart';
 import 'package:palmnazi/screens/resort_city_screen.dart';
 import 'package:palmnazi/screens/static_info_screen.dart';
 import 'package:palmnazi/services/api_client.dart';
-import 'package:palmnazi/services/app_settings_controller.dart';
 import 'package:palmnazi/services/app_strings.dart';
-import 'package:palmnazi/services/auth_state_controller.dart';
 import 'package:palmnazi/services/city_details_service.dart';
 import 'package:palmnazi/services/firebase_service.dart';
 import 'package:palmnazi/services/rbac_service.dart';
 import 'package:palmnazi/admin/admin_dashboard.dart';
 import 'package:palmnazi/constants/tourism_labels.dart';
-import 'package:palmnazi/widgets/notification_bell.dart';
+import 'package:palmnazi/theme/rc_palette.dart';
+import 'package:palmnazi/widgets/main_app_bar.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Logger
@@ -54,80 +51,9 @@ final Logger _log = Logger(
   ),
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Design tokens  —  gold-forward navy (premium/corporate refresh)
-//
-// Gold is the dominant CTA/highlight accent; teal is a secondary/tertiary
-// role (small icons, minor accents). Brand accent colors (teal/gold/coral/
-// emerald and their mid/dark variants) stay constant across light and dark
-// mode — only background/surface/text roles swap, driven by
-// AppSettingsController.instance.resolvedBrightness (see main.dart, which
-// sets it once per frame from the active ThemeMode). These are getters
-// rather than `static const` specifically so every existing `RC.xxx` call
-// site across the app (landing_page.dart, account_screen.dart, …) reacts to
-// a theme change without being individually rewritten — screens just need
-// one `context.tr(...)` or `AppSettingsScope.of(context)` call in their
-// build tree to register as a dependent and rebuild when settings change.
-// ─────────────────────────────────────────────────────────────────────────────
-abstract final class RC {
-  static bool get _isDark =>
-      AppSettingsController.instance.resolvedBrightness == Brightness.dark;
-
-  static Color get navy =>
-      _isDark ? const Color(0xFF121F2E) : const Color(0xFFF5F7FA);
-  static Color get deepBlue =>
-      _isDark ? const Color(0xFF1C2E42) : const Color(0xFFE8EDF2);
-  static Color get surface =>
-      _isDark ? const Color(0xFF23374D) : const Color(0xFFFFFFFF);
-  static Color get surfaceHi =>
-      _isDark ? const Color(0xFF2C4258) : const Color(0xFFEFF3F7);
-
-  // Brand accents — intentionally identical in both modes.
-  static const Color teal = Color(0xFF3FA9C4);
-  static const Color tealMid = Color(0xFF2C8598);
-  static const Color tealDark = Color(0xFF1D5F6E);
-  static const Color gold = Color(0xFFD4AF37);
-  static const Color goldMid = Color(0xFFC49A2C);
-  static const Color goldDark = Color(0xFF8C6D1F);
-  static const Color coral = Color(0xFFFF6B6B);
-  static const Color emerald = Color(0xFF00C98A);
-
-  static Color get textPri =>
-      _isDark ? const Color(0xFFFFFFFF) : const Color(0xFF121F2E);
-  static Color get textSec =>
-      _isDark ? const Color(0xFFC7D6E3) : const Color(0xFF3D4F60);
-  static Color get textMute =>
-      _isDark ? const Color(0xFF7C93A8) : const Color(0xFF6B7C8C);
-
-  static const LinearGradient tealGrad =
-      LinearGradient(colors: [teal, tealDark]);
-  static const LinearGradient goldGrad =
-      LinearGradient(colors: [gold, goldMid]);
-  static LinearGradient get heroGrad => _isDark
-      ? const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xCC121F2E), Color(0xBB1C2E42), Color(0xDD24384E)],
-          stops: [0.0, 0.45, 1.0],
-        )
-      : LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.white.withValues(alpha: 0.90),
-            const Color(0xFFE8EDF2).withValues(alpha: 0.85),
-            Colors.white.withValues(alpha: 0.95),
-          ],
-          stops: const [0.0, 0.45, 1.0],
-        );
-
-  /// Subtle fill for input/button backgrounds that used to be a flat
-  /// `Colors.white.withValues(alpha: x)` — invisible once the surface
-  /// behind it turns light. Black in light mode keeps the same "faint tint
-  /// over the surface" effect in both modes.
-  static Color overlay(double alpha) =>
-      (_isDark ? Colors.white : Colors.black).withValues(alpha: alpha);
-}
+// Design tokens (RC — gold-forward navy palette) now live in
+// lib/theme/rc_palette.dart, shared with lib/widgets/main_app_bar.dart so the
+// nav bar matches this screen exactly instead of using a third palette.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Last-section persistence (survives tab close; cleared on explicit logout)
@@ -989,7 +915,6 @@ class _LandingPageState extends State<LandingPage>
 
     final w = MediaQuery.of(context).size.width;
     final navOpacity = (_scrollOffset / 80).clamp(0.0, 1.0);
-    final isMobile = w < 600;
 
     return Scaffold(
       backgroundColor: RC.navy,
@@ -1006,144 +931,21 @@ class _LandingPageState extends State<LandingPage>
               SliverToBoxAdapter(child: _footer(w)),
             ],
           ),
-          _navBar(w, navOpacity, isMobile),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: PalmnaziNavBar(
+              heroOpacity: navOpacity,
+              onDestinationsTap: () => _scrollToKey(_citiesKey),
+              onCategoriesTap: _openCategoriesOverlay,
+              onBlogTap: () => _scrollToKey(_blogKey),
+              onSearchTap: _focusHeroSearch,
+              onLogoTap: _isAdmin ? _goToAdminWithAuthCheck : null,
+            ),
+          ),
         ],
       ),
-    );
-  }
-
-  Widget _navBar(double w, double opacity, bool isMobile) {
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10 * opacity, sigmaY: 10 * opacity),
-          child: Container(
-            decoration: BoxDecoration(
-              color:
-                  RC.navy.withValues(alpha: opacity > 0.1 ? 0.92 * opacity : 0),
-              border: Border(
-                bottom: BorderSide(
-                    color: RC.gold.withValues(alpha: opacity * 0.18)),
-              ),
-            ),
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                    horizontal: isMobile ? 16 : 28, vertical: 10),
-                child: Row(children: [
-                  _brand(),
-                  const Spacer(),
-                  if (!isMobile) ...[
-                    _navLink(context.tr('nav_destinations'),
-                        onTap: () => _scrollToKey(_citiesKey)),
-                    _navLink(TourismLabels.categoryPlural,
-                        onTap: _openCategoriesOverlay),
-                    _navLink(context.tr('nav_blog'),
-                        onTap: () => _scrollToKey(_blogKey)),
-                    _navLink('My Bookings', onTap: _goToBookings),
-                    const SizedBox(width: 8),
-                    if (AuthStateScope.of(context).isSignedIn) ...[
-                      const NotificationBell(),
-                      const SizedBox(width: 6),
-                    ],
-                    _signInButton(),
-                  ],
-                  if (isMobile) ...[
-                    if (AuthStateScope.of(context).isSignedIn) ...[
-                      const NotificationBell(),
-                      const SizedBox(width: 4),
-                    ],
-                    _signInButtonMobile(),
-                    const SizedBox(width: 4),
-                    _menuIconButton(),
-                  ],
-                ]),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _signInButton() {
-    if (_isLoggedIn) {
-      return GestureDetector(
-        onTap: _goToAccount,
-        child: Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: const LinearGradient(
-                colors: [Color(0xFF14FFEC), Color(0xFF0D7377)]),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF14FFEC).withValues(alpha: 0.28),
-                blurRadius: 10,
-              )
-            ],
-          ),
-          child:
-              const Icon(Icons.person_rounded, color: Colors.white, size: 18),
-        ),
-      );
-    }
-    return TextButton(
-      onPressed: _goToSignIn,
-      style: TextButton.styleFrom(
-        foregroundColor: RC.textSec,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      ),
-      child:
-          Text(context.tr('nav_sign_in'), style: const TextStyle(fontSize: 13)),
-    );
-  }
-
-  Widget _signInButtonMobile() {
-    if (_isLoggedIn) {
-      return _signInButton();
-    }
-    return IconButton(
-      icon: Icon(Icons.login_rounded, color: RC.textSec, size: 22),
-      onPressed: _goToSignIn,
-      splashRadius: 20,
-      tooltip: context.tr('nav_sign_in'),
-    );
-  }
-
-  Widget _menuIconButton() => IconButton(
-        icon: Icon(Icons.menu_rounded, color: RC.textSec, size: 22),
-        onPressed: _showMobileMenu,
-        splashRadius: 20,
-        tooltip: 'Menu',
-      );
-
-  Future<void> _goToSignIn() async {
-    await Navigator.push(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (_, anim, __) => const AuthScreen(isLogin: true),
-        transitionsBuilder: (_, anim, __, child) =>
-            FadeTransition(opacity: anim, child: child),
-        transitionDuration: const Duration(milliseconds: 320),
-      ),
-    );
-    if (mounted) _loadAuthState();
-  }
-
-  Future<void> _goToBookings() async {
-    if (!_isLoggedIn) {
-      await _goToSignIn();
-      return;
-    }
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const MyBookingsScreen()),
     );
   }
 
@@ -1344,79 +1146,6 @@ class _LandingPageState extends State<LandingPage>
     }
   }
 
-  void _showMobileMenu() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: RC.deepBlue,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                      color: RC.textMute,
-                      borderRadius: BorderRadius.circular(2))),
-              const SizedBox(height: 16),
-              _mobileMenuItem(
-                  Icons.location_city_outlined, context.tr('nav_destinations'),
-                  () {
-                Navigator.pop(context);
-                _scrollToKey(_citiesKey);
-              }),
-              _mobileMenuItem(
-                  Icons.category_outlined, TourismLabels.categoryPlural, () {
-                Navigator.pop(context);
-                _openCategoriesOverlay();
-              }),
-              _mobileMenuItem(Icons.article_outlined, context.tr('nav_blog'),
-                  () {
-                Navigator.pop(context);
-                _scrollToKey(_blogKey);
-              }),
-              _mobileMenuItem(Icons.search_rounded, context.tr('nav_search'),
-                  () {
-                Navigator.pop(context);
-                _focusHeroSearch();
-              }),
-              _mobileMenuItem(Icons.calendar_month_rounded, 'My Bookings', () {
-                Navigator.pop(context);
-                _goToBookings();
-              }),
-              const Divider(color: Color(0xFF1A3550), height: 24),
-              if (_isLoggedIn)
-                _mobileMenuItem(
-                    Icons.person_rounded, context.tr('nav_my_account'), () {
-                  Navigator.pop(context);
-                  _goToAccount();
-                })
-              else
-                _mobileMenuItem(Icons.login_rounded, context.tr('nav_sign_in'),
-                    () {
-                  Navigator.pop(context);
-                  _goToSignIn();
-                }),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _mobileMenuItem(IconData icon, String label, VoidCallback onTap) =>
-      ListTile(
-        leading: Icon(icon, color: RC.teal, size: 20),
-        title: Text(label, style: TextStyle(color: RC.textSec, fontSize: 14)),
-        onTap: onTap,
-        dense: true,
-      );
-
   // ── Auth-gated admin navigation ──────────────────────────────────────────
   Future<void> _goToAdminWithAuthCheck() async {
     if (!_isAdmin) {
@@ -1482,48 +1211,6 @@ class _LandingPageState extends State<LandingPage>
       }
     }
   }
-
-  Widget _brand() => Row(mainAxisSize: MainAxisSize.min, children: [
-        _isAdmin
-            ? GestureDetector(
-                onTap: _goToAdminWithAuthCheck,
-                child: _logoImage(),
-              )
-            : _logoImage(),
-        const SizedBox(width: 10),
-        ShaderMask(
-          shaderCallback: (b) =>
-              LinearGradient(colors: [RC.gold, RC.textPri]).createShader(b),
-          child: const Text(
-            'PALMNAZI RC',
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 2),
-          ),
-        ),
-      ]);
-
-  Widget _logoImage() => ClipOval(
-        child: Image.asset(
-          'assets/images/logo.png',
-          width: 34,
-          height: 34,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            width: 34,
-            height: 34,
-            decoration: const BoxDecoration(
-                gradient: RC.tealGrad, shape: BoxShape.circle),
-            child: const Icon(Icons.travel_explore_rounded,
-                color: Colors.white, size: 18),
-          ),
-        ),
-      );
-
-  Widget _navLink(String label, {required VoidCallback onTap}) =>
-      _NavLink(label: label, onTap: onTap);
 
   // ─────────────────────────────────────────────────────────────────────────
   // HERO
@@ -2486,61 +2173,6 @@ class _LandingPageState extends State<LandingPage>
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.3)),
       );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// _NavLink — nav bar item with a hover-driven gold underline/background
-// (desktop mouse feedback; taps behave identically on touch devices).
-// ─────────────────────────────────────────────────────────────────────────────
-class _NavLink extends StatefulWidget {
-  final String label;
-  final VoidCallback onTap;
-  const _NavLink({required this.label, required this.onTap});
-
-  @override
-  State<_NavLink> createState() => _NavLinkState();
-}
-
-class _NavLinkState extends State<_NavLink> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        behavior: HitTestBehavior.opaque,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: _hovered ? RC.gold.withValues(alpha: 0.08) : null,
-            borderRadius: BorderRadius.circular(8),
-            border: Border(
-              bottom: BorderSide(
-                color: _hovered
-                    ? RC.gold.withValues(alpha: 0.85)
-                    : Colors.transparent,
-                width: 2,
-              ),
-            ),
-          ),
-          child: Text(
-            widget.label,
-            style: TextStyle(
-              fontSize: 13,
-              color: _hovered ? RC.textPri : RC.textSec,
-              fontWeight: _hovered ? FontWeight.w600 : FontWeight.w400,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4265,16 +3897,8 @@ class _BlogCardState extends State<_BlogCard>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: post.featuredImage != null
-                      ? Image.network(post.featuredImage!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => _imgFallback())
-                      : _imgFallback(),
-                ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -4379,12 +4003,6 @@ class _BlogCardState extends State<_BlogCard>
       ),
     );
   }
-
-  Widget _imgFallback() => Container(
-        color: RC.deepBlue,
-        child: Center(
-            child: Icon(Icons.article_outlined, color: RC.textMute, size: 40)),
-      );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

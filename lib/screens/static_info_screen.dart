@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:palmnazi/models/static_page_model.dart';
-import 'package:palmnazi/screens/landing_page.dart' show RC;
+import 'package:palmnazi/theme/rc_palette.dart';
 import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/static_page_service.dart';
 

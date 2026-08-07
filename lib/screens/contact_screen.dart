@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:palmnazi/models/contact_message_model.dart';
 import 'package:palmnazi/models/system_settings_model.dart';
-import 'package:palmnazi/screens/landing_page.dart' show RC;
+import 'package:palmnazi/theme/rc_palette.dart';
 import 'package:palmnazi/services/app_strings.dart';
 import 'package:palmnazi/services/contact_message_service.dart';
 import 'package:palmnazi/services/system_settings_service.dart';
